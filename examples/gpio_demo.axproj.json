@@ -1,0 +1,254 @@
+{
+  "format": "axil-uart-project",
+  "version": 1,
+  "name": "GPIO demo",
+  "ips": [
+    {
+      "name": "GPIO0",
+      "base": "0x60000000",
+      "desc": "ZipCPU axilgpio",
+      "registers": [
+        {
+          "name": "LOAD",
+          "offset": "0x00000000",
+          "access": "RW",
+          "reset": "0x00000000",
+          "desc": "Output data (overwrite)",
+          "fields": [
+            {
+              "name": "OUT0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Output bit 0"
+            },
+            {
+              "name": "OUT1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Output bit 1"
+            }
+          ]
+        },
+        {
+          "name": "SET",
+          "offset": "0x00000004",
+          "access": "WO",
+          "reset": "0x00000000",
+          "desc": "Set output bits where 1 is written",
+          "fields": [
+            {
+              "name": "OUT0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Output bit 0"
+            },
+            {
+              "name": "OUT1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Output bit 1"
+            }
+          ]
+        },
+        {
+          "name": "CLEAR",
+          "offset": "0x00000008",
+          "access": "WO",
+          "reset": "0x00000000",
+          "desc": "Clear output bits where 1 is written",
+          "fields": [
+            {
+              "name": "OUT0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Output bit 0"
+            },
+            {
+              "name": "OUT1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Output bit 1"
+            }
+          ]
+        },
+        {
+          "name": "TOGGLE",
+          "offset": "0x0000000C",
+          "access": "WO",
+          "reset": "0x00000000",
+          "desc": "Toggle output bits where 1 is written",
+          "fields": [
+            {
+              "name": "OUT0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Output bit 0"
+            },
+            {
+              "name": "OUT1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Output bit 1"
+            }
+          ]
+        },
+        {
+          "name": "INPUT",
+          "offset": "0x00000010",
+          "access": "RO",
+          "reset": "0x00000000",
+          "desc": "Input data (2-FF synchronized)",
+          "fields": [
+            {
+              "name": "IN0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Input bit 0"
+            },
+            {
+              "name": "IN1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Input bit 1"
+            },
+            {
+              "name": "IN2",
+              "lsb": 2,
+              "width": 1,
+              "desc": "Input bit 2"
+            },
+            {
+              "name": "IN3",
+              "lsb": 3,
+              "width": 1,
+              "desc": "Input bit 3"
+            },
+            {
+              "name": "IN4",
+              "lsb": 4,
+              "width": 1,
+              "desc": "Input bit 4"
+            }
+          ]
+        },
+        {
+          "name": "CHANGED",
+          "offset": "0x00000014",
+          "access": "RW",
+          "reset": "0x00000000",
+          "desc": "Input toggle flags, write 1 to clear",
+          "fields": [
+            {
+              "name": "IN0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Input bit 0"
+            },
+            {
+              "name": "IN1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Input bit 1"
+            },
+            {
+              "name": "IN2",
+              "lsb": 2,
+              "width": 1,
+              "desc": "Input bit 2"
+            },
+            {
+              "name": "IN3",
+              "lsb": 3,
+              "width": 1,
+              "desc": "Input bit 3"
+            },
+            {
+              "name": "IN4",
+              "lsb": 4,
+              "width": 1,
+              "desc": "Input bit 4"
+            }
+          ]
+        },
+        {
+          "name": "INT_MASK",
+          "offset": "0x00000018",
+          "access": "RW",
+          "reset": "0x00000000",
+          "desc": "1 = toggle does not raise interrupt",
+          "fields": [
+            {
+              "name": "IN0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Input bit 0"
+            },
+            {
+              "name": "IN1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Input bit 1"
+            },
+            {
+              "name": "IN2",
+              "lsb": 2,
+              "width": 1,
+              "desc": "Input bit 2"
+            },
+            {
+              "name": "IN3",
+              "lsb": 3,
+              "width": 1,
+              "desc": "Input bit 3"
+            },
+            {
+              "name": "IN4",
+              "lsb": 4,
+              "width": 1,
+              "desc": "Input bit 4"
+            }
+          ]
+        },
+        {
+          "name": "INT_ACTIVE",
+          "offset": "0x0000001C",
+          "access": "RO",
+          "reset": "0x00000000",
+          "desc": "CHANGED & ~INT_MASK",
+          "fields": [
+            {
+              "name": "IN0",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Input bit 0"
+            },
+            {
+              "name": "IN1",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Input bit 1"
+            },
+            {
+              "name": "IN2",
+              "lsb": 2,
+              "width": 1,
+              "desc": "Input bit 2"
+            },
+            {
+              "name": "IN3",
+              "lsb": 3,
+              "width": 1,
+              "desc": "Input bit 3"
+            },
+            {
+              "name": "IN4",
+              "lsb": 4,
+              "width": 1,
+              "desc": "Input bit 4"
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

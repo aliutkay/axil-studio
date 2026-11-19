@@ -1,0 +1,35 @@
+{
+  "hexbus": "COM5",
+  "hexbus_baud": 115200,
+  "line": "COM7",
+  "loopback": false,
+  "base": "0x80000000",
+  "clk": 50000000.0,
+  "bauds": [
+    9600,
+    19200,
+    38400,
+    57600,
+    115200,
+    460800,
+    921600
+  ],
+  "formats": [
+    "8N1",
+    "8E1",
+    "8O1",
+    "8N2",
+    "7E1",
+    "7O1",
+    "8M1",
+    "8S1"
+  ],
+  "count": 64,
+  "quick": false,
+  "burst_all": false,
+  "line_type": "rs485-4w",
+  "de": "tx",
+  "lead_us": 10.0,
+  "tail_us": "auto",
+  "report": null
+}

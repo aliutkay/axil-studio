@@ -1,0 +1,1543 @@
+"""UART-to-AXI Debug Bridge: register access on the board over the ZipCPU hexbus bridge.
+
+The address map comes from the project (its IPs and register maps); IPs that are not in the
+project can be added from a register spec or another project file, and any address can be
+accessed raw. Every bit field gets an input that matches its data type and kind: a number box
+in the field's format, a switch for booleans, a list for defined values, a button for PULSE
+commands and for clearing W1C flags. The live UART terminal is not part of this tool yet.
+"""
+
+import collections
+import copy
+import csv
+import datetime
+import os
+import time
+
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction, QColor, QFont, QKeySequence
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
+                               QHeaderView, QInputDialog, QLineEdit, QMenu, QMessageBox, QPlainTextEdit,
+                               QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QToolButton,
+                               QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
+
+import axilgen as G
+import hexbus
+import numfmt as N
+from axil_studio import ROOT, icons, theme, ui
+from axil_studio.dialogs import BaseDialog, CustomValueDialog, FieldMapDialog
+from axil_studio.tools.base import ToolPage
+from model import KIND_READS, KIND_WRITES
+from model import (Field, IPBlock, Project, Register, hex32, load_config, parse_int, save_config,
+                   single_line)
+
+BAUDS = ["115200", "230400", "460800", "921600", "1000000", "2000000"]
+LOG_LINES = 2000
+HISTORY_MAX = 50000          # samples kept per watched register
+HISTORY_SHOWN = 500          # newest samples listed in the history view
+ROLE = Qt.ItemDataRole.UserRole
+# field table columns
+F_NAME, F_BITS, F_KIND, F_TYPE, F_READ, F_WRITE, F_MEAN = range(7)
+
+
+def raw_ip(addr):
+    """A one-register IP for raw access to any address."""
+    return IPBlock("Ham adres", addr & ~3, "", [Register("DATA", 0, "RW", 0, "Herhangi bir adrese 32 bit erişim",
+                                                         [Field("DATA", 0, 32, "", "", [], "hex")])])
+
+
+class DebugBridgePage(ToolPage):
+    tool_id = "debug"
+    title = "UART-to-AXI Debug Bridge"
+    short_title = "UART-to-AXI Debug Bridge"
+    subtitle = "Donanımdaki AXI4-Lite registerlarını UART üzerinden okur ve yazar."
+    description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
+                   "SIMULATOR portu kullanılabilir.")
+    icon_name = "debug"
+    legacy_script = None
+
+    _log = Signal(str, str)
+
+    def __init__(self, ctx, parent=None):
+        super().__init__(ctx, parent)
+        self.link = hexbus.HexbusLink(log_cb=self._log.emit)
+        self.bus = ui.Async(self)
+        self.ip = self.reg = None
+        self.read_value = None        # last value read from the board
+        self.staged = None            # value that "Yaz" will write
+        self.last_written = {}        # address -> value (base for write-only registers)
+        self.raw = raw_ip(0x40000000)
+        self.group = None             # "project" | "extra" | "raw"
+        self.reads = {}               # address -> (value, "HH:MM:SS", source): last value read, any screen
+        self.watch = []               # live watch rows: dict(key, value, changed, read, count, flash)
+        self.config = []              # config rows: dict(group, ip, reg, value)
+        self.cfg_path = None
+        self.cfg_edit = None          # config row loaded into the register panel
+        self._polling = False
+        self.poll_timer = QTimer(self)
+        self.poll_timer.timeout.connect(self._poll)
+        self._loading = False
+
+        # ---- connection bar
+        conn = ui.Card(margins=12)
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        row.addWidget(ui.label("Port", "muted"))
+        self.port_cb = QComboBox()
+        self.port_cb.setMinimumWidth(200)
+        row.addWidget(self.port_cb)
+        self.refresh_btn = QToolButton()
+        self.refresh_btn.setProperty("variant", "ghost")
+        self.refresh_btn.setToolTip("Portları yenile")
+        self.refresh_btn.clicked.connect(self.refresh_ports)
+        row.addWidget(self.refresh_btn)
+        row.addSpacing(10)
+        row.addWidget(ui.label("Baud", "muted"))
+        self.baud_cb = QComboBox()
+        self.baud_cb.setEditable(True)
+        self.baud_cb.addItems(BAUDS)
+        self.baud_cb.setCurrentText("115200")
+        self.baud_cb.setMinimumWidth(110)
+        row.addWidget(self.baud_cb)
+        row.addSpacing(10)
+        self.conn_btn = ui.button("Bağlan", "plug", "primary", self.toggle_connection)
+        row.addWidget(self.conn_btn)
+        row.addStretch(1)
+        self.conn_pill = ui.Pill("Bağlı değil")
+        row.addWidget(self.conn_pill)
+        conn.lay.addLayout(row)
+        self.body.addWidget(conn)
+
+        split = QSplitter(Qt.Orientation.Horizontal)
+        split.setChildrenCollapsible(False)
+
+        # ---- left: address map
+        left = ui.Card("Adres haritası")
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Ad", "Adres", "Erişim"])
+        self.tree.setUniformRowHeights(True)
+        hdr = self.tree.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
+        hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.currentItemChanged.connect(self._select)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._tree_menu)
+        left.lay.addWidget(self.tree, 1)
+        lbar = QHBoxLayout()
+        lbar.setSpacing(4)
+        add_menu = QMenu(self)
+        add_menu.addAction("Register spesifikasyonundan (.regspec.json)…", self.add_from_spec)
+        add_menu.addAction("Başka bir proje dosyasından (.axproj.json)…", self.add_from_project)
+        add_menu.addAction("IP kütüphanesinden…", self.add_from_library)
+        add_btn = ui.button("IP ekle", "plus", "ghost", None, "Projede olmayan bir IP'nin register haritasını ekle")
+        add_btn.setMenu(add_menu)
+        lbar.addWidget(add_btn)
+        self.remove_btn = ui.button("Kaldır", None, "ghost", self.remove_extra, "Seçili ek IP'yi listeden kaldır")
+        lbar.addWidget(self.remove_btn)
+        lbar.addStretch(1)
+        left.lay.addLayout(lbar)
+        left.setMinimumWidth(320)
+        split.addWidget(left)
+
+        # ---- right: tabs on top: register · live watch · config · traffic
+        right = ui.Card(margins=0)
+        self.rtabs = ui.DetachableTabs(self.title)
+        right.lay.addWidget(self.rtabs)
+        self.reg_card = QWidget()
+        self.reg_card.lay = QVBoxLayout(self.reg_card)
+        self.reg_card.lay.setContentsMargins(16, 14, 16, 14)
+        self.reg_card.lay.setSpacing(10)
+        top = QHBoxLayout()
+        col = QVBoxLayout()
+        col.setSpacing(2)
+        self.reg_title = ui.label("Register seç", "cardTitle")
+        self.reg_desc = ui.label("Soldaki haritadan bir register seç.", "muted", wrap=True)
+        col.addWidget(self.reg_title)
+        col.addWidget(self.reg_desc)
+        top.addLayout(col, 1)
+        self.access_pill = ui.Pill("")
+        self.access_pill.hide()
+        top.addWidget(self.access_pill, 0, Qt.AlignmentFlag.AlignTop)
+        self.reg_card.lay.addLayout(top)
+
+        # raw address row (only for "Ham adres erişimi")
+        self.raw_row = QWidget()
+        rr = QHBoxLayout(self.raw_row)
+        rr.setContentsMargins(0, 0, 0, 0)
+        rr.addWidget(ui.label("Adres", "muted"))
+        self.raw_ed = QLineEdit(hex32(self.raw.base))
+        self.raw_ed.setProperty("mono", "true")
+        self.raw_ed.setMaximumWidth(160)
+        self.raw_ed.editingFinished.connect(self._raw_addr_changed)
+        rr.addWidget(self.raw_ed)
+        rr.addStretch(1)
+        self.reg_card.lay.addWidget(self.raw_row)
+        self.raw_row.hide()
+
+        vrow = QHBoxLayout()
+        vrow.setSpacing(8)
+        vrow.addWidget(ui.label("Okunan", "muted"))
+        self.read_lbl = ui.label("—", "mono")
+        self.read_lbl.setMinimumWidth(100)
+        self.read_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        vrow.addWidget(self.read_lbl)
+        self.read_btn = ui.button("Oku", "read", None, self.read_reg, "F5")
+        vrow.addWidget(self.read_btn)
+        vrow.addSpacing(16)
+        vrow.addWidget(ui.label("Yazılacak", "muted"))
+        self.value_ed = QLineEdit()
+        self.value_ed.setProperty("mono", "true")
+        self.value_ed.setPlaceholderText("0x00000000")
+        self.value_ed.setMinimumWidth(120)
+        self.value_ed.setMaximumWidth(150)
+        self.value_ed.returnPressed.connect(self.write_reg)
+        self.value_ed.textEdited.connect(self._value_edited)
+        vrow.addWidget(self.value_ed)
+        self.write_btn = ui.button("Yaz", "write", "primary", self.write_reg, "Registerın tamamını yaz (Ctrl+Enter)")
+        vrow.addWidget(self.write_btn)
+        self.reset_btn = ui.button("Geri al", None, "ghost", self._reset_staged, "Yazılacak değeri okunana döndür")
+        vrow.addWidget(self.reset_btn)
+        vrow.addStretch(1)
+        self.reg_card.lay.addLayout(vrow)
+        vrow = QHBoxLayout()
+        vrow.setSpacing(8)
+        self.stamp = ui.label("", "muted")
+        vrow.addWidget(self.stamp)
+        vrow.addStretch(1)
+        self.watch_btn = ui.button("İzle", None, "ghost", lambda: self.add_watch([self._cur_key()]),
+                                   "Bu registerı canlı izlemeye ekle")
+        vrow.addWidget(self.watch_btn)
+        self.cfg_btn = ui.button("Config'e ekle", None, "ghost", self.config_from_panel,
+                                 "Yazılacak değeri config listesine ekle")
+        vrow.addWidget(self.cfg_btn)
+        vrow.addSpacing(8)
+        vrow.addWidget(ui.label("Gösterim", "muted"))
+        self.view_cb = QComboBox()
+        self.view_cb.addItem("Veri tipi", "")
+        for key, text in N.BASE_FORMATS:
+            if key not in ("ufix", "sfix", "enum"):
+                self.view_cb.addItem(text, key)
+        self.view_cb.setToolTip("Bit alanı değerlerinin gösterimi. Varsayılan: Wrapper'da atanan veri tipi")
+        self.view_cb.currentIndexChanged.connect(lambda *_: self._fill_fields())
+        vrow.addWidget(self.view_cb)
+        self.reg_card.lay.addLayout(vrow)
+
+        self.fields = QTableWidget(0, 7)
+        self.fields.setHorizontalHeaderLabels(["Bit alanı", "Bitler", "Tip", "Veri tipi", "Okunan", "Yazılacak",
+                                               "Anlamı"])
+        self.fields.verticalHeader().setVisible(False)
+        self.fields.verticalHeader().setDefaultSectionSize(38)
+        self.fields.setShowGrid(False)
+        self.fields.setAlternatingRowColors(True)
+        self.fields.setSelectionMode(QTableWidget.SelectionMode.NoSelection)
+        self.fields.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
+        self.fields.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.fields.customContextMenuRequested.connect(self._field_menu_at)
+        self.reg_card.lay.addWidget(self.fields, 1)
+        self.rtabs.addTab(self.reg_card, "Register")
+        self.watch_tab = self._build_watch_tab()
+        self.cfg_tab = self._build_config_tab()
+        self.rtabs.addTab(self.watch_tab, "Canlı izleme")
+        self.rtabs.addTab(self.cfg_tab, "Config")
+        # traffic log below the tabs (resizable)
+        log_card = ui.Card("Trafik", margins=12)
+        log_card.add_action(ui.button("Temizle", None, "ghost", lambda: self.log.clear()))
+        self.log = QPlainTextEdit()
+        self.log.setReadOnly(True)
+        self.log.setProperty("mono", "true")
+        self.log.setMaximumBlockCount(LOG_LINES)
+        log_card.lay.addWidget(self.log, 1)
+        vsplit = QSplitter(Qt.Orientation.Vertical)
+        vsplit.setChildrenCollapsible(True)
+        vsplit.addWidget(right)
+        vsplit.addWidget(log_card)
+        vsplit.setStretchFactor(0, 1)
+        vsplit.setSizes([640, 150])
+        split.addWidget(vsplit)
+        split.setStretchFactor(1, 1)
+        split.setSizes([340, 900])
+        self.body.addWidget(split, 1)
+
+        self._log.connect(self._append_log)
+        self.refresh_ports()
+        self._fill_tree()
+        self._update_controls()
+        self.on_theme()
+
+    # ================================================================ menus
+    def build_menus(self, menubar):
+        m = menubar.addMenu("&Debug")
+        win = self.window()
+        for text, slot, key in (("Bağlan / bağlantıyı kes", self.toggle_connection, "Ctrl+K"),
+                                ("Registerı oku", self.read_reg, "F5"),
+                                ("Registerı yaz", self.write_reg, "Ctrl+Return"),
+                                ("Portları yenile", self.refresh_ports, None),
+                                (None, None, None),
+                                ("IP ekle: register spesifikasyonundan…", self.add_from_spec, None),
+                                ("IP ekle: proje dosyasından…", self.add_from_project, None)):
+            if text is None:
+                m.addSeparator()
+                continue
+            a = QAction(text, win)
+            a.triggered.connect(slot)
+            if key:
+                a.setShortcut(QKeySequence(key))
+            m.addAction(a)
+        m.addSeparator()
+        m.addAction("Trafiği temizle", self.log.clear)
+
+    # ================================================================ connection
+    def refresh_ports(self):
+        cur = self.port_cb.currentText()
+        self.port_cb.clear()
+        self.port_cb.addItems(hexbus.list_ports())
+        self.port_cb.setCurrentText(cur or hexbus.SIM_PORT)
+
+    def toggle_connection(self):
+        if self.link.connected:
+            self.link.close()
+            self._log.emit("INFO", "Bağlantı kapatıldı")
+            self._update_controls()
+            return
+        port = self.port_cb.currentText()
+        try:
+            baud = int(self.baud_cb.currentText())
+        except ValueError:
+            return self.error("Geçersiz baud", self.baud_cb.currentText())
+        self.conn_btn.setEnabled(False)
+        self.conn_pill.set("Bağlanıyor…", "accent")
+
+        def done(_):
+            self._log.emit("INFO", f"{port} @ {baud} bağlandı")
+            self._update_controls()
+
+        def fail(exc):
+            self._update_controls()
+            self.error("Bağlanılamadı", exc)
+        self.bus.run(lambda: self.link.open(port, baud), done, fail)
+
+    def _update_controls(self):
+        on = self.link.connected
+        self.conn_btn.setEnabled(True)
+        self.conn_btn.setText("Bağlantıyı kes" if on else "Bağlan")
+        self.conn_btn.setProperty("variant", None if on else "primary")
+        theme.repolish(self.conn_btn)
+        ui.refresh_icons(self.conn_btn.parentWidget())
+        self.port_cb.setEnabled(not on)
+        self.baud_cb.setEnabled(not on)
+        self.refresh_btn.setEnabled(not on)
+        if on:
+            self.conn_pill.set(f"Bağlı · {self.port_cb.currentText()}", "ok")
+        else:
+            self.conn_pill.set("Bağlı değil")
+        reg = self.reg
+        self.read_btn.setEnabled(bool(on and reg and reg.readable))
+        self.write_btn.setEnabled(bool(on and reg and reg.writable))
+        self.value_ed.setEnabled(bool(reg and reg.writable))
+        self.reset_btn.setEnabled(bool(reg and reg.writable))
+        self.watch_btn.setEnabled(bool(reg and reg.readable))
+        self.cfg_btn.setEnabled(bool(reg and reg.writable))
+        self.cfg_btn.setText("Config satırını güncelle" if self.cfg_edit is not None else "Config'e ekle")
+        self._update_watch_controls()
+        self._update_config_controls()
+        for row in range(self.fields.rowCount()):
+            holder = self.fields.cellWidget(row, F_WRITE)
+            for b in (holder.findChildren(type(self.write_btn)) if holder else []):
+                if b.property("command"):
+                    b.setEnabled(on)
+
+    # ================================================================ address map
+    def _extra(self):
+        """IPs added in the debugger only (stored in the project under "debug")."""
+        d = self.ctx.project.debug or {}
+        return [IPBlock.from_dict(x) for x in d.get("extra_ips", [])]
+
+    def _set_extra(self, ips):
+        d = dict(self.ctx.project.debug or {})
+        d["extra_ips"] = [ip.to_dict() for ip in ips]
+        self.ctx.project.debug = d if d["extra_ips"] else None
+        self.ctx.mark_modified(self.tool_id)
+
+    def _find_ip(self, group, name):
+        if group == "raw":
+            return self.raw
+        ips = self.ctx.project.ips if group == "project" else self._extra()
+        return next((ip for ip in ips if ip.name == name), None)
+
+    def _fill_tree(self):
+        sel = self._sel_key()
+        self.tree.blockSignals(True)
+        self.tree.clear()
+        mono = theme.mono_font()
+        muted = theme.manager().color("muted")
+        target = None
+
+        def add_group(title, ips, group):
+            nonlocal target
+            if not ips and group == "extra":
+                return
+            g = QTreeWidgetItem([title, "", ""])
+            f = g.font(0)
+            f.setBold(True)
+            g.setFont(0, f)
+            g.setForeground(0, muted)
+            g.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.tree.addTopLevelItem(g)
+            if not ips:
+                e = QTreeWidgetItem(["Projede IP yok", "", ""])
+                e.setForeground(0, muted)
+                e.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                g.addChild(e)
+            for ip in sorted(ips, key=lambda i: i.base):
+                top = QTreeWidgetItem([ip.name, hex32(ip.base), ""])
+                top.setFont(1, mono)
+                bf = top.font(0)
+                bf.setBold(True)
+                top.setFont(0, bf)
+                top.setToolTip(0, single_line(ip.desc))
+                top.setData(0, ROLE, (group, ip.name, None))
+                for reg in ip.registers:
+                    it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
+                    it.setFont(1, mono)
+                    it.setData(0, ROLE, (group, ip.name, reg.name))
+                    it.setToolTip(0, single_line(reg.desc))
+                    top.addChild(it)
+                    if sel == (group, ip.name, reg.name):
+                        target = it
+                g.addChild(top)
+        add_group("PROJE", self.ctx.project.ips, "project")
+        add_group("EK IP'LER", self._extra(), "extra")
+        raw = QTreeWidgetItem(["Ham adres erişimi", "", "RW"])
+        raw.setData(0, ROLE, ("raw", "", "DATA"))
+        raw.setToolTip(0, "Register haritası olmayan herhangi bir adresi oku / yaz")
+        self.tree.addTopLevelItem(raw)
+        if sel and sel[0] == "raw":
+            target = raw
+        self.tree.expandAll()
+        self.tree.blockSignals(False)
+        if target is not None:
+            self.tree.setCurrentItem(target)
+        else:
+            self.ip = self.reg = None
+            self.remove_btn.setEnabled(False)
+            self._show_register()
+
+    def _sel_key(self):
+        it = self.tree.currentItem()
+        return it.data(0, ROLE) if it else None
+
+    def _select(self, item, _prev=None):
+        key = item.data(0, ROLE) if item else None
+        self.remove_btn.setEnabled(bool(key and key[0] == "extra"))
+        if not key or key[2] is None:
+            self.ip = self.reg = None
+            self.group = None
+        else:
+            self.group = key[0]
+            self.ip = self._find_ip(key[0], key[1])
+            self.reg = self.ip.get_register(key[2]) if self.ip else None
+        if self.cfg_edit is not None:          # leaving the config row being edited
+            if self.cfg_edit >= len(self.config) or not key or tuple(key) != tuple(self.config[self.cfg_edit]["key"]):
+                self.cfg_edit = None
+        self.read_value = None
+        self.staged = None
+        self._show_register()
+
+    def on_project_modified(self):
+        self._fill_tree()
+        self._fill_watch(rebuild=True)
+        self._fill_config(rebuild=True)
+
+    # ---------------------------------------------------------------- extra IPs
+    def add_from_spec(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Register spesifikasyonu", ROOT,
+                                              "Register spesifikasyonu (*.regspec.json);;JSON (*.json)")
+        if not path:
+            return
+        try:
+            spec = G.ModuleSpec.load(path)
+        except Exception as exc:  # noqa: BLE001
+            return self.error("Açılamadı", exc)
+        w = 0x1000
+        while w < spec.span:
+            w <<= 1
+        base = BaseDialog.ask(self, f"{spec.module}: base adres", spec.base & ~(w - 1), w,
+                              "IP'nin donanımdaki adresi.")
+        if base is None:
+            return
+        self._add_extra([G.to_ipblock(spec, base)])
+
+    def add_from_project(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Proje dosyası", ROOT, "AXIL proje (*.axproj.json);;JSON (*.json)")
+        if not path:
+            return
+        try:
+            proj = Project.load(path)
+        except Exception as exc:  # noqa: BLE001
+            return self.error("Açılamadı", exc)
+        if not proj.ips:
+            QMessageBox.information(self, self.title, "Bu proje dosyasında IP yok.")
+            return
+        names = [f"{ip.name}  ({hex32(ip.base)})" for ip in proj.ips]
+        choice, ok = QInputDialog.getItem(self, "IP ekle", "Eklenecek IP:", ["Tümü"] + names, 0, False)
+        if not ok:
+            return
+        ips = proj.ips if choice == "Tümü" else [proj.ips[names.index(choice)]]
+        self._add_extra(copy.deepcopy(ips))
+
+    def add_from_library(self):
+        items = [(lib, e) for lib in self.ctx.libraries for e in lib.entries]
+        if not items:
+            QMessageBox.information(self, self.title, "Açık IP kütüphanesi ya da kütüphanede IP yok (IP Library).")
+            return
+        labels = [f"{lib.name} / {e.name}" for lib, e in items]
+        choice, ok = QInputDialog.getItem(self, "Kütüphaneden IP ekle", "IP:", labels, 0, False)
+        if not ok:
+            return
+        lib, e = items[labels.index(choice)]
+        w = 0x1000
+        span = max((r.offset for r in e.ip.registers), default=0) + 4
+        while w < span:
+            w <<= 1
+        base = BaseDialog.ask(self, f"{e.name}: base adres", 0x40000000, w, "IP'nin donanımdaki adresi.")
+        if base is None:
+            return
+        ip = e.instance(base)
+        ip.source = lib.name
+        self._add_extra([ip])
+
+    def _add_extra(self, new):
+        taken = {ip.name for ip in self.ctx.project.ips}
+        clash = [ip.name for ip in new if ip.name in taken]
+        if clash:
+            QMessageBox.warning(self, self.title, f"Projede aynı adlı IP var: {', '.join(clash)}. Bu IP'ler eklenmedi.")
+        new = [ip for ip in new if ip.name not in taken]
+        if not new:
+            return
+        keep = [ip for ip in self._extra() if ip.name not in {n.name for n in new}]
+        self._set_extra(keep + new)
+        self._fill_tree()
+        self.status(f"{len(new)} IP eklendi")
+
+    def remove_extra(self):
+        key = self._sel_key()
+        if not key or key[0] != "extra":
+            return
+        self._set_extra([ip for ip in self._extra() if ip.name != key[1]])
+        self._fill_tree()
+
+    def _raw_addr_changed(self):
+        try:
+            a = parse_int(self.raw_ed.text()) & 0xFFFFFFFC
+        except ValueError:
+            self.raw_ed.setStyleSheet(f"border-color: {theme.manager().tokens['danger']};")
+            return
+        self.raw_ed.setStyleSheet("")
+        self.raw_ed.setText(hex32(a))
+        self.raw = raw_ip(a)
+        self.ip, self.reg, self.group = self.raw, self.raw.registers[0], "raw"
+        self.read_value = self.staged = None
+        self._show_register()
+
+    # ================================================================ register panel
+    def _show_register(self):
+        reg = self.reg
+        is_raw = self.ip is self.raw and reg is not None
+        self.raw_row.setVisible(is_raw)
+        if not reg:
+            self.reg_title.setText("Register seç")
+            self.reg_desc.setText("Soldaki haritadan bir register seç.")
+            self.access_pill.hide()
+            self.fields.setRowCount(0)
+            self.value_ed.clear()
+            self.read_lbl.setText("—")
+            self.stamp.clear()
+        else:
+            addr = self.ip.address(reg)
+            self.reg_title.setText("Ham adres erişimi" if is_raw else f"{self.ip.name}.{reg.name}   ·   {hex32(addr)}")
+            self.reg_desc.setText(reg.desc or "Açıklama yok")
+            self.access_pill.set(reg.access, "accent")
+            self.access_pill.show()
+            cached = self.reads.get(addr) if reg.readable else None
+            if self.read_value is None and cached:
+                self.read_value = cached[0]
+            if self.staged is None:
+                self.staged = self._base_value()
+            self.read_lbl.setText(hex32(self.read_value) if self.read_value is not None else "—")
+            self.value_ed.setText(hex32(self.staged))
+            if cached:
+                self.stamp.setText(f"Okundu {cached[1]} · {cached[2]}")
+            elif self.read_value is None:
+                self.stamp.setText("Henüz okunmadı" if reg.readable else "Salt yazılır register: okunamaz")
+            self._fill_fields()
+        self._update_controls()
+
+    def _base_value(self):
+        """Starting point of a write: what was read (PULSE and W1C bits cleared, so they are not
+        re-triggered); for write-only registers the last written value, else the reset value."""
+        reg = self.reg
+        clear = reg.mask_of("PULSE", "W1C")
+        if reg.readable and self.read_value is not None:
+            return self.read_value & ~clear & 0xFFFFFFFF
+        return self.last_written.get(self.ip.address(reg), reg.reset) & ~clear & 0xFFFFFFFF
+
+    def _fmt(self, f):
+        return self.view_cb.currentData() or f.fmt
+
+    def _fill_fields(self):
+        reg = self.reg
+        if reg is None:
+            return
+        self._loading = True
+        t = theme.manager().tokens
+        mono = theme.mono_font()
+        muted = QColor(t["muted"])
+        fields = sorted(reg.fields, key=lambda f: -f.lsb)
+        self.fields.setRowCount(len(fields))
+        for row, f in enumerate(fields):
+            fmt = self._fmt(f)
+            rv = f.extract(self.read_value) if self.read_value is not None else None
+            sv = f.extract(self.staged) if self.staged is not None else 0
+            meaning = f.read_meaning(rv) if rv is not None else ""
+            cells = [f.name, f.bits, f.kind or reg.access, N.label(fmt, f.width),
+                     "" if rv is None else N.format_value(rv, f.width, fmt, f.meanings()),
+                     None, meaning or single_line(f.desc)]
+            for col, text in enumerate(cells):
+                if text is None:
+                    continue
+                it = QTableWidgetItem(text)
+                it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                if col in (F_BITS, F_READ):
+                    it.setFont(mono)
+                if col == F_TYPE or (col == F_MEAN and not meaning):
+                    it.setForeground(muted)
+                if col == F_READ and rv is not None:
+                    it.setToolTip("\n".join(f"{a}: {b}" for a, b in
+                                            N.all_views(rv, f.width, N.split(f.fmt, f.width)[1])))
+                else:
+                    it.setToolTip(f.desc)
+                self.fields.setItem(row, col, it)
+            self.fields.setCellWidget(row, F_WRITE, self._editor(f, fmt, sv))
+        self.fields.resizeColumnsToContents()
+        hdr = self.fields.horizontalHeader()
+        hdr.setSectionResizeMode(F_MEAN, QHeaderView.ResizeMode.Stretch)
+        self.fields.setColumnWidth(F_WRITE, max(self.fields.columnWidth(F_WRITE), 210))
+        self._loading = False
+        self._update_controls()
+
+    # ---------------------------------------------------------------- typed editors
+    def _editor(self, f, fmt, value):
+        """Typed input + a "⋯" menu (custom value in any type, register map edits)."""
+        holder = self._typed_editor(f, fmt, value)
+        more = QToolButton()
+        more.setText("⋯")
+        more.setProperty("variant", "ghost")
+        more.setToolTip("Özel değer yaz · register haritasını düzenle")
+        more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
+        more.setMenu(self._field_menu(f))
+        holder.layout().addWidget(more)
+        return holder
+
+    def _field_menu(self, f):
+        m = QMenu(self)
+        reg = self.reg
+        kind = f.kind or reg.access
+        if reg.writable and kind not in ("RO", "CONST"):
+            m.addAction("Özel değer yaz…", lambda: self.custom_value(f))
+        if self.group in ("project", "extra"):
+            m.addAction("Veri tipi ve değer açıklamaları…", lambda: self.edit_field_map(f))
+        if m.isEmpty():
+            a = m.addAction("Bu bit alanı için işlem yok")
+            a.setEnabled(False)
+        return m
+
+    def _field_menu_at(self, pos):
+        row = self.fields.rowAt(pos.y())
+        if row < 0 or self.reg is None:
+            return
+        name = self.fields.item(row, F_NAME).text()
+        f = self.reg.get_field(name)
+        if f:
+            self._field_menu(f).exec(self.fields.viewport().mapToGlobal(pos))
+
+    def _typed_editor(self, f, fmt, value):
+        """Input widget for one bit field, chosen by its kind and data type:
+        RO / CONST: none · PULSE: send button · W1C: clear button · defined write values: list ·
+        bool (or 1 bit): switch · anything else: a number box in the field's own format."""
+        reg = self.reg
+        kind = f.kind or reg.access
+        base, _ = N.split(fmt, f.width)
+        holder = QWidget()
+        lay = QHBoxLayout(holder)
+        lay.setContentsMargins(4, 2, 4, 2)
+        lay.setSpacing(6)
+        if not reg.writable or kind in ("RO", "CONST"):
+            lay.addWidget(ui.label("salt okunur", "muted"))
+            lay.addStretch(1)
+            return holder
+        if kind == "PULSE":
+            if f.width == 1:
+                b = ui.button("Darbe gönder", "play", None, lambda: self.command(f, 1), f"{f.name}'e 1 yazar")
+            else:
+                ed = self._number_edit(f, fmt, 1, stage=False)
+                lay.addWidget(ed, 1)
+                b = ui.button("Gönder", "play", None, lambda: self._command_from(ed, f, fmt), "Bu değerle gönder")
+            b.setProperty("command", True)
+            lay.addWidget(b)
+            return holder
+        if kind == "W1C":
+            b = ui.button("Temizle", None, None, lambda: self.command(f, (1 << f.width) - 1),
+                          f"{f.name} bayraklarına 1 yazarak siler")
+            b.setProperty("command", True)
+            lay.addWidget(b)
+            lay.addStretch(1)
+            return holder
+        choices = f.write_choices()
+        if choices:
+            cb = QComboBox()
+            vfmt = "hex" if base == "enum" else fmt
+            for e in choices:
+                cb.addItem(f"{e.write}  ({N.format_value(e.value, f.width, vfmt)})", e.value)
+            if cb.findData(value) < 0:
+                cb.addItem(f"{N.format_value(value, f.width, vfmt)}  (tanımsız)", value)
+            cb.setCurrentIndex(cb.findData(value))
+            cb.currentIndexChanged.connect(lambda _i, cb=cb: self._stage(f, cb.currentData()))
+            lay.addWidget(cb, 1)
+            return holder
+        if base == "bool" or (f.width == 1 and not f.fmt):
+            sw = QCheckBox("true" if value else "false")
+            sw.setChecked(bool(value))
+            sw.toggled.connect(lambda on, sw=sw: (sw.setText("true" if on else "false"), self._stage(f, int(on))))
+            lay.addWidget(sw)
+            lay.addStretch(1)
+            return holder
+        lay.addWidget(self._number_edit(f, fmt, value), 1)
+        return holder
+
+    def _number_edit(self, f, fmt, value, stage=True):
+        vfmt = "hex" if N.split(fmt, f.width)[0] == "enum" else fmt
+        ed = QLineEdit(N.format_value(value, f.width, vfmt))
+        ed.setProperty("mono", "true")
+        ed.setToolTip(f"{N.LABELS.get(N.split(vfmt, f.width)[0], vfmt)}, {f.width} bit · 0x / 0b önekleri de olur")
+        if stage:
+            ed.textEdited.connect(lambda _t, ed=ed: self._typed(ed, f, vfmt))
+        return ed
+
+    def _typed(self, ed, f, fmt):
+        try:
+            v = N.parse_value(ed.text(), f.width, fmt, f.meanings())
+        except ValueError as exc:
+            ed.setStyleSheet(f"border-color: {theme.manager().tokens['danger']};")
+            ed.setToolTip(str(exc))
+            return
+        ed.setStyleSheet("")
+        self._stage(f, v)
+
+    def _stage(self, f, v):
+        if self._loading or self.staged is None:
+            return
+        self.staged = f.insert(self.staged, v) & 0xFFFFFFFF
+        self.value_ed.setText(hex32(self.staged))
+
+    def _value_edited(self, text):
+        try:
+            self.staged = parse_int(text) & 0xFFFFFFFF
+        except ValueError:
+            return
+        self._fill_fields()
+
+    def _reset_staged(self):
+        if self.reg is None:
+            return
+        self.staged = self._base_value()
+        self.value_ed.setText(hex32(self.staged))
+        self._fill_fields()
+
+    # ================================================================ bus access
+    def read_reg(self):
+        ip, reg = self.ip, self.reg
+        if not (self.link.connected and reg and reg.readable):
+            return
+        addr = ip.address(reg)
+
+        def ok(value):
+            if self.reg is reg:
+                self.read_value = value
+                self.staged = self._base_value()
+                self.value_ed.setText(hex32(self.staged))
+                self._fill_fields()
+            self._record(addr, value, "register paneli")
+        self.bus.run(lambda: self.link.read(addr), ok, lambda e: self.error("Okuma hatası", e))
+
+    # ---------------------------------------------------------------- shared read cache
+    def _record(self, addr, value, source):
+        """A value was read from the board (panel, live watch, config): remember it with the time
+        and show it on every screen that displays this address."""
+        now = time.time()
+        ts = time.strftime("%H:%M:%S", time.localtime(now))
+        self.reads[addr] = (value, ts, source)
+        # register panel
+        if self.reg is not None and self.reg.readable and self.ip.address(self.reg) == addr:
+            old_base = self._base_value()
+            changed = value != self.read_value
+            self.read_value = value
+            self.read_lbl.setText(hex32(value))
+            self.stamp.setText(f"Okundu {ts} · {source}")
+            editing = self.value_ed.hasFocus() or self.fields.isAncestorOf(QApplication.focusWidget() or self)
+            if self.staged == old_base and not editing:
+                self.staged = self._base_value()
+                self.value_ed.setText(hex32(self.staged))
+                if changed:
+                    self._fill_fields()
+            elif changed:
+                self._update_read_cells()
+        # live watch rows of the same address
+        for w in self.watch:
+            ip, reg = self._resolve(w["key"])
+            if reg is not None and ip.address(reg) == addr:
+                w["flash"] = w["value"] is not None and value != w["value"]
+                if value != w["value"]:
+                    w["changed"] = ts if w["value"] is not None else "—"
+                w["value"] = value
+                w["read"] = ts
+                w["history"].append((now, value))
+        self._fill_watch()
+        self._schedule_history()
+        self._fill_config()
+
+    def _update_read_cells(self):
+        """Refresh the "Okunan" and meaning cells without rebuilding the editors."""
+        reg = self.reg
+        if reg is None or self.read_value is None:
+            return
+        for row in range(self.fields.rowCount()):
+            f = reg.get_field(self.fields.item(row, F_NAME).text())
+            if f is None:
+                continue
+            rv = f.extract(self.read_value)
+            fmt = self._fmt(f)
+            self.fields.item(row, F_READ).setText(N.format_value(rv, f.width, fmt, f.meanings()))
+            meaning = f.read_meaning(rv)
+            self.fields.item(row, F_MEAN).setText(meaning or single_line(f.desc))
+
+    def _write(self, value, what):
+        ip, reg = self.ip, self.reg
+        if not (self.link.connected and reg and reg.writable):
+            return
+        addr = ip.address(reg)
+
+        def ok(_):
+            self.last_written[addr] = value
+            self.stamp.setText(f"{what} {time.strftime('%H:%M:%S')} · {hex32(value)}")
+            if reg.readable:
+                self.read_reg()
+            else:
+                self.staged = self._base_value()
+                self.value_ed.setText(hex32(self.staged))
+                self._fill_fields()
+        self.bus.run(lambda: self.link.write(addr, value), ok, lambda e: self.error("Yazma hatası", e))
+
+    def write_reg(self):
+        if self.reg is None or not self.reg.writable:
+            return
+        try:
+            value = parse_int(self.value_ed.text()) & 0xFFFFFFFF
+        except ValueError:
+            return self.error("Geçersiz değer", self.value_ed.text())
+        self._write(value, "Yazıldı")
+
+    def command(self, f, v):
+        """PULSE / W1C: write this field right away. Other fields keep their values; other PULSE
+        and W1C bits are written 0 so they do not fire."""
+        base = self._base_value()
+        self._write(f.insert(base, v) & 0xFFFFFFFF, f"{f.name} gönderildi")
+
+    def _command_from(self, ed, f, fmt):
+        try:
+            v = N.parse_value(ed.text(), f.width, fmt, f.meanings())
+        except ValueError as exc:
+            return self.status(f"{f.name}: {exc}")
+        self.command(f, v)
+
+    # ================================================================ custom value / map edits
+    def custom_value(self, f):
+        reg = self.reg
+        kind = f.kind or reg.access
+        command = kind in ("PULSE", "W1C")
+        cur = f.extract(self.staged) if self.staged is not None else 0
+        res = CustomValueDialog.ask(self, f, cur, KIND_READS.get(f.kind, reg.readable),
+                                    KIND_WRITES.get(f.kind, reg.writable), command)
+        if res is None:
+            return
+        if res["meaning"] is not None:
+            f.values = [e for e in f.values if e.value != res["meaning"].value] + [res["meaning"]]
+            f.values.sort(key=lambda e: e.value)
+            self._save_ip()
+        if res["now"]:
+            self.command(f, res["value"])
+        else:
+            self.staged = f.insert(self.staged, res["value"]) & 0xFFFFFFFF
+            self.value_ed.setText(hex32(self.staged))
+            self._fill_fields()
+
+    def edit_field_map(self, f):
+        res = FieldMapDialog.ask(self, f, f.kind)
+        if res is None:
+            return
+        f.fmt, f.values = res["fmt"], res["values"]
+        self._save_ip()
+        self._fill_fields()
+
+    def _save_ip(self):
+        """Persist an edit of the selected IP's register map in the project."""
+        if self.group == "project":
+            self.ctx.mark_modified(self.tool_id)
+        elif self.group == "extra":
+            self._set_extra([self.ip if x.name == self.ip.name else x for x in self._extra()])
+        self.status("Register haritası güncellendi")
+
+    # ================================================================ tree menu
+    def _cur_key(self):
+        if self.reg is None:
+            return None
+        if self.group == "raw":
+            return ("raw", hex32(self.ip.base), "DATA")
+        return (self.group, self.ip.name, self.reg.name)
+
+    def _resolve(self, key):
+        """(ip, reg) for a (group, ip, reg) key, or (None, None)."""
+        group, ipn, regn = key
+        if group == "raw":
+            ip = raw_ip(parse_int(ipn))
+        else:
+            ip = self._find_ip(group, ipn)
+        reg = ip.get_register(regn) if ip else None
+        return ip, reg
+
+    def _tree_menu(self, pos):
+        it = self.tree.itemAt(pos)
+        key = it.data(0, ROLE) if it else None
+        if not key or key[0] == "raw":
+            return
+        m = QMenu(self)
+        ip = self._find_ip(key[0], key[1])
+        if key[2] is None and ip:
+            regs = [(key[0], ip.name, r.name) for r in ip.registers if r.readable]
+            m.addAction(f"Tüm registerlarını izle ({len(regs)})", lambda: self.add_watch(regs))
+        elif ip:
+            reg = ip.get_register(key[2])
+            if reg and reg.readable:
+                m.addAction("Canlı izlemeye ekle", lambda: self.add_watch([key]))
+            if reg and reg.writable:
+                m.addAction("Config'e ekle (reset değeriyle)",
+                            lambda: self.add_config(key, reg.reset & ~reg.mask_of("PULSE", "W1C")))
+        if key[0] == "extra":
+            m.addSeparator()
+            m.addAction("Ek IP'yi kaldır", self.remove_extra)
+        if not m.isEmpty():
+            m.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def _decode(self, reg, v):
+        parts = []
+        for f in sorted(reg.fields, key=lambda f: -f.lsb):
+            fv = f.extract(v)
+            meaning = f.read_meaning(fv)
+            parts.append(f"{f.name}={meaning or N.format_value(fv, f.width, f.fmt, f.meanings())}")
+        return "  ".join(parts)
+
+    # ================================================================ detail trees (watch / config)
+    @staticmethod
+    def _detail_tree(headers, stretch):
+        tree = QTreeWidget()
+        tree.setHeaderLabels(headers)
+        tree.setAlternatingRowColors(True)
+        tree.setUniformRowHeights(True)
+        tree.setExpandsOnDoubleClick(False)
+        tree.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        tree.header().setStretchLastSection(False)
+        tree.header().setSectionResizeMode(stretch, QHeaderView.ResizeMode.Stretch)
+        tree.itemClicked.connect(lambda it, _c: it.childCount() and it.setExpanded(not it.isExpanded()))
+        return tree
+
+    def _field_rows(self, parent, reg, value, cols, other=None):
+        """Child rows of a register: one per bit field with its value in the field's type and its
+        meaning. cols = (name, bits, value, meaning[, other]); other: a second value (e.g. the one
+        on the device) shown in cols[4]."""
+        mono = theme.mono_font()
+        muted = theme.manager().color("muted")
+        fields = sorted(reg.fields, key=lambda f: -f.lsb)
+        while parent.childCount() < len(fields):
+            parent.addChild(QTreeWidgetItem())
+        while parent.childCount() > len(fields):
+            parent.removeChild(parent.child(parent.childCount() - 1))
+        for k, f in enumerate(fields):
+            ch = parent.child(k)
+            ch.setText(cols[0], f.name)
+            ch.setText(cols[1], f.bits)
+            ch.setFont(cols[1], mono)
+            ch.setForeground(cols[1], muted)
+            if value is None:
+                ch.setText(cols[2], "")
+                ch.setText(cols[3], single_line(f.desc))
+                ch.setForeground(cols[3], muted)
+            else:
+                fv = f.extract(value)
+                ch.setText(cols[2], N.format_value(fv, f.width, f.fmt, f.meanings()))
+                ch.setFont(cols[2], mono)
+                meaning = f.read_meaning(fv)
+                ch.setText(cols[3], meaning or single_line(f.desc))
+                ch.setForeground(cols[3], theme.manager().color("text") if meaning else muted)
+            if len(cols) > 4:
+                ch.setText(cols[4], "" if other is None else
+                           N.format_value(f.extract(other), f.width, f.fmt, f.meanings()))
+                ch.setFont(cols[4], mono)
+                differs = other is not None and value is not None and f.kind not in ("PULSE", "W1C") \
+                    and f.extract(other) != f.extract(value)
+                ch.setForeground(cols[4], theme.manager().color("danger" if differs else "text"))
+
+    def _reg_name(self, key, ip, reg):
+        if reg is None:
+            return f"{key[1]}.{key[2]} (bulunamadı)"
+        return f"Ham {hex32(ip.base)}" if key[0] == "raw" else f"{ip.name}.{reg.name}"
+
+    # ================================================================ live watch
+    def _build_watch_tab(self):
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self.poll_btn = ui.button("Başlat", "play", "primary", self.toggle_poll, "Seçilen periyotla sürekli oku")
+        row.addWidget(self.poll_btn)
+        row.addWidget(ui.label("Periyot", "muted"))
+        self.period_sp = QSpinBox()
+        self.period_sp.setRange(20, 60000)
+        self.period_sp.setSingleStep(50)
+        self.period_sp.setValue(500)
+        self.period_sp.setSuffix(" ms")
+        self.period_sp.valueChanged.connect(lambda v: (self.poll_timer.setInterval(v), self._update_watch_controls()))
+        row.addWidget(self.period_sp)
+        row.addWidget(ui.button("Bir kez oku", "read", "ghost", self._poll, "Listedeki registerları bir kez oku"))
+        row.addStretch(1)
+        self.watch_info = ui.label("", "muted")
+        row.addWidget(self.watch_info)
+        row.addWidget(ui.button("Tümünü aç", None, "ghost", lambda: self.watch_tree.expandAll()))
+        row.addWidget(ui.button("Tümünü kapat", None, "ghost", lambda: self.watch_tree.collapseAll()))
+        row.addWidget(ui.button("Kaldır", None, "ghost", self.remove_watch, "Seçili registerı izlemeden çıkar"))
+        row.addWidget(ui.button("Temizle", None, "ghost", self.clear_watch, "Listeyi boşalt"))
+        lay.addLayout(row)
+        self.watch_tree = self._detail_tree(["Register / bit alanı", "Adres / bitler", "Değer", "Anlamı",
+                                             "Son değişim", "Son okuma", "Okuma"], 3)
+        self.watch_tree.itemDoubleClicked.connect(self._watch_open)
+        self.watch_tree.setToolTip("Tıkla: bit alanlarını aç / kapat · çift tık: Register sekmesinde aç")
+        self.watch_tree.currentItemChanged.connect(lambda *_: self._fill_history())
+
+        hist = QWidget()
+        hl = QVBoxLayout(hist)
+        hl.setContentsMargins(0, 6, 0, 0)
+        hl.setSpacing(6)
+        hrow = QHBoxLayout()
+        hrow.setSpacing(6)
+        self.hist_title = ui.label("GEÇMİŞ", "section")
+        hrow.addWidget(self.hist_title)
+        hrow.addStretch(1)
+        self.hist_changes = QCheckBox("Sadece değişimler")
+        self.hist_changes.setChecked(True)
+        self.hist_changes.toggled.connect(lambda *_: self._fill_history())
+        hrow.addWidget(self.hist_changes)
+        hrow.addWidget(ui.button("CSV'ye aktar…", "save", "ghost", self.export_history,
+                                 "İzlenen tüm registerların kaydını CSV dosyasına yaz"))
+        hrow.addWidget(ui.button("Geçmişi temizle", None, "ghost", self.clear_history))
+        hl.addLayout(hrow)
+        self.hist_tree = self._detail_tree(["Zaman", "Değer", "Değişen bit alanları", "Bit alanları"], 3)
+        self.hist_tree.setToolTip("Tıkla: o andaki bit alanlarını aç / kapat")
+        hl.addWidget(self.hist_tree, 1)
+
+        wsplit = QSplitter(Qt.Orientation.Vertical)
+        wsplit.addWidget(self.watch_tree)
+        wsplit.addWidget(hist)
+        wsplit.setSizes([300, 300])
+        lay.addWidget(wsplit, 1)
+        self._hist_pending = False
+        return tab
+
+    # ---------------------------------------------------------------- watch history
+    def _sel_watch(self):
+        i = self._watch_index(self.watch_tree.currentItem()) if hasattr(self, "watch_tree") else -1
+        return self.watch[i] if 0 <= i < len(self.watch) else None
+
+    def _schedule_history(self):
+        """Throttle history refreshes while polling fast."""
+        if not self._hist_pending:
+            self._hist_pending = True
+            QTimer.singleShot(300, self._fill_history)
+
+    def _fill_history(self):
+        self._hist_pending = False
+        if not hasattr(self, "hist_tree"):
+            return
+        w = self._sel_watch()
+        tree = self.hist_tree
+        tree.clear()
+        if w is None:
+            self.hist_title.setText("GEÇMİŞ · bir register seç")
+            return
+        ip, reg = self._resolve(w["key"])
+        samples = list(w["history"])
+        rows, prev = [], None
+        for ts, v in samples:
+            changed = prev is None or v != prev
+            if changed or not self.hist_changes.isChecked():
+                rows.append((ts, v, prev))
+            prev = v
+        self.hist_title.setText(f"GEÇMİŞ · {self._reg_name(w['key'], ip, reg)} · {len(samples)} okuma, "
+                                f"{sum(1 for i in range(len(samples)) if i == 0 or samples[i][1] != samples[i - 1][1])} "
+                                f"değişim")
+        mono = theme.mono_font()
+        accent = theme.manager().color("accent")
+        for ts, v, prev in reversed(rows[-HISTORY_SHOWN:]):
+            diff = []
+            if reg is not None and prev is not None:
+                diff = [f.name for f in sorted(reg.fields, key=lambda f: -f.lsb) if f.extract(v) != f.extract(prev)]
+            it = QTreeWidgetItem([datetime.datetime.fromtimestamp(ts).strftime("%H:%M:%S.%f")[:-3], hex32(v),
+                                  ", ".join(diff) if prev is not None else "ilk okuma",
+                                  self._decode(reg, v) if reg is not None else ""])
+            it.setFont(0, mono)
+            it.setFont(1, mono)
+            if diff:
+                it.setForeground(2, accent)
+            tree.addTopLevelItem(it)
+            if reg is not None:
+                self._field_rows(it, reg, v, (0, 1, 1, 3))
+                for k in range(it.childCount()):          # keep the time column for the field name
+                    ch = it.child(k)
+                    f = sorted(reg.fields, key=lambda f: -f.lsb)[k]
+                    ch.setText(0, f"{f.name} {f.bits}")
+                    ch.setText(1, N.format_value(f.extract(v), f.width, f.fmt, f.meanings()))
+                    if prev is not None and f.extract(v) != f.extract(prev):
+                        ch.setForeground(1, accent)
+        for c in (0, 1, 2):
+            tree.resizeColumnToContents(c)
+
+    def clear_history(self):
+        for w in self.watch:
+            w["history"].clear()
+        self._fill_history()
+
+    def export_history(self):
+        if not any(w["history"] for w in self.watch):
+            QMessageBox.information(self, self.title, "Henüz kayıt yok: canlı izlemeyi başlat.")
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Canlı izleme kaydı",
+                                              os.path.join(os.path.dirname(self.ctx.path or ROOT),
+                                                           time.strftime("izleme_%Y%m%d_%H%M%S.csv")), "CSV (*.csv)")
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as fh:
+                wr = csv.writer(fh)
+                wr.writerow(["zaman", "register", "adres", "deger", "bit_alanlari"])
+                rows = []
+                for w in self.watch:
+                    ip, reg = self._resolve(w["key"])
+                    name = self._reg_name(w["key"], ip, reg)
+                    addr = hex32(ip.address(reg)) if reg else ""
+                    for ts, v in w["history"]:
+                        rows.append((ts, name, addr, hex32(v), self._decode(reg, v) if reg else ""))
+                for ts, *rest in sorted(rows):
+                    wr.writerow([datetime.datetime.fromtimestamp(ts).isoformat(timespec="milliseconds"), *rest])
+        except OSError as exc:
+            return self.error("Kaydedilemedi", exc)
+        self.status(f"Kayıt aktarıldı: {path}")
+
+    def add_watch(self, keys):
+        have = {w["key"] for w in self.watch}
+        added = 0
+        for key in keys:
+            if key and key not in have:
+                ip, reg = self._resolve(key)
+                cached = self.reads.get(ip.address(reg)) if reg else None
+                self.watch.append({"key": key, "value": cached[0] if cached else None, "changed": None,
+                                   "read": cached[1] if cached else None, "count": 0, "flash": False,
+                                   "history": collections.deque(maxlen=HISTORY_MAX)})
+                added += 1
+        self._fill_watch()
+        self.status(f"{added} register canlı izlemeye eklendi")
+
+    def _watch_index(self, item):
+        while item is not None and item.parent() is not None:
+            item = item.parent()
+        return self.watch_tree.indexOfTopLevelItem(item) if item is not None else -1
+
+    def _watch_open(self, item, _col=0):
+        i = self._watch_index(item)
+        if 0 <= i < len(self.watch):
+            self._goto(self.watch[i]["key"])
+            self.rtabs.show_page(self.reg_card)
+
+    def remove_watch(self):
+        i = self._watch_index(self.watch_tree.currentItem())
+        if 0 <= i < len(self.watch):
+            del self.watch[i]
+            self._fill_watch(rebuild=True)
+            self._fill_history()
+
+    def clear_watch(self):
+        self.watch.clear()
+        self._fill_watch(rebuild=True)
+        self._fill_history()
+
+    def toggle_poll(self):
+        if self.poll_timer.isActive():
+            self.poll_timer.stop()
+        elif self.link.connected and self.watch:
+            self.poll_timer.start(self.period_sp.value())
+            self._poll()
+        self._update_watch_controls()
+
+    def _update_watch_controls(self):
+        if not hasattr(self, "poll_btn"):
+            return
+        running = self.poll_timer.isActive()
+        if running and not self.link.connected:
+            self.poll_timer.stop()
+            running = False
+        self.poll_btn.setText("Durdur" if running else "Başlat")
+        self.poll_btn.setEnabled(self.link.connected and bool(self.watch))
+        n = len(self.watch)
+        self.watch_info.setText((f"{n} register · her {self.period_sp.value()} ms" if running else f"{n} register")
+                                if n else "Register sekmesindeki İzle düğmesi ya da ağaçta sağ tık ile ekle")
+
+    def _poll(self):
+        if self._polling or not self.link.connected or not self.watch:
+            return
+        targets = []
+        for w in self.watch:
+            ip, reg = self._resolve(w["key"])
+            targets.append(ip.address(reg) if ip and reg and reg.readable else None)
+        self._polling = True
+
+        def job():
+            self.link.quiet = True
+            try:
+                return [self.link.read(a) if a is not None else None for a in targets]
+            finally:
+                self.link.quiet = False
+
+        def ok(values):
+            self._polling = False
+            for w, a, v in zip(self.watch, targets, values):
+                if a is not None:
+                    w["count"] += 1
+            done = set()
+            for a, v in zip(targets, values):
+                if a is not None and a not in done:
+                    done.add(a)
+                    self._record(a, v, "canlı izleme")
+
+        def err(exc):
+            self._polling = False
+            self.poll_timer.stop()
+            self._update_watch_controls()
+            self.error("Canlı izleme durdu", exc)
+        self.bus.run(job, ok, err)
+
+    def _fill_watch(self, rebuild=False):
+        if not hasattr(self, "watch_tree"):
+            return
+        t = theme.manager().tokens
+        mono = theme.mono_font()
+        tree = self.watch_tree
+        if rebuild or tree.topLevelItemCount() != len(self.watch):
+            open_keys = {self.watch[i]["key"] for i in range(min(len(self.watch), tree.topLevelItemCount()))
+                         if tree.topLevelItem(i).isExpanded()} if not rebuild else set()
+            tree.clear()
+            for w in self.watch:
+                it = QTreeWidgetItem()
+                tree.addTopLevelItem(it)
+                it.setExpanded(w["key"] in open_keys)
+        for i, w in enumerate(self.watch):
+            it = tree.topLevelItem(i)
+            ip, reg = self._resolve(w["key"])
+            v = w["value"]
+            texts = [self._reg_name(w["key"], ip, reg), hex32(ip.address(reg)) if reg else "",
+                     hex32(v) if v is not None else "", self._decode(reg, v) if reg and v is not None else "",
+                     w["changed"] or "", w.get("read") or "", str(w["count"])]
+            for c, text in enumerate(texts):
+                it.setText(c, text)
+                it.setForeground(c, QColor(t["danger"] if reg is None else
+                                           (t["accent"] if w["flash"] and c in (2, 3) else t["text"])))
+            bold = it.font(0)
+            bold.setBold(True)
+            it.setFont(0, bold)
+            for c in (1, 2):
+                f = QFont(mono)
+                f.setBold(w["flash"] and c == 2)
+                it.setFont(c, f)
+            if reg is not None:
+                self._field_rows(it, reg, v, (0, 1, 2, 3))
+        for c in (0, 1, 2, 4, 5, 6):
+            tree.resizeColumnToContents(c)
+        self._update_watch_controls()
+
+    def _goto(self, key):
+        """Select a register in the address map."""
+        if key[0] == "raw":
+            self.raw_ed.setText(key[1])
+            for i in range(self.tree.topLevelItemCount()):
+                it = self.tree.topLevelItem(i)
+                if it.data(0, ROLE) and it.data(0, ROLE)[0] == "raw":
+                    self.tree.setCurrentItem(it)
+            self._raw_addr_changed()
+            return
+
+        def walk(it):
+            if it.data(0, ROLE) == key:
+                return it
+            for i in range(it.childCount()):
+                found = walk(it.child(i))
+                if found:
+                    return found
+            return None
+        for i in range(self.tree.topLevelItemCount()):
+            found = walk(self.tree.topLevelItem(i))
+            if found:
+                self.tree.setCurrentItem(found)
+                return
+
+    # ================================================================ config
+    def _build_config_tab(self):
+        tab = QWidget()
+        lay = QVBoxLayout(tab)
+        lay.setContentsMargins(16, 12, 16, 12)
+        lay.setSpacing(8)
+        row = QHBoxLayout()
+        row.setSpacing(6)
+        self.send_btn = ui.button("Cihaza gönder", "write", "primary", self.send_config,
+                                  "Listedeki değerleri sırayla yaz")
+        row.addWidget(self.send_btn)
+        self.capture_btn = ui.button("Cihazdan oku", "read", "ghost", self.capture_config,
+                                     "Listedeki registerların şu anki değerlerini cihazdan al")
+        row.addWidget(self.capture_btn)
+        self.compare_btn = ui.button("Karşılaştır", None, "ghost", self.compare_config,
+                                     "Cihazdaki değerleri oku, config değerleri değişmez")
+        row.addWidget(self.compare_btn)
+        row.addSpacing(8)
+        row.addWidget(ui.button("Aç…", "folder", "ghost", self.open_config))
+        row.addWidget(ui.button("Kaydet…", "save", "ghost", self.save_config_file))
+        row.addStretch(1)
+        self.cfg_info = ui.label("", "muted")
+        row.addWidget(self.cfg_info)
+        row.addWidget(ui.button("↑", None, "ghost", lambda: self.move_config(-1)))
+        row.addWidget(ui.button("↓", None, "ghost", lambda: self.move_config(1)))
+        row.addWidget(ui.button("Sil", None, "ghost", self.delete_config))
+        lay.addLayout(row)
+        self.cfg_tree = self._detail_tree(["#", "Register / bit alanı", "Adres / bitler", "Değer", "Anlamı",
+                                           "Cihazda (son okunan)"], 4)
+        self.cfg_tree.itemDoubleClicked.connect(lambda it, _c: self.load_config_row(self._cfg_index(it)))
+        self.cfg_tree.setToolTip("Tıkla: bit alanlarını aç / kapat · çift tık: Register sekmesinde düzenle")
+        lay.addWidget(self.cfg_tree, 1)
+        return tab
+
+    def _cfg_index(self, item):
+        while item is not None and item.parent() is not None:
+            item = item.parent()
+        return self.cfg_tree.indexOfTopLevelItem(item) if item is not None else -1
+
+    def add_config(self, key, value):
+        self.config.append({"key": key, "value": value & 0xFFFFFFFF})
+        self._fill_config(len(self.config) - 1, rebuild=True)
+
+    def config_from_panel(self):
+        if self.reg is None or self.staged is None:
+            return
+        key = self._cur_key()
+        if self.cfg_edit is not None and self.cfg_edit < len(self.config) and self.config[self.cfg_edit]["key"] == key:
+            self.config[self.cfg_edit]["value"] = self.staged
+            row = self.cfg_edit
+            self.cfg_edit = None
+            self._fill_config(row)
+            self.status("Config satırı güncellendi")
+        else:
+            self.add_config(key, self.staged)
+            self.status(f"Config'e eklendi: {hex32(self.staged)} (Config sekmesi)")
+        self._update_controls()
+
+    def load_config_row(self, r):
+        """Open a config row in the Register tab; "Config satırını güncelle" writes it back."""
+        if not 0 <= r < len(self.config):
+            return
+        row = self.config[r]
+        self._goto(row["key"])
+        if self.reg is None or self._cur_key() != row["key"]:
+            return
+        self.cfg_edit = r
+        self.staged = row["value"]
+        self.value_ed.setText(hex32(self.staged))
+        self._fill_fields()
+        self._update_controls()
+        self.rtabs.show_page(self.reg_card)
+        self.status(f"Config satırı {r + 1} düzenleniyor: bit alanlarını değiştir, sonra Config satırını güncelle")
+
+    def delete_config(self):
+        r = self._cfg_index(self.cfg_tree.currentItem())
+        if 0 <= r < len(self.config):
+            del self.config[r]
+            self.cfg_edit = None
+            self._fill_config(min(r, len(self.config) - 1), rebuild=True)
+
+    def move_config(self, d):
+        r = self._cfg_index(self.cfg_tree.currentItem())
+        if 0 <= r < len(self.config) and 0 <= r + d < len(self.config):
+            self.config[r], self.config[r + d] = self.config[r + d], self.config[r]
+            self.cfg_edit = None
+            self._fill_config(r + d, rebuild=True)
+
+    def _fill_config(self, select=None, rebuild=False):
+        if not hasattr(self, "cfg_tree"):
+            return
+        t = theme.manager().tokens
+        mono = theme.mono_font()
+        tree = self.cfg_tree
+        if rebuild or tree.topLevelItemCount() != len(self.config):
+            tree.clear()
+            for _ in self.config:
+                tree.addTopLevelItem(QTreeWidgetItem())
+        for r, row in enumerate(self.config):
+            it = tree.topLevelItem(r)
+            ip, reg = self._resolve(row["key"])
+            cached = self.reads.get(ip.address(reg)) if reg is not None else None
+            dev = f"{hex32(cached[0])} · {cached[1]}" if cached else ""
+            texts = [str(r + 1), self._reg_name(row["key"], ip, reg), hex32(ip.address(reg)) if reg else "",
+                     hex32(row["value"]), self._decode(reg, row["value"]) if reg else "", dev]
+            for c, text in enumerate(texts):
+                it.setText(c, text)
+                it.setForeground(c, QColor(t["danger"] if reg is None else t["text"]))
+            if cached:
+                same = (cached[0] & ~reg.mask_of("PULSE", "W1C")) == (row["value"] & ~reg.mask_of("PULSE", "W1C"))
+                it.setForeground(5, QColor(t["success"] if same else t["danger"]))
+                it.setToolTip(5, "Cihazdaki değer config ile aynı" if same else "Cihazdaki değer config'ten farklı")
+            bold = it.font(1)
+            bold.setBold(True)
+            it.setFont(1, bold)
+            for c in (2, 3, 5):
+                it.setFont(c, mono)
+            if reg is not None:
+                self._field_rows(it, reg, row["value"], (1, 2, 3, 4, 5), cached[0] if cached else None)
+        for c in (0, 1, 2, 3, 5):
+            tree.resizeColumnToContents(c)
+        if select is not None and 0 <= select < len(self.config):
+            tree.setCurrentItem(tree.topLevelItem(select))
+        self._update_config_controls()
+
+    def _update_config_controls(self):
+        if not hasattr(self, "send_btn"):
+            return
+        ok = self.link.connected and bool(self.config)
+        for b in (self.send_btn, self.capture_btn, self.compare_btn):
+            b.setEnabled(ok)
+        n = len(self.config)
+        self.cfg_info.setText((f"{n} yazma" + (f" · {os.path.basename(self.cfg_path)}" if self.cfg_path else ""))
+                              if n else "Register sekmesindeki Config'e ekle düğmesiyle satır ekle")
+
+    def send_config(self):
+        rows = []
+        for row in self.config:
+            ip, reg = self._resolve(row["key"])
+            if not reg:
+                return self.error("Gönderilemedi", f"{row['key'][1]}.{row['key'][2]} adres haritasında yok")
+            rows.append((f"{ip.name}.{reg.name}", ip.address(reg), row["value"], reg.readable))
+
+        def job():
+            for name, addr, value, _r in rows:
+                self.link.write(addr, value)
+            return [(addr, self.link.read(addr)) for _n, addr, _v, readable in rows if readable]
+
+        def ok(readback):
+            self.status(f"Config gönderildi: {len(rows)} yazma")
+            self._log.emit("INFO", f"Config gönderildi ({len(rows)} yazma)")
+            for addr, v in readback:
+                self._record(addr, v, "config geri okuma")
+        self.bus.run(job, ok, lambda e: self.error("Config gönderilemedi", e))
+
+    def _read_config_targets(self, on_done):
+        targets = []
+        for i, row in enumerate(self.config):
+            ip, reg = self._resolve(row["key"])
+            if reg and reg.readable:
+                targets.append((i, ip.address(reg), reg.mask_of("PULSE", "W1C")))
+
+        def job():
+            return [(i, a, clear, self.link.read(a)) for i, a, clear in targets]
+
+        def ok(values):
+            for i, a, clear, v in values:
+                self._record(a, v, "config")
+            on_done(values)
+        self.bus.run(job, ok, lambda e: self.error("Okunamadı", e))
+
+    def capture_config(self):
+        def done(values):
+            for i, a, clear, v in values:
+                self.config[i]["value"] = v & ~clear & 0xFFFFFFFF
+            self._fill_config()
+            self.status(f"{len(values)} değer cihazdan alındı (salt yazılır registerlar değişmedi)")
+        self._read_config_targets(done)
+
+    def compare_config(self):
+        self._read_config_targets(lambda values: self.status(
+            f"{len(values)} register okundu; farklı olanlar Cihazda sütununda kırmızı"))
+
+    def open_config(self):
+        path, _ = QFileDialog.getOpenFileName(self, "Config dosyası", os.path.dirname(self.cfg_path or self.ctx.path or ROOT),
+                                              "Config (*.axcfg.json);;JSON (*.json)")
+        if not path:
+            return
+        try:
+            writes = load_config(path)
+        except Exception as exc:  # noqa: BLE001
+            return self.error("Açılamadı", exc)
+        self.config = []
+        for ipn, regn, value in writes:
+            group = "extra" if any(x.name == ipn for x in self._extra()) and not self.ctx.project.get_ip(ipn) \
+                else "project"
+            self.config.append({"key": (group, ipn, regn), "value": value})
+        self.cfg_path, self.cfg_edit = path, None
+        self._fill_config(rebuild=True)
+        self.rtabs.show_page(self.cfg_tab)
+
+    def save_config_file(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Config dosyası",
+                                              self.cfg_path or os.path.join(os.path.dirname(self.ctx.path or ROOT),
+                                                                            "config.axcfg.json"),
+                                              "Config (*.axcfg.json)")
+        if not path:
+            return
+        writes = [(row["key"][1], row["key"][2], row["value"]) for row in self.config if row["key"][0] != "raw"]
+        try:
+            save_config(path, writes)
+        except OSError as exc:
+            return self.error("Kaydedilemedi", exc)
+        self.cfg_path = path
+        skipped = len(self.config) - len(writes)
+        self.status(f"Kaydedildi: {path}" + (f" ({skipped} ham adres satırı dosyaya yazılmadı)" if skipped else ""))
+        self._update_config_controls()
+
+    # ================================================================ log / theme / close
+    def _append_log(self, direction, text):
+        if direction == "IDLE":
+            return
+        self.log.appendPlainText(f"{time.strftime('%H:%M:%S')}  {direction:<4} {text}")
+
+    def on_theme(self):
+        self.refresh_btn.setIcon(icons.icon("refresh", "text", 16))
+        if self.reg:
+            self._fill_fields()
+
+    def shutdown(self):
+        self.poll_timer.stop()
+        self.link.close()
+        self.bus.shutdown()
