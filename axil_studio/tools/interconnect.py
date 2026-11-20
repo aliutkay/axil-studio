@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -173,6 +173,16 @@ class InterconnectPage(ToolPage):
         pv_tab = self.pv_tab = QWidget()
         pv = QVBoxLayout(pv_tab)
         pv.setContentsMargins(12, 12, 12, 12)
+        frow = QHBoxLayout()
+        frow.addWidget(ui.label("Dosya", "muted"))
+        self.vfile_cb = QComboBox()
+        self.vfile_cb.setMinimumWidth(380)
+        self.vfile_cb.setToolTip("Önizlenecek dosya: üretilen wrapper'lar ya da yalnızca parametreleriyle kullanılan "
+                                 "ZipCPU axilxbar.v")
+        self.vfile_cb.currentIndexChanged.connect(lambda *_: self._refresh_preview())
+        frow.addWidget(self.vfile_cb)
+        frow.addStretch(1)
+        pv.addLayout(frow)
         self.preview = QPlainTextEdit()
         self.preview.setReadOnly(True)
         self.preview.setProperty("mono", "true")
@@ -313,13 +323,31 @@ class InterconnectPage(ToolPage):
         if not self.tabs.is_shown(self.pv_tab):
             return
         spec = self.spec()
+        files = [("main", f"{spec.module}.v  —  ayrık AXI portlu wrapper")]
+        if spec.packed:
+            files.append(("pk", f"{spec.module}_pk.v  —  HDL Designer wrapper'ı (REQ/RSP)"))
+        files.append(("core", "axilxbar.v  —  ZipCPU, yalnızca parametreleriyle (değiştirilmez)"))
+        cur = self.vfile_cb.currentData() or "main"
+        self.vfile_cb.blockSignals(True)
+        self.vfile_cb.clear()
+        for key, text in files:
+            self.vfile_cb.addItem(text, key)
+        self.vfile_cb.setCurrentIndex(max(0, self.vfile_cb.findData(cur)))
+        self.vfile_cb.blockSignals(False)
+        which = self.vfile_cb.currentData()
         errs = spec.validate() if spec.slaves else ["Adres haritası boş"]
-        if errs:
+        if which == "core":
+            try:
+                with open(os.path.join(ROOT, "hdl", "axilxbar.v"), encoding="utf-8") as fh:
+                    text = fh.read()
+            except OSError as exc:
+                text = f"// hdl/axilxbar.v okunamadı: {exc}"
+        elif errs:
             text = "// Ayarlarda hata var, Verilog üretilemiyor:\n// " + "\n// ".join(errs)
+        elif which == "pk":
+            text = X.gen_xbar_pk(spec)    # HDL Designer block around the main wrapper
         else:
             text = X.gen_xbar(spec)       # axilxbar configured by parameters, separate AXI ports
-            if spec.packed:
-                text += "\n\n" + X.gen_xbar_pk(spec)
         bar = self.preview.verticalScrollBar().value()
         self.preview.setPlainText(text)
         self.preview.verticalScrollBar().setValue(bar)

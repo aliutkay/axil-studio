@@ -10,6 +10,18 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.3 — VHDL yok, önizlemede dosya seçimi
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.3 |
+| Slave Interface Wrapper | early-alpha 0.2.1 |
+| Interconnect Configurator | early-alpha 0.2.1 |
+
+- VHDL component dosyaları (`<ip>_comp.vhd`, `<ip>_pk_comp.vhd`, hazır IP wrapper'ının `_comp.vhd`'si) artık üretilmiyor.
+- Verilog önizlemede dosya seçilir. Slave: IP, HDL Designer wrapper'ı (`_pk.v`), örnekleme şablonları, testbench.
+  Interconnect: `<ad>.v`, `<ad>_pk.v`, ZipCPU `axilxbar.v` (salt okunur).
+
 ## early-alpha 0.1.2 — ZipCPU yapısına sadık HDL
 
 | Bileşen | Sürüm |

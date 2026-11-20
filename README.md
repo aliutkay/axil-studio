@@ -81,6 +81,11 @@ bir registera çift tık) Register Map Editor'u açar; değişiklikler Wrapper'a
 python -m axil_studio.core.axilgen my_ip.regspec.json -o out --project bench.axproj.json   # komut satırı
 ```
 
+VHDL dosyası üretilmez (ZipCPU kaynaklarının da VHDL karşılığı yok). **Verilog önizleme** sekmesinde *Dosya*
+listesinden hangi dosyanın gösterileceği seçilir: IP (`<ip>.v`), HDL Designer wrapper'ı (`<ip>_pk.v`), örnekleme
+şablonları ve testbench. Interconnect Configurator'da da aynı liste vardır: `<ad>.v`, `<ad>_pk.v` ve başvuru için
+ZipCPU `axilxbar.v` (salt okunur).
+
 **Alan tipleri**
 
 | Tip | Port | Davranış |
@@ -93,10 +98,10 @@ python -m axil_studio.core.axilgen my_ip.regspec.json -o out --project bench.axp
 
 Register seçenekleri: `o_<reg>_wr` / `o_<reg>_rd` strobe'ları (FIFO push/pop için).
 
-**HDL Designer için paketli AXI wrapper'ı** (kutu işaretliyse): IP her zaman normal `S_AXI_*` portlu `<ip>.v` olarak üretilir; üstüne `<ip>_pk.v` HDL Designer bloğu (`SLAVE_AXI_REQ/RSP`, içinde normal IP) ve onun `_pk_inst.v` / `_pk_comp.vhd` şablonları eklenir. Hazır IP'ler için aynı blok **Hazır IP için HDL Designer wrapper'ı…** ile üretilir.
+**HDL Designer için paketli AXI wrapper'ı** (kutu işaretliyse): IP her zaman normal `S_AXI_*` portlu `<ip>.v` olarak üretilir; üstüne `<ip>_pk.v` HDL Designer bloğu (`SLAVE_AXI_REQ/RSP`, içinde normal IP) ve onun `_pk_inst.v` örnekleme şablonu eklenir. Hazır IP'ler için aynı blok **Hazır IP için HDL Designer wrapper'ı…** ile üretilir.
 
-**Üretilen dosyalar:** `<ip>.v` (normal S_AXI_* portlu IP), `<ip>_pk.v` + `_pk_inst.v` + `_pk_comp.vhd` (HDL Designer wrapper'ı, isteğe bağlı), `<ip>_tb.v` (kendini kontrol eden testbench),
-`<ip>_inst.v`, `<ip>_comp.vhd`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.regspec.json`, `<ip>.axproj.json`, `<ip>_regmap.xlsx`.
+**Üretilen dosyalar:** `<ip>.v` (normal S_AXI_* portlu IP), `<ip>_pk.v` + `_pk_inst.v` (HDL Designer wrapper'ı, isteğe bağlı), `<ip>_tb.v` (kendini kontrol eden testbench),
+`<ip>_inst.v`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.regspec.json`, `<ip>.axproj.json`, `<ip>_regmap.xlsx`.
 
 **Açıklamalar ve değer anlamları:** IP, register ve alan açıklamaları çok satırlı yazılabilir.
 Her alana bir değer tablosu eklenebilir: her satırda değer, *okunursa anlamı* ve *yazılırsa etkisi* var.

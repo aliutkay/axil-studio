@@ -14,8 +14,8 @@ import subprocess
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QCheckBox, QFileDialog, QListWidget, QListWidgetItem, QMessageBox,
-                               QPlainTextEdit, QSplitter, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QListWidget, QListWidgetItem,
+                               QMessageBox, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget)
 
 from axil_studio.core import axilgen as G
 from axil_studio.core import axilpack
@@ -26,13 +26,18 @@ from axil_studio.tools.regmap import SPEC_FILTER, fill_regmap_tree, regmap_tree
 from axil_studio.core.model import hex32
 
 
+# what each generated Verilog file is (preview selector)
+def verilog_label(spec, name):
+    m = spec.module
+    return {f"{m}.v": "IP (easyaxil, S_AXI_*)", f"{m}_pk.v": "HDL Designer wrapper'ı (SLAVE_AXI_REQ/RSP)",
+            f"{m}_inst.v": "örnekleme şablonu", f"{m}_pk_inst.v": "HDL Designer wrapper'ı örnekleme şablonu",
+            f"{m}_tb.v": "testbench"}.get(name, "")
+
+
 def output_files(spec):
     """Names of the files generate_all() writes for `spec`."""
     m = spec.module
-    names = [f"{m}.v", f"{m}_tb.v", f"{m}_inst.v", f"{m}_comp.vhd"]
-    if spec.packed:
-        names += [f"{m}_pk.v", f"{m}_pk_inst.v", f"{m}_pk_comp.vhd"]
-    names += [f"{m}_regs.h", f"{m}_regs.md", f"{m}.regspec.json", f"{m}.axproj.json"]
+    names = list(G.verilog_files(spec)) + [f"{m}_regs.h", f"{m}_regs.md", f"{m}.regspec.json", f"{m}.axproj.json"]
     if regmap_xlsx.available():
         names.append(f"{m}_regmap.xlsx")
     return names
@@ -46,11 +51,12 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self.spec = None
+        self._vfile_module = ""
         self.origin = None          # ("project", ip name) | ("file", path) | ("other", label)
         self.outdir = None
         self._loading = False
@@ -120,6 +126,17 @@ class WrapperPage(ToolPage):
             tab = QWidget()
             tl = QVBoxLayout(tab)
             tl.setContentsMargins(12, 12, 12, 12)
+            if key == "verilog":
+                frow = QHBoxLayout()
+                frow.addWidget(ui.label("Dosya", "muted"))
+                self.vfile_cb = QComboBox()
+                self.vfile_cb.setMinimumWidth(360)
+                self.vfile_cb.setToolTip("Önizlenecek Verilog dosyası: IP, HDL Designer wrapper'ı, örnekleme "
+                                         "şablonları, testbench")
+                self.vfile_cb.currentIndexChanged.connect(lambda *_: self._refresh_preview())
+                frow.addWidget(self.vfile_cb)
+                frow.addStretch(1)
+                tl.addLayout(frow)
             ed = QPlainTextEdit()
             ed.setReadOnly(True)
             ed.setProperty("mono", "true")
@@ -259,6 +276,7 @@ class WrapperPage(ToolPage):
                                 "dosyası aç. Register haritası Register Map Editor'da tasarlanır.")
             self.issues.set_issues([])
             fill_regmap_tree(self.regs, None)
+            self._fill_vfiles()
             self._refresh_preview()
             return
         o = self.origin or ("other", "")
@@ -280,7 +298,22 @@ class WrapperPage(ToolPage):
         self.issues.set_issues(errs)
         self.gen_btn.setEnabled(not errs)
         fill_regmap_tree(self.regs, G.to_ipblock(spec, 0))
+        self._fill_vfiles()
         self._refresh_preview()
+
+    def _fill_vfiles(self):
+        """Verilog files of the current IP in the preview selector (keeps the choice by kind)."""
+        cur = self.vfile_cb.currentData() or ""
+        suffix = cur[len(self._vfile_module):] if cur.startswith(self._vfile_module) else ".v"
+        self.vfile_cb.blockSignals(True)
+        self.vfile_cb.clear()
+        if self.spec is not None:
+            for name in G.verilog_files(self.spec):
+                self.vfile_cb.addItem(f"{name}  —  {verilog_label(self.spec, name)}", name)
+            self._vfile_module = self.spec.module
+            i = self.vfile_cb.findData(self.spec.module + suffix)
+            self.vfile_cb.setCurrentIndex(max(0, i))
+        self.vfile_cb.blockSignals(False)
 
     def _refresh_preview(self):
         for key, (tab, ed) in self.previews.items():
@@ -295,7 +328,8 @@ class WrapperPage(ToolPage):
                     if errs:
                         raise G.SpecError("\n".join(errs))
                     if key == "verilog":
-                        text = G.gen_verilog(spec)   # the IP itself (the _pk wrapper is separate)
+                        name = self.vfile_cb.currentData() or f"{spec.module}.v"
+                        text = G.output_texts(spec, name)
                     elif key == "header":
                         text = G.gen_header(spec)
                     else:
@@ -441,7 +475,7 @@ class WrapperPage(ToolPage):
                 with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
                     fh.write(text)
             groups = ", ".join(axilpack.PACKED_NAME[g] + "_REQ/RSP" for g in axilpack.axi_groups(info))
-            out.append(f"{info['name']}_pk.v (+ _inst.v, _comp.vhd)  →  {groups}")
+            out.append(f"{info['name']}_pk.v (+ _pk_inst.v)  →  {groups}")
         QMessageBox.information(self, "HDL Designer wrapper'ı üretildi",
                                 "\n".join(out) + f"\n\n{d}\n\nHDL Designer'da _pk bloğunu kullan. Orijinal "
                                 "modül dosyası da projede bulunmalı.")
