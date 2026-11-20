@@ -56,7 +56,21 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   bir IP açar. `.regspec.json` dosyasına kaydedip açmak ve **Kütüphaneye kaydet** de mümkündür.
 - **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
-- Kısayollar: Ctrl+R yeni register, Ctrl+F yeni alan, Enter düzenle, Delete sil.
+- **Port içe aktar…** (Ctrl+I): register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
+  ya da VHDL olarak yapıştırılır (modülün / entity'nin tamamı, yalnızca port listesi ya da port satırları; dil
+  kendiliğinden anlaşılır). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
+  çok boyutlu diziler, `integer range` çözülür; çözülemeyen genişlik tabloda elle yazılır. Çekirdeğin girişleri
+  RW (registerdan sürülür), çıkışları RO (registerdan okunur) olarak gelir; tip satır başına değiştirilebilir. Saat
+  ve reset portları baştan seçili gelmez. 32 bitten geniş sinyaller 32 bitlik parçalara bölünür
+  (`TIMESTAMP_0` [31:0], `TIMESTAMP_1` [63:32]). İsteğe bağlı alan adı öneki ve `i_` / `o_` öneklerini atma vardır;
+  her alanın açıklamasına kaynak yazılır (`my_core.o_timestamp[63:32]`).
+- Seçilen portlar **yerleştirilmemiş bit alanları** listesine eklenir; içe aktarma istenildiği kadar, blok blok
+  tekrarlanabilir. Alanlar bit haritasına sürüklenir (yeşil önizleme: yer uygun, kırmızı: dolu; birden çok alan yan
+  yana yerleşir), bir registerın üstüne bırakılınca ilk boş bitlere, register listesinin boş alanına bırakılınca
+  yeni bir registera girer. *Yerleştir* / çift tık seçili registera, *Yeni registera* yeni registera koyar; *Sil* /
+  Delete istenmeyenleri siler. Yerleşmiş bir alan sağ tık → *Yerleştirilmemişlere geri al* ile listeye döner.
+  Yerleştirilmemiş alanlar IP ile birlikte saklanır (proje, `.regspec.json`, kütüphane) ama HDL'e girmez.
+- Kısayollar: Ctrl+R yeni register, Ctrl+F yeni alan, Ctrl+I port içe aktar, Enter düzenle, Delete sil.
 
 ## Slave Interface Wrapper
 
@@ -273,6 +287,7 @@ Sürüm elle değiştirilmiş bir commit'te (ör. yeni özellik için 0.2.0) hoo
 | `xbargen.py` | axilxbar wrapper üretici (isimli portlar) |
 | `regmap_xlsx.py` | Kütük haritası Excel çıktısı |
 | `numfmt.py` | Bit alanı veri tipleri ve gösterimleri |
+| `portparse.py` | Verilog / SystemVerilog / VHDL port listesi çözümleyici (Port içe aktar) |
 
 Hexbus notları: her işlem `A<adres|1>W<veri>\n` veya `A<adres|1>R\n` olarak gönderilir (adres artırma kapalı);
 yanıtlar `A` adres, `K` yazma onayı, `R` okuma verisi, `E` AXI bus hatası, `Z` idle. Hexbus'ta FIFO yoktur;

@@ -208,6 +208,8 @@ class ModuleSpec:
     registers: List[RegSpec] = field(default_factory=list)
     packed: bool = True     # also write <module>_pk.v: HDL Designer wrapper with SLAVE_AXI_REQ/RSP ports
     version: str = "1.0.0"  # IP version (written into the generated files and the IP library)
+    unplaced: List[FieldSpec] = field(default_factory=list)   # bit fields not in a register yet
+                            # (e.g. imported from the ports of the IP core); not part of the HDL
     # base: last slave base address used (Excel / project). The IP itself decodes offsets only;
     # its real base is set where it is connected (interconnect / project), not in the spec.
 
@@ -215,7 +217,8 @@ class ModuleSpec:
     def to_dict(self):
         return {"format": SPEC_FORMAT, "version": 1, "module": self.module,
                 "base": f"0x{self.base:08X}", "desc": self.desc, "packed": self.packed, "ip_version": self.version,
-                "registers": [r.to_dict() for r in sorted(self.registers, key=lambda r: r.offset)]}
+                "registers": [r.to_dict() for r in sorted(self.registers, key=lambda r: r.offset)],
+                **({"unplaced": [f.to_dict() for f in self.unplaced]} if self.unplaced else {})}
 
     @staticmethod
     def from_dict(d):
@@ -223,7 +226,8 @@ class ModuleSpec:
             raise SpecError("Bu dosya bir register spesifikasyonu değil")
         return ModuleSpec(d.get("module", "my_ip_axil"), parse_int(d.get("base", 0)),
                           d.get("desc", ""), [RegSpec.from_dict(r) for r in d.get("registers", [])],
-                          bool(d.get("packed", True)), str(d.get("ip_version", "1.0.0")))
+                          bool(d.get("packed", True)), str(d.get("ip_version", "1.0.0")),
+                          [FieldSpec.from_dict(f) for f in d.get("unplaced", [])])
 
     def save(self, path):
         with open(path, "w", encoding="utf-8") as fh:

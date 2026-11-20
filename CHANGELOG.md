@@ -10,6 +10,20 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.4 — port listesinden bit alanları
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.4 |
+| Register Map Editor | early-alpha 0.2.0 |
+
+- Register Map Editor: **Port içe aktar** — IP çekirdeğinin Verilog / SystemVerilog ya da VHDL port listesi
+  yapıştırılır, seçilen portlar yerleştirilmemiş bit alanı olur (girişler RW, çıkışlar RO; 32 bitten geniş sinyaller
+  32 bitlik parçalara bölünür). Parça parça, birden çok blok için tekrarlanabilir.
+- Yerleştirilmemiş bit alanları paneli: bit haritasına (önizlemeli) ya da registerlara sürükle-bırak, yeni registera
+  koyma, silme, yerleşmiş alanı geri alma. Register spesifikasyonunda `unplaced` olarak saklanır, HDL'e girmez.
+- Yeni çekirdek modül `axil_studio/core/portparse.py`.
+
 ## early-alpha 0.1.3 — VHDL yok, önizlemede dosya seçimi
 
 | Bileşen | Sürüm |
