@@ -46,7 +46,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)

@@ -24,7 +24,7 @@ from axil_studio.tools.xbar_diagram import BlockDiagram
 from axil_studio.core.model import hex32
 
 XBAR_FILTER = "Interconnect ayarları (*.xbar.json);;JSON (*.json);;Tüm dosyalar (*)"
-STYLE_SHORT = {"packed": "HDL Designer (paketli)", "signals": "Ayrık AXI sinyalleri"}
+STYLE_SHORT = {"packed": "Ayrık + HDL Designer (_pk)", "signals": "Yalnızca ayrık portlar"}
 
 
 # ============================================================================ page
@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.1.0"
+    version = "0.2.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -72,7 +72,7 @@ class InterconnectPage(ToolPage):
                 self.style_cb.addItem(STYLE_SHORT[key], key)
                 self.style_cb.setItemData(self.style_cb.count() - 1, text, Qt.ItemDataRole.ToolTipRole)
         form.addRow("Modül adı", self.module_ed)
-        form.addRow("Port stili", self.style_cb)
+        form.addRow("Wrapper", self.style_cb)
         left.lay.addLayout(form)
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label("MASTER'LAR", "section"))
@@ -317,7 +317,9 @@ class InterconnectPage(ToolPage):
         if errs:
             text = "// Ayarlarda hata var, Verilog üretilemiyor:\n// " + "\n// ".join(errs)
         else:
-            text = X.gen_xbar(spec)
+            text = X.gen_xbar(spec)       # axilxbar configured by parameters, separate AXI ports
+            if spec.packed:
+                text += "\n\n" + X.gen_xbar_pk(spec)
         bar = self.preview.verticalScrollBar().value()
         self.preview.setPlainText(text)
         self.preview.verticalScrollBar().setValue(bar)
@@ -412,13 +414,12 @@ class InterconnectPage(ToolPage):
             paths = X.write_xbar(spec, outdir)
         except Exception as exc:  # noqa: BLE001
             return self.error("Üretim başarısız", exc)
-        hint = {
-            "packed": "Bağlantı: master MASTER_AXI_REQ/RSP → MASTER<i>_AXI_REQ/RSP, "
-                      "IP'nin _pk bloğu SLAVE_AXI_REQ/RSP → SLAVE<j>_AXI_REQ/RSP.",
-            "signals": "Bağlantı: MASTER<i>_AXI_* ve SLAVE<j>_AXI_* portları IP'lerin M_AXI_* / S_AXI_* "
-                       "portlarına bağlanır.",
-        }.get(spec.style, "")
+        hint = (f"{spec.module}.v: MASTER<i>_AXI_* ve SLAVE<j>_AXI_* portları IP'lerin M_AXI_* / S_AXI_* "
+                "portlarına bağlanır.")
+        if spec.packed:
+            hint += (f"\n{spec.module}_pk.v (HDL Designer, {spec.module}.v'yi sarar): master MASTER_AXI_REQ/RSP → "
+                     "MASTER<i>_AXI_REQ/RSP, IP'nin _pk bloğu SLAVE_AXI_REQ/RSP → SLAVE<j>_AXI_REQ/RSP.")
         QMessageBox.information(self, "Üretim tamamlandı",
                                 f"{outdir}\n\n" + "\n".join(os.path.basename(p) for p in paths)
-                                + f"\n\n{hint}\n\nHDL projesine hdl/axilxbar.v ile wb2axip'ten addrdecode.v ve "
-                                  "skidbuffer.v dosyaları da eklenmelidir.")
+                                + f"\n\n{hint}\n\naxilxbar yalnızca parametreleriyle yapılandırılır. HDL projesine "
+                                  "hdl/ klasöründeki axilxbar.v, addrdecode.v ve skidbuffer.v de eklenmelidir.")

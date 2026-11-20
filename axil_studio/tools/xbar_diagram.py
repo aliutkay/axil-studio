@@ -259,8 +259,8 @@ class BlockDiagram(QWidget):
             p.drawText(QPointF(cx + 6, xr.top() - 22), n)
         p.setPen(QColor(t["muted"]))
         p.drawText(QRectF(xr.left(), xr.bottom() - 22, xr.width(), 18), Qt.AlignmentFlag.AlignCenter,
-                   "HDL Designer: port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
-                   else "Ayrık AXI4-Lite sinyalleri")
+                   f"{sp.module}_pk (HDL Designer): port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
+                   else f"{sp.module}: ayrık AXI4-Lite sinyalleri")
 
         for i, m in enumerate(sp.masters):
             box = QRectF(self.mx, self.mslots[i].top(), self.mw, self.mslots[i].height())

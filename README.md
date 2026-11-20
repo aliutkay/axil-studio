@@ -60,7 +60,19 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 
 ## Slave Interface Wrapper
 
-easyaxil tabanlı AXI4-Lite slave wrapper'ını register haritasından üretir. **IP seç** (IP Library) ya da
+AXI4-Lite slave'i register haritasından üretir. Üretilen `<ip>.v`, ZipCPU wb2axip `hdl/easyaxil.v` dosyasının
+kendisidir; yalnızca easyaxil'in kullanıcıya bıraktığı yerler değişir:
+
+- modül adı, `C_AXI_ADDR_WIDTH` varsayılanı ve IP tarafı portları,
+- *AXI-lite register logic* bölümü: r0..r3 yerine IP'nin registerları, easyaxil üslubuyla (register başına
+  32 bitlik kelime, `apply_wstrb`, yazma ve okuma `case`'i; okuma `case`'ine tanımsız offset için `default` eklenir),
+- parametre listesindeki `localparam C_AXI_DATA_WIDTH` Verilog-2005 için `parameter` yazılır (değiştirilmez),
+- formal bölümünde yalnızca easyaxil'in r0..r3'e özel register kontrolleri çıkar (`faxil_slave` kontrolleri kalır).
+
+AXI el sıkışması (skidbuffer'lı ve skidbuffer'sız iki dal, `OPT_SKIDBUFFER`, `OPT_LOWPOWER`) olduğu gibi kalır;
+`OPT_SKIDBUFFER=1` için `hdl/skidbuffer.v` gerekir. Üretilen dosyayı `hdl/easyaxil.v` ile karşılaştırarak farklar
+görülebilir. `FORMAL` bölümü yalnızca formal doğrulama araçlarında (SymbiYosys) derlenir; sentez ve simülasyon
+onu görmez. **IP seç** (IP Library) ya da
 **Dosyadan aç** (`.regspec.json`) ile kaynak seçilir; sağda register haritası özeti ile Verilog, C header ve
 doküman önizlemesi vardır. Register haritasını değiştirmek için **Register haritasını düzenle** (ya da özette
 bir registera çift tık) Register Map Editor'u açar; değişiklikler Wrapper'a anında yansır.
@@ -101,6 +113,7 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - Libero: `C_AXI_ADDR_WIDTH` parametresini interconnect slave adres genişliğine eşitle; BIF tipi AXI4, slave slotu AXI4-Lite.
 - Tüm registerlar `S_AXI_ARESETN` ile resetlenir (PolarFire `initial` bloğunu yok sayar).
 - Testbench: `iverilog -g2012 -o sim <ip>_tb.v <ip>.v && vvp sim` → `... 0 errors: PASSED`.
+- *Alan tipleri* register logic bölümünde easyaxil üslubuyla yazılır: RW register kelimesinde, PULSE bir clock'luk darbe kelimesinde, W1C bayrak kelimesinde (girişten set, 1 yazınca silinir, set öncelikli), `o_irq` irq işaretli W1C bayraklarının VEYA'sı.
 
 
 
@@ -124,41 +137,41 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - Slave portları adres haritasından gelir (salt okunur liste; satıra çift tık Address Map Editor'u açar).
   Burada crossbar'ın kendisi ayarlanır: modül adı, port stili ve master'lar (**+ Master / Sil**, ada çift tık).
 - **Blok diyagramı**: solda master'lar, ortada crossbar, sağda slave'ler; pinler üretilen HDL'deki ad, genişlik ve yönlerle çizilir, bloklarda kendi taraflarındaki port adları (M_AXI_* / S_AXI_*, MASTER_AXI_* / SLAVE_AXI_*) yazar. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır, trackpad'de iki parmakla sıkıştırma da çalışır.
-- **Verilog önizleme** sekmesi üretilecek wrapper'ı gösterir. Port stilleri: *HDL Designer (paketli)* ve *Ayrık AXI sinyalleri* (düz vektör stili yalnızca komut satırında).
+- **Verilog önizleme** sekmesi üretilecek wrapper'ları gösterir. **Wrapper** seçimi: *Yalnızca ayrık AXI portları* (`<ad>.v`) ya da *Ayrık portlar + HDL Designer* (`<ad>.v` ve onu saran `<ad>_pk.v`).
 - Ayarlar proje dosyasında (`.axproj.json` içindeki `interconnect`) saklanır. **Ayar dosyası aç** `.xbar.json`
   dosyasından modül adı, stil ve master'ları alır (slave'ler ve adresler adres haritasından gelir); **Ayar dosyası
   kaydet** slave'lerle birlikte tam ayarı yazar (komut satırı için).
 
 ## axilxbar wrapper
 
-ZipCPU `axilxbar` portları düz vektörlerdir; wrapper her port için ayrı, isimli bir arayüz çıkarır:
+ZipCPU `axilxbar.v` (`hdl/axilxbar.v`) yapısına dokunulmadan kullanılır; yalnızca parametreleriyle
+yapılandırılır: `NM`, `NS`, `SLAVE_ADDR`, `SLAVE_MASK`, `OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST`,
+`C_AXI_DATA_WIDTH`, `C_AXI_ADDR_WIDTH`. Dosyada wb2axip'e göre tek satır farklıdır: parametre listesindeki
+`localparam AW` (yalnızca SystemVerilog'da geçerli) Verilog-2005 araçları için `parameter AW` yazılmıştır;
+`AW` dışarıdan verilmez. Mantık değişmez.
 
-- `MASTER0_AXI_*`, `MASTER1_AXI_*` … → master'lara
-- `SLAVE0_AXI_*`, `SLAVE1_AXI_*` … → slave'lere
+axilxbar'ın portları düz vektörlerdir; üstüne iki wrapper üretilir, ikisi de mantık eklemez, yalnızca
+sinyalleri adlandırır ve dilimler:
 
-Port sayıları adres haritasına göre seçilir. Kullanılmayan portlar `EN=0` ile üretilir; böylece yedek port bırakılabilir.
-Her port için generic'ler:
+| Dosya | Portlar | Ne zaman |
+|---|---|---|
+| `<ad>.v` | Her port ayrı AXI4-Lite sinyalleri: `MASTER<i>_AXI_*` (master'ın `M_AXI_*`'ına), `SLAVE<j>_AXI_*` (slave'in `S_AXI_*`'ına) | Her zaman |
+| `<ad>_pk.v` | HDL Designer için paketli: `MASTER<i>_AXI_REQ/RSP`, `SLAVE<j>_AXI_REQ/RSP`; içinde `<ad>.v` | *Ayrık portlar + HDL Designer* seçiliyse |
 
-| Generic | Anlam |
-|---|---|
-| `MASTER<i>_EN` | 1: master portu kullanımda, 0: boşta bağlı |
-| `SLAVE<j>_EN` | 1: slave portu kullanımda, 0: içeride DECERR cevaplayıcı |
-| `SLAVE<j>_ADDR`, `SLAVE<j>_MASK` | `(addr & MASK) == ADDR` ise slave j seçilir |
-
-HDL Designer'da slave eklemek ya da adres değiştirmek için generic'i değiştirip bundle çizmek yeterli.
-Port sayısı yetmezse kapasiteyi artırıp yeniden üret ve sembolü güncelle. Kullanılmayan portlar bağlanmadan bırakılabilir.
-Adres haritasının asıl kaynağı projedeki adres haritası (Address Map Editor) olsun; generic değiştirirsen projeyi de güncelle.
-
-Slave listesi projenin adres haritasından alınır. Maske, IP'nin kullandığı alana ve min. pencereye göre hesaplanır.
-Hizalama, çakışma ve sığma kontrol edilir. Ayarlar `.xbar.json` olarak kaydedilir.
+İki wrapper'da da slave başına `SLAVE<j>_ADDR` / `SLAVE<j>_MASK` generic'leri vardır ve axilxbar'ın
+`SLAVE_ADDR` / `SLAVE_MASK` parametresine olduğu gibi geçer: `(adres & MASK) == ADDR` ise slave j seçilir.
+Haritada olmayan adrese axilxbar kendisi DECERR döner. Port sayısı adres haritasından gelir; slave eklemek ya
+da çıkarmak için Address Map Editor'da değiştirip yeniden üret. Generic'i HDL tarafında değiştirirsen projedeki
+adres haritasını da güncelle.
 
 ```
-python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --ns 8 --xbar-name axil_xbar -o out
+python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --xbar-name axil_xbar -o out
 python -m axil_studio.core.axilgen --xbar out/axil_xbar.xbar.json -o out        # kayıtlı ayarlarla yeniden üret
+python -m axil_studio.core.axilgen --xbar bench.axproj.json --xbar-style signals -o out   # _pk.v olmadan
 ```
 
-Projeye `hdl/axilxbar.v` (Verilog-2005 için yamalı: parametre listesindeki `localparam AW` → `parameter`),
-wb2axip'ten de `addrdecode.v` ve `skidbuffer.v` dosyalarını ekle. Haritada olmayan adres DECERR döner.
+HDL projesine `<ad>.v` (ve kullanılıyorsa `<ad>_pk.v`) ile `hdl/axilxbar.v`, `hdl/addrdecode.v`,
+`hdl/skidbuffer.v` eklenir (wb2axip, Apache 2.0).
 
 
 ## Paketli AXI portu (REQ/RSP)
@@ -172,25 +185,14 @@ Blok diyagramda bir AXI4-Lite arayüzü 19 tel yerine 2 telle bağlanır:
 
 Paketli bus her zaman 32 bit adres ve veri taşır; daha dar adresli çekirdekler wrapper içinde kesilir.
 
-- Xbar paketli stilde portlar `MASTER<i>_AXI_REQ/RSP` ve `SLAVE<j>_AXI_REQ/RSP` olur.
+- Xbar'ın `_pk` wrapper'ında portlar `MASTER<i>_AXI_REQ/RSP` ve `SLAVE<j>_AXI_REQ/RSP` olur.
 - Paketli IP'lerin üst modülü `SLAVE_AXI_REQ/RSP` portludur.
 - Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python -m axil_studio.core.axilgen --pack axilgpio.v -o out`.
   ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar ve parametreler aynen geçer.
 - `hdl/` içinde `axilgpio_pk.v`, `axiluart_phy_pk.v`, `hexbus_axil_top_pk.v` hazır.
 
-HDL Designer'da: hexbus `MASTER_AXI_REQ/RSP` ↔ xbar `MASTER0_AXI_REQ/RSP`; xbar `SLAVE0_AXI_REQ/RSP` ↔ IP `SLAVE_AXI_REQ/RSP`.
+HDL Designer'da: hexbus `MASTER_AXI_REQ/RSP` ↔ xbar `_pk` `MASTER0_AXI_REQ/RSP`; xbar `SLAVE0_AXI_REQ/RSP` ↔ IP `SLAVE_AXI_REQ/RSP`.
 
-
-## Xbar port stilleri
-
-| Stil | Portlar | Port sayısı değişince |
-|---|---|---|
-| Paketli, port başına | `MASTER0_AXI_REQ/RSP`, `SLAVE0_AXI_REQ/RSP` … + `MASTER<i>_EN`, `SLAVE<j>_EN/ADDR/MASK` | Yedek port varsa generic, yoksa yeniden üret |
-| Paketli düz vektör | `MASTERS_AXI_REQ[NM*111-1:0]`, `SLAVES_AXI_REQ[NS*111-1:0]` … + `NM`, `NS`, `SLAVE_ADDR`, `SLAVE_MASK` | Sadece generic (yeniden üretim yok) |
-| Ayrık sinyaller | `MASTER0_AXI_AWADDR`, `SLAVE0_AXI_AWADDR` … (19 sinyal/port) | Yedek port varsa generic, yoksa yeniden üret |
-
-Düz vektörde slave j, `SLAVES_AXI_REQ[j*111 +: 111]` / `SLAVES_AXI_RSP[j*41 +: 41]` dilimidir; `SLAVE_ADDR` içinde slave 0 en sağdadır (LSB).
-Komut satırı: `--xbar-style packed|flat|signals`.
 
 ## UART-to-AXI Debug Bridge
 
@@ -249,7 +251,7 @@ Sürüm elle değiştirilmiş bir commit'te (ör. yeni özellik için 0.2.0) hoo
 | `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
 | `scripts/` | Komut satırı araçları: `uart_validate.py` (+ `uart_validate_sim.py`) |
-| `hdl/` | Hazır Verilog dosyaları (axilxbar, paketli `_pk` örnekleri) |
+| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri |
 | `examples/` | Örnek GPIO projesi ve config dosyaları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 

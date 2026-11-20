@@ -10,6 +10,23 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.2 — ZipCPU yapısına sadık HDL
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.2 |
+| Slave Interface Wrapper | early-alpha 0.2.0 |
+| Interconnect Configurator | early-alpha 0.2.0 |
+
+- Slave: üretilen IP artık ZipCPU wb2axip `easyaxil.v`'nin kendisi (`hdl/easyaxil.v` şablonundan); yalnızca modül
+  adı, adres genişliği, IP portları ve *AXI-lite register logic* bölümü değişir. `OPT_SKIDBUFFER` / `OPT_LOWPOWER`
+  geri geldi. PULSE, W1C, irq, sync ve strobe'lar register logic bölümünde easyaxil üslubuyla. `localparam
+  C_AXI_DATA_WIDTH` → `parameter` (Verilog-2005), okuma `case`'ine `default`, formal r0..r3 kontrolleri çıkarıldı.
+- Interconnect: `axilxbar.v` yalnızca parametrelerle yapılandırılır. `<ad>.v` her portu ayrı AXI sinyalleriyle
+  verir; `<ad>_pk.v` onu saran HDL Designer (REQ/RSP) wrapper'ı. `MASTER/SLAVE<j>_EN` generic'leri, kendi DECERR
+  modülü ve düz vektör (`flat`) stili kaldırıldı.
+- `hdl/` altına wb2axip'in `easyaxil.v`, `addrdecode.v`, `skidbuffer.v` dosyaları eklendi (değiştirilmeden).
+
 ## early-alpha 0.1.1 — tek paket
 
 - Çekirdek modüller (model, addrmap, library, axilgen, xbargen, axilpack, hexbus, numfmt, regmap_xlsx) depo kökünden
