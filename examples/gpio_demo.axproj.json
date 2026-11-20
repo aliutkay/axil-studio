@@ -1,11 +1,10 @@
 {
   "format": "axil-uart-project",
-  "version": 1,
+  "version": 2,
   "name": "GPIO demo",
   "ips": [
     {
       "name": "GPIO0",
-      "base": "0x60000000",
       "desc": "ZipCPU axilgpio",
       "registers": [
         {
@@ -249,6 +248,14 @@
           ]
         }
       ]
+    }
+  ],
+  "instances": [
+    {
+      "name": "GPIO0",
+      "ip": "GPIO0",
+      "base": "0x60000000",
+      "fixed": true
     }
   ]
 }

@@ -6,6 +6,7 @@ from typing import List, Optional
 
 ACCESS_TYPES = ("RW", "RO", "WO")
 PROJECT_FORMAT = "axil-uart-project"
+PROJECT_VERSION = 2
 CONFIG_FORMAT = "axil-uart-config"
 
 
@@ -149,12 +150,17 @@ class Register:
 
 @dataclass
 class IPBlock:
+    """Register map of an IP. In a project this is the IP *definition* (base unused); the
+    address map places it with IPInstance entries, so one IP can be used several times.
+    Project.address_ips() gives one IPBlock per instance with its name and base."""
     name: str
-    base: int
+    base: int = 0
     desc: str = ""
     registers: List[Register] = field(default_factory=list)
     source: str = ""        # library the IP was taken from ("" = made in this project)
-    version: str = ""       # IP version (from the wrapper spec / library)
+    version: str = ""       # IP version (from the register map / library)
+    regspec: Optional[dict] = None   # full register spec (axilgen.ModuleSpec.to_dict()) when known
+    ref: str = ""           # address-map view only: name of the IP definition (not saved)
 
     def get_register(self, name) -> Optional[Register]:
         return next((r for r in self.registers if r.name == name), None)
@@ -162,39 +168,104 @@ class IPBlock:
     def address(self, reg: Register):
         return self.base + reg.offset
 
-    def to_dict(self):
-        d = {"name": self.name, "base": hex32(self.base), "desc": self.desc,
-             "registers": [r.to_dict() for r in self.registers]}
+    @property
+    def span(self):
+        """Bytes used by the register map (last register + 4)."""
+        return max((r.offset for r in self.registers), default=0) + 4
+
+    def to_dict(self, with_base=True):
+        d = {"name": self.name}
+        if with_base:
+            d["base"] = hex32(self.base)
+        d.update({"desc": self.desc, "registers": [r.to_dict() for r in self.registers]})
         if self.source:
             d["source"] = self.source
         if self.version:
             d["version"] = self.version
+        if self.regspec:
+            d["regspec"] = self.regspec
         return d
 
     @staticmethod
     def from_dict(d):
         return IPBlock(d["name"], parse_int(d.get("base", 0)), d.get("desc", ""),
                        [Register.from_dict(r) for r in d.get("registers", [])], d.get("source", ""),
-                       str(d.get("version", "")))
+                       str(d.get("version", "")), d.get("regspec"))
+
+
+@dataclass
+class IPInstance:
+    """One entry of the project's address map: an IP definition placed at a base address,
+    or an external slave (ip == "") that has no register map in the project."""
+    name: str
+    ip: str = ""            # IP definition name; "" = external slave
+    base: int = 0
+    window: int = 0         # address window in bytes; 0 = smallest that fits (min 4 KB)
+    fixed: bool = False     # keeps its base when the map is auto-addressed
+    span: int = 0           # external slaves: bytes used (IPs: from the register map)
+
+    @property
+    def external(self):
+        return not self.ip
+
+    def to_dict(self):
+        d = {"name": self.name, "ip": self.ip, "base": hex32(self.base)}
+        if self.window:
+            d["window"] = f"0x{self.window:X}"
+        if self.fixed:
+            d["fixed"] = True
+        if self.external:
+            d["span"] = f"0x{self.span:X}"
+        return d
+
+    @staticmethod
+    def from_dict(d):
+        return IPInstance(d["name"], d.get("ip", ""), parse_int(d.get("base", 0)), parse_int(d.get("window", 0)),
+                          bool(d.get("fixed", False)), parse_int(d.get("span", 0)))
 
 
 @dataclass
 class Project:
     name: str = "Untitled"
-    ips: List[IPBlock] = field(default_factory=list)
+    ips: List[IPBlock] = field(default_factory=list)          # IP definitions (register maps)
     path: Optional[str] = None
-    interconnect: Optional[dict] = None   # Address Map & Interconnect Configurator settings (xbargen)
+    interconnect: Optional[dict] = None   # Interconnect Configurator settings (module, style, masters)
     debug: Optional[dict] = None          # UART-to-AXI Debug Bridge settings (extra IPs ...)
     libraries: List[str] = field(default_factory=list)   # IP library files used (relative to the project)
     generator: str = ""                   # program and version that wrote the file
+    instances: List[IPInstance] = field(default_factory=list)   # address map, in slave port order
+    address_map: Optional[dict] = None    # Address Map Editor settings ({"start": "0x40000000"})
 
     def get_ip(self, name) -> Optional[IPBlock]:
+        """IP definition by name."""
         return next((i for i in self.ips if i.name == name), None)
+
+    def get_instance(self, name) -> Optional[IPInstance]:
+        return next((i for i in self.instances if i.name == name), None)
+
+    def instances_of(self, ip_name):
+        return [i for i in self.instances if i.ip == ip_name]
+
+    def address_ips(self) -> List[IPBlock]:
+        """One IPBlock per address-map instance of an IP: instance name, instance base and the
+        definition's registers (shared, not copied). External slaves are left out."""
+        out = []
+        for inst in self.instances:
+            d = self.get_ip(inst.ip) if inst.ip else None
+            if d is not None:
+                out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name))
+        return out
+
+    def get_address_ip(self, name) -> Optional[IPBlock]:
+        return next((i for i in self.address_ips() if i.name == name), None)
 
     def save(self, path=None):
         self.path = path or self.path
-        data = {"format": PROJECT_FORMAT, "version": 1, "name": self.name,
-                "ips": [i.to_dict() for i in self.ips]}
+        data = {"format": PROJECT_FORMAT, "version": PROJECT_VERSION, "name": self.name,
+                "ips": [i.to_dict(with_base=False) for i in self.ips],
+                "instances": [i.to_dict() for i in self.instances]}
+        if self.address_map:
+            data["address_map"] = self.address_map
         if self.generator:
             data["generator"] = self.generator
         if self.interconnect:
@@ -204,7 +275,7 @@ class Project:
         if self.libraries:
             data["libraries"] = list(self.libraries)
         with open(self.path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2)
+            json.dump(data, fh, indent=2, ensure_ascii=False)
 
     @staticmethod
     def load(path):
@@ -212,10 +283,44 @@ class Project:
             data = json.load(fh)
         if data.get("format") != PROJECT_FORMAT:
             raise ValueError("Not a project file")
-        return Project(data.get("name", "Untitled"),
+        proj = Project(data.get("name", "Untitled"),
                        [IPBlock.from_dict(i) for i in data.get("ips", [])], path,
                        interconnect=data.get("interconnect"), debug=data.get("debug"),
-                       libraries=list(data.get("libraries", [])), generator=data.get("generator", ""))
+                       libraries=list(data.get("libraries", [])), generator=data.get("generator", ""),
+                       instances=[IPInstance.from_dict(i) for i in data.get("instances", [])],
+                       address_map=data.get("address_map"))
+        if "instances" not in data:
+            _upgrade_v1(proj, data)
+        for ip in proj.ips:
+            ip.base = 0
+        return proj
+
+
+def _upgrade_v1(proj, data):
+    """Version 1 files kept one IP per address (base in the IP) and the slave list in
+    "interconnect": turn them into IP definitions + address-map instances."""
+    ic = dict(data.get("interconnect") or {})
+    by_name = {ip.name: ip for ip in proj.ips}
+    done = set()
+    for s in ic.get("slaves", []):
+        if not s.get("enabled", True):
+            continue
+        name = s.get("name", "")
+        window = ((~parse_int(s.get("mask", "0xFFFFF000"))) & 0xFFFFFFFF) + 1
+        if s.get("external"):
+            proj.instances.append(IPInstance(name, "", parse_int(s.get("base", 0)), window, True,
+                                             parse_int(s.get("span", 0))))
+        elif name in by_name:
+            proj.instances.append(IPInstance(name, name, by_name[name].base, window, bool(s.get("fixed"))))
+            done.add(name)
+    excluded = set(ic.get("excluded", []))
+    for ip in proj.ips:
+        if ip.name not in done and ip.name not in excluded:
+            proj.instances.append(IPInstance(ip.name, ip.name, ip.base, 0, True))
+    if "auto" in ic:
+        proj.address_map = {"start": ic["auto"].get("start", "0x40000000")}
+    if ic:
+        proj.interconnect = {k: ic[k] for k in ("module", "style", "masters") if k in ic} or None
 
 
 def save_config(path, writes, description=""):

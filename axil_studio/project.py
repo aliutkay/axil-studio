@@ -1,12 +1,17 @@
 """Project shared by every tool in the hub.
 
-The common file is the existing debug project (.axproj.json, model.Project):
-  * Slave Interface Wrapper adds / replaces the IPs it generates,
-  * Address Map & Interconnect Configurator builds the slave windows from it,
-  * UART-to-AXI Debug Bridge reads and writes its registers on the board.
+The common file is the project (.axproj.json, model.Project). It holds
+  * IP definitions (register maps): Register Map Editor writes them, Slave Interface Wrapper
+    generates HDL from them, IP Library moves them to and from library files,
+  * the address map (IP instances with base addresses; one IP may be placed several times):
+    Address Map Editor edits it, Interconnect Configurator builds the crossbar from it,
+  * UART-to-AXI Debug Bridge reads and writes the registers of the instances on the board.
 """
 
+import copy
 import os
+
+import addrmap
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
@@ -72,13 +77,30 @@ class ProjectContext(QObject):
 
     # ------------------------------------------------------------ edits
     def mark_modified(self, source=""):
+        """Something changed: the address map follows (an IP that grew gets a larger window,
+        automatic addresses move up), then every tool is told."""
+        try:
+            addrmap.readdress(self.project)
+        except ValueError:
+            pass                    # reported by the Address Map Editor
         self.dirty = True
         self.modified.emit(source)
         self.state_changed.emit()
 
-    def upsert_ip(self, ip, source=""):
-        """Add the IP, or replace the one with the same name. Returns True if replaced."""
-        old = self.project.get_ip(ip.name)
+    # ------------------------------------------------------------ IP definitions
+    def put_ip(self, ip, source="", old_name=None):
+        """Add an IP definition, or replace the one named `old_name` (default: ip.name). A rename
+        is followed by the address-map instances of the IP. Returns True if one was replaced."""
+        ip.base = 0
+        old = self.project.get_ip(old_name or ip.name)
+        if old_name and old_name != ip.name:
+            other = self.project.get_ip(ip.name)
+            if other is not None and other is not old:
+                self.project.ips.remove(other)
+            for inst in self.project.instances_of(old_name):
+                inst.ip = ip.name
+                if inst.name == old_name and not self.project.get_instance(ip.name):
+                    inst.name = ip.name
         if old:
             self.project.ips[self.project.ips.index(old)] = ip
         else:
@@ -86,21 +108,34 @@ class ProjectContext(QObject):
         self.mark_modified(source)
         return old is not None
 
+    def remove_ip(self, name, source=""):
+        """Remove an IP definition and all of its address-map instances."""
+        self.project.ips = [x for x in self.project.ips if x.name != name]
+        self.project.instances = [i for i in self.project.instances if i.ip != name]
+        self.mark_modified(source)
+
+    def unique_ip_name(self, stem):
+        if not self.project.get_ip(stem):
+            return stem
+        k = 2
+        while self.project.get_ip(f"{stem}_v{k}"):
+            k += 1
+        return f"{stem}_v{k}"
+
     # ------------------------------------------------------------ address map
-    def suggest_base(self, name, window, min_base=0x40000000):
-        """Base for IP `name`: its current base if it is already in the project, otherwise the
-        first window-aligned address after the IPs already placed."""
-        ip = self.project.get_ip(name)
-        if ip:
-            return ip.base
-        top = min_base
-        for other in self.project.ips:
-            span = max((r.offset for r in other.registers), default=0) + 4
-            w = 0x1000
-            while w < span:
-                w <<= 1
-            top = max(top, other.base + w)
-        return (top + window - 1) & ~(window - 1) & 0xFFFFFFFF
+    def address_ips(self):
+        """One IPBlock per IP instance in the address map (instance name and base)."""
+        return self.project.address_ips()
+
+    def add_instance(self, ip_name, name=None, source=""):
+        """Place IP definition `ip_name` in the address map (once more); returns the instance."""
+        inst = addrmap.add_instance(self.project, ip_name, name)
+        self.mark_modified(source)
+        return inst
+
+    def remove_instance(self, name, source=""):
+        self.project.instances = [i for i in self.project.instances if i.name != name]
+        self.mark_modified(source)
 
     # ------------------------------------------------------------ IP libraries
     def _abs(self, path):
@@ -168,17 +203,20 @@ class ProjectContext(QObject):
             self.project.libraries.append(rel)
             self.mark_modified("library")
 
-    def add_from_library(self, lib, entry, base, name=None):
-        ip = entry.instance(base, name)
+    def import_from_library(self, lib, entry, name=None, source="library"):
+        """Copy a library IP into the project's IP definitions (no address: it is placed with
+        add_instance). Returns the definition's name in the project."""
+        ip = entry.definition(name)
         ip.source = lib.name
-        replaced = self.upsert_ip(ip, "library")
+        self.put_ip(ip, source)
         self.use_library(lib)
-        return replaced
+        return ip.name
 
     def store_in_library(self, lib, ip, regspec=None):
         """Put a project IP (and its register spec when known) into a library."""
-        import copy
-        replaced = lib.put(LibEntry(copy.deepcopy(ip), regspec))
+        stored = copy.deepcopy(ip)
+        stored.base, stored.regspec, stored.ref = 0, None, ""
+        replaced = lib.put(LibEntry(stored, regspec if regspec is not None else copy.deepcopy(ip.regspec)))
         self.save_library(lib)
         return replaced
 

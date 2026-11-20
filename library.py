@@ -22,7 +22,7 @@ LIBRARY_FORMAT = "axil-ip-library"
 
 @dataclass
 class LibEntry:
-    ip: IPBlock                      # register map; ip.base is not used in a library
+    ip: IPBlock                      # register map (no address: placed in a project's address map)
     regspec: Optional[dict] = None   # axilgen.ModuleSpec.to_dict() when known
     updated: str = ""
 
@@ -35,7 +35,9 @@ class LibEntry:
         return self.ip.version or "1.0.0"
 
     def to_dict(self):
-        d = {"ip": {**self.ip.to_dict(), "base": "0x00000000"}, "updated": self.updated}
+        ip = self.ip.to_dict(with_base=False)
+        ip.pop("regspec", None)
+        d = {"ip": ip, "updated": self.updated}
         if self.regspec:
             d["regspec"] = self.regspec
         return d
@@ -44,12 +46,16 @@ class LibEntry:
     def from_dict(d):
         return LibEntry(IPBlock.from_dict(d["ip"]), d.get("regspec"), d.get("updated", ""))
 
-    def instance(self, base, name=None):
-        """A copy of the IP for a project, at `base`."""
+    def definition(self, name=None):
+        """A copy of the IP (register map + spec) for a project; it gets its addresses in the
+        project's address map."""
         ip = copy.deepcopy(self.ip)
-        ip.base = base
+        ip.base = 0
+        ip.regspec = copy.deepcopy(self.regspec)
         if name:
             ip.name = name
+            if ip.regspec:
+                ip.regspec["module"] = name
         return ip
 
 

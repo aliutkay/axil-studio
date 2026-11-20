@@ -213,18 +213,20 @@ class HomePage(QWidget):
         self.cards = []
         for i, tool in enumerate(TOOLS):
             card = ToolCard(tool, lambda _=False, t=tool: hub.open_tool_window(t.tool_id))
-            grid.addWidget(card, i // 2, i % 2)
-            grid.setColumnStretch(i % 2, 1)
+            grid.addWidget(card, i // 3, i % 3)
+            grid.setColumnStretch(i % 3, 1)
             self.cards.append(card)
         lay.addLayout(grid)
 
         # ---- flow hint
         flow = ui.Card("İş akışı", margins=18)
         steps = [
-            ("1", "Slave Interface Wrapper", "Register haritasını tanımla, HDL'i üret ve IP'yi projeye ekle."),
-            ("2", "Address Map & Interconnect Configurator", "IP'lere base adres ver, adres haritasını doğrula ve "
-                                                             "interconnect'i üret."),
-            ("3", "UART-to-AXI Debug Bridge", "Aynı adres haritasıyla donanımdaki registerlara eriş."),
+            ("1", "Register Map Editor", "IP'nin register haritasını tasarla ve projeye kaydet (adres yok)."),
+            ("2", "Slave Interface Wrapper", "Register haritasından HDL, testbench, header ve dokümanı üret."),
+            ("3", "Address Map Editor", "IP'leri adres haritasına yerleştir; aynı IP birden çok kez kullanılabilir."),
+            ("4", "Interconnect Configurator", "Master'ları ve port stilini seç, axilxbar wrapper'ını üret."),
+            ("5", "UART-to-AXI Debug Bridge", "Aynı adres haritasıyla donanımdaki registerlara eriş."),
+            ("·", "IP Library", "Projedeki tüm IP'leri gör; IP'leri kütüphanelere kaydet, kütüphanelerden projeye al."),
         ]
         for num, name, text in steps:
             r = QHBoxLayout()
@@ -262,7 +264,7 @@ class HomePage(QWidget):
             if w:
                 w.deleteLater()
         nregs = sum(len(ip.registers) for ip in p.ips)
-        for text in (f"{len(p.ips)} IP", f"{nregs} register"):
+        for text in (f"{len(p.ips)} IP", f"{nregs} register", f"adres haritasında {len(p.instances)} slave"):
             self.proj_stats.addWidget(ui.Pill(text))
         self.proj_stats.addStretch(1)
 

@@ -2,7 +2,7 @@
 """AXIL Studio launcher.
 
     python studio.py                      # hub
-    python studio.py --tool debug         # one tool on its own (wrapper | interconnect | debug)
+    python studio.py --tool debug         # one tool on its own (regmap | wrapper | addrmap | interconnect | debug | library)
     python studio.py examples/gpio_demo.axproj.json
 """
 

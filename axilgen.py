@@ -274,8 +274,6 @@ class ModuleSpec:
         check_name(self.module, "Modül adı")
         if not VERSION_RE.match(self.version or ""):
             errs.append(f"Sürüm '{self.version}': rakam ve nokta ile yazılmalı, ör. 1.0.0 (sonuna -beta gibi ek olabilir)")
-        if self.base % 4:
-            errs.append("Base adres 4'ün katı olmalı")
         if not self.registers:
             errs.append("En az bir register tanımlanmalı")
         seen_regs, seen_offs, ports = set(), {}, {}
@@ -725,8 +723,9 @@ def gen_markdown(spec: ModuleSpec):
 # ============================================================================
 # Debug application project
 # ============================================================================
-def to_ipblock(spec: ModuleSpec, base=None):
-    """IPBlock for the AXI4-Lite UART debug application (model.py); base overrides spec.base."""
+def to_ipblock(spec: ModuleSpec, base=None, with_spec=False):
+    """IPBlock (model.py) of the register map; base overrides spec.base. with_spec: the IP also
+    keeps the full spec (project IP definitions), so the HDL can be generated from it again."""
     from model import Field, IPBlock, Register
     regs = []
     for r in spec.regs:
@@ -734,18 +733,45 @@ def to_ipblock(spec: ModuleSpec, base=None):
                         values=[EnumValue(e.value, e.read, e.write) for e in f.values], fmt=f.fmt)
                   for f in sorted(r.fields, key=lambda f: f.lsb)]
         regs.append(Register(r.name, r.offset, r.access, r.reset_value, r.desc, fields))
-    return IPBlock(spec.module, spec.base if base is None else base, spec.desc, regs, version=spec.version)
+    return IPBlock(spec.module, spec.base if base is None else base, spec.desc, regs, version=spec.version,
+                   regspec=spec.to_dict() if with_spec else None)
+
+
+# register access -> field kind for register maps written without kinds (e.g. hand-made projects)
+_ACCESS_KIND = {"RW": "RW", "RO": "RO", "WO": "PULSE"}
+
+
+def spec_from_ipblock(ip):
+    """ModuleSpec of an IP: its stored spec when it has one, otherwise built from the register map
+    (fields without a kind take it from the register's access type)."""
+    if getattr(ip, "regspec", None):
+        spec = ModuleSpec.from_dict(ip.regspec)
+        spec.module, spec.version = ip.name, ip.version or spec.version
+        return spec
+    regs = []
+    for r in sorted(ip.registers, key=lambda r: r.offset):
+        fields = []
+        for f in r.fields:
+            kind = f.kind or _ACCESS_KIND.get(r.access, "RW")
+            reset = f.extract(r.reset) if kind in ("RW", "CONST") else 0
+            fields.append(FieldSpec(f.name, f.lsb, f.width, kind, reset, f.desc,
+                                    values=[EnumValue(e.value, e.read, e.write) for e in f.values], fmt=f.fmt))
+        if not fields:
+            fields.append(FieldSpec(r.name, 0, 32, _ACCESS_KIND.get(r.access, "RW"), r.reset if r.access == "RW" else 0))
+        regs.append(RegSpec(r.name, r.offset, r.desc, fields=fields))
+    return ModuleSpec(ip.name, 0, ip.desc, regs, True, ip.version or "1.0.0")
 
 
 def add_to_project(spec: ModuleSpec, path, replace=True):
-    """Add (or replace) the IP in an existing .axproj.json, or create one."""
+    """Add (or replace) the IP definition in an existing .axproj.json, or create one. A new IP is
+    also placed in the address map at spec.base."""
     import os
-    from model import Project
+    from model import IPInstance, Project
     if os.path.exists(path):
         proj = Project.load(path)
     else:
         proj = Project(os.path.basename(path).split(".")[0], [], path)
-    ip = to_ipblock(spec)
+    ip = to_ipblock(spec, 0, with_spec=True)
     old = proj.get_ip(ip.name)
     if old and replace:
         proj.ips[proj.ips.index(old)] = ip
@@ -753,6 +779,8 @@ def add_to_project(spec: ModuleSpec, path, replace=True):
         raise SpecError(f"Projede '{ip.name}' adında bir IP zaten var")
     else:
         proj.ips.append(ip)
+    if not proj.instances_of(ip.name) and not proj.get_instance(ip.name):
+        proj.instances.append(IPInstance(ip.name, ip.name, spec.base, 0, True))
     proj.save(path)
     return proj
 
@@ -998,8 +1026,9 @@ def generate_all(spec: ModuleSpec, outdir):
     spec.save(spec_path)
     paths.append(spec_path)
     proj_path = os.path.join(outdir, f"{m}.axproj.json")
-    from model import Project
-    Project(m, [to_ipblock(spec)], proj_path).save(proj_path)
+    from model import IPInstance, Project
+    Project(m, [to_ipblock(spec, 0, with_spec=True)], proj_path,
+            instances=[IPInstance(m, m, spec.base, 0, True)]).save(proj_path)
     paths.append(proj_path)
     import regmap_xlsx
     if regmap_xlsx.available():

@@ -14,6 +14,11 @@ PATHS = {
     # chip with pins: Slave Interface Wrapper
     "wrapper": '<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9.5" y="9.5" width="5" height="5" rx="1"/>'
                '<path d="M9 2v4M15 2v4M9 18v4M15 18v4M2 9h4M2 15h4M18 9h4M18 15h4"/>',
+    # table with a bit row: Register Map Editor
+    "regmap": '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M3 14h18M9 9v11M15 9v11"/>',
+    # stacked address blocks with a pointer: Address Map Editor
+    "addrmap": '<rect x="8" y="3" width="13" height="5" rx="1"/><rect x="8" y="10" width="13" height="5" rx="1"/>'
+               '<rect x="8" y="17" width="13" height="4" rx="1"/><path d="M2 12.5h4M4.5 10.5l2 2-2 2"/>',
     # nodes on a bus: Interconnect
     "interconnect": '<circle cx="5" cy="5" r="2.2"/><circle cx="5" cy="19" r="2.2"/><circle cx="19" cy="5" r="2.2"/>'
                     '<circle cx="19" cy="12" r="2.2"/><circle cx="19" cy="19" r="2.2"/>'
@@ -36,7 +41,6 @@ PATHS = {
     "write": '<path d="M12 20V8M7 13l5-5 5 5M5 4h14"/>',
     "check": '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
     "alert": '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4.5M12 17.5v.01"/>',
-    "legacy": '<rect x="3" y="4" width="18" height="14" rx="1"/><path d="M3 8h18M8 21h8"/>',
     "arrow": '<path d="M5 12h14M13 6l6 6-6 6"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     # stacked books: IP Library

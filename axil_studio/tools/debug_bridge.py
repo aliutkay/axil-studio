@@ -1,8 +1,10 @@
 """UART-to-AXI Debug Bridge: register access on the board over the ZipCPU hexbus bridge.
 
-The address map comes from the project (its IPs and register maps); IPs that are not in the
-project can be added from a register spec or another project file, and any address can be
-accessed raw. Every bit field gets an input that matches its data type and kind: a number box
+The address map comes from the project (every IP instance of the Address Map Editor with its
+IP's register map); IPs that are not in the project can be added here for debugging only, from a
+register spec, another project file or an IP library, and any address can be accessed raw.
+Register maps and project addresses are not edited here: the Register Map Editor and the
+Address Map Editor open for that. Every bit field gets an input that matches its data type and kind: a number box
 in the field's format, a switch for booleans, a list for defined values, a button for PULSE
 commands and for clearing W1C flags. The live UART terminal is not part of this tool yet.
 """
@@ -54,7 +56,7 @@ class DebugBridgePage(ToolPage):
     description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
                    "SIMULATOR portu kullanılabilir.")
     icon_name = "debug"
-    legacy_script = None
+    version = "0.0.2"
 
     _log = Signal(str, str)
 
@@ -131,7 +133,9 @@ class DebugBridgePage(ToolPage):
         add_menu.addAction("Register spesifikasyonundan (.regspec.json)…", self.add_from_spec)
         add_menu.addAction("Başka bir proje dosyasından (.axproj.json)…", self.add_from_project)
         add_menu.addAction("IP kütüphanesinden…", self.add_from_library)
-        add_btn = ui.button("IP ekle", "plus", "ghost", None, "Projede olmayan bir IP'nin register haritasını ekle")
+        add_btn = ui.button("Ek IP", "plus", "ghost", None,
+                            "Projede olmayan bir IP'yi yalnızca hata ayıklama için ekle (projeye IP eklemek: "
+                            "Address Map Editor)")
         add_btn.setMenu(add_menu)
         lbar.addWidget(add_btn)
         self.remove_btn = ui.button("Kaldır", None, "ghost", self.remove_extra, "Seçili ek IP'yi listeden kaldır")
@@ -219,7 +223,7 @@ class DebugBridgePage(ToolPage):
         for key, text in N.BASE_FORMATS:
             if key not in ("ufix", "sfix", "enum"):
                 self.view_cb.addItem(text, key)
-        self.view_cb.setToolTip("Bit alanı değerlerinin gösterimi. Varsayılan: Wrapper'da atanan veri tipi")
+        self.view_cb.setToolTip("Bit alanı değerlerinin gösterimi. Varsayılan: Register Map Editor'da atanan veri tipi")
         self.view_cb.currentIndexChanged.connect(lambda *_: self._fill_fields())
         vrow.addWidget(self.view_cb)
         self.reg_card.lay.addLayout(vrow)
@@ -363,7 +367,7 @@ class DebugBridgePage(ToolPage):
     def _find_ip(self, group, name):
         if group == "raw":
             return self.raw
-        ips = self.ctx.project.ips if group == "project" else self._extra()
+        ips = self.ctx.address_ips() if group == "project" else self._extra()
         return next((ip for ip in ips if ip.name == name), None)
 
     def _fill_tree(self):
@@ -386,7 +390,7 @@ class DebugBridgePage(ToolPage):
             g.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.tree.addTopLevelItem(g)
             if not ips:
-                e = QTreeWidgetItem(["Projede IP yok", "", ""])
+                e = QTreeWidgetItem(["Adres haritası boş (Address Map Editor)", "", ""])
                 e.setForeground(0, muted)
                 e.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 g.addChild(e)
@@ -407,7 +411,7 @@ class DebugBridgePage(ToolPage):
                     if sel == (group, ip.name, reg.name):
                         target = it
                 g.addChild(top)
-        add_group("PROJE", self.ctx.project.ips, "project")
+        add_group("PROJE", self.ctx.address_ips(), "project")
         add_group("EK IP'LER", self._extra(), "extra")
         raw = QTreeWidgetItem(["Ham adres erişimi", "", "RW"])
         raw.setData(0, ROLE, ("raw", "", "DATA"))
@@ -477,15 +481,21 @@ class DebugBridgePage(ToolPage):
             proj = Project.load(path)
         except Exception as exc:  # noqa: BLE001
             return self.error("Açılamadı", exc)
-        if not proj.ips:
-            QMessageBox.information(self, self.title, "Bu proje dosyasında IP yok.")
+        placed = proj.address_ips()
+        if not placed:
+            QMessageBox.information(self, self.title, "Bu proje dosyasının adres haritasında IP yok.")
             return
-        names = [f"{ip.name}  ({hex32(ip.base)})" for ip in proj.ips]
+        names = [f"{ip.name}  ({hex32(ip.base)})" for ip in placed]
         choice, ok = QInputDialog.getItem(self, "IP ekle", "Eklenecek IP:", ["Tümü"] + names, 0, False)
         if not ok:
             return
-        ips = proj.ips if choice == "Tümü" else [proj.ips[names.index(choice)]]
-        self._add_extra(copy.deepcopy(ips))
+        ips = placed if choice == "Tümü" else [placed[names.index(choice)]]
+        out = []
+        for ip in ips:
+            ip = copy.deepcopy(ip)
+            ip.ref = ""
+            out.append(ip)
+        self._add_extra(out)
 
     def add_from_library(self):
         items = [(lib, e) for lib in self.ctx.libraries for e in lib.entries]
@@ -504,12 +514,12 @@ class DebugBridgePage(ToolPage):
         base = BaseDialog.ask(self, f"{e.name}: base adres", 0x40000000, w, "IP'nin donanımdaki adresi.")
         if base is None:
             return
-        ip = e.instance(base)
-        ip.source = lib.name
+        ip = e.definition()
+        ip.base, ip.regspec, ip.source = base, None, lib.name
         self._add_extra([ip])
 
     def _add_extra(self, new):
-        taken = {ip.name for ip in self.ctx.project.ips}
+        taken = {i.name for i in self.ctx.project.instances}
         clash = [ip.name for ip in new if ip.name in taken]
         if clash:
             QMessageBox.warning(self, self.title, f"Projede aynı adlı IP var: {', '.join(clash)}. Bu IP'ler eklenmedi.")
@@ -646,8 +656,11 @@ class DebugBridgePage(ToolPage):
         kind = f.kind or reg.access
         if reg.writable and kind not in ("RO", "CONST"):
             m.addAction("Özel değer yaz…", lambda: self.custom_value(f))
-        if self.group in ("project", "extra"):
-            m.addAction("Veri tipi ve değer açıklamaları…", lambda: self.edit_field_map(f))
+        if self.group == "project" and self.ip.ref:
+            m.addAction("Register Map Editor'da düzenle…",
+                        lambda: self.edit_register_map(self.ip.ref, self.reg.name, f.name))
+        elif self.group == "extra":
+            m.addAction("Veri tipi ve değer açıklamaları (yalnızca bu ek IP)…", lambda: self.edit_field_map(f))
         if m.isEmpty():
             a = m.addAction("Bu bit alanı için işlem yok")
             a.setEnabled(False)
@@ -868,7 +881,8 @@ class DebugBridgePage(ToolPage):
         command = kind in ("PULSE", "W1C")
         cur = f.extract(self.staged) if self.staged is not None else 0
         res = CustomValueDialog.ask(self, f, cur, KIND_READS.get(f.kind, reg.readable),
-                                    KIND_WRITES.get(f.kind, reg.writable), command)
+                                    KIND_WRITES.get(f.kind, reg.writable), command,
+                                    can_keep=self.group == "extra")
         if res is None:
             return
         if res["meaning"] is not None:
@@ -891,12 +905,10 @@ class DebugBridgePage(ToolPage):
         self._fill_fields()
 
     def _save_ip(self):
-        """Persist an edit of the selected IP's register map in the project."""
-        if self.group == "project":
-            self.ctx.mark_modified(self.tool_id)
-        elif self.group == "extra":
+        """Persist an edit of a debug-only (extra) IP; project IPs are edited in the Register Map Editor."""
+        if self.group == "extra":
             self._set_extra([self.ip if x.name == self.ip.name else x for x in self._extra()])
-        self.status("Register haritası güncellendi")
+            self.status("Register haritası güncellendi")
 
     # ================================================================ tree menu
     def _cur_key(self):
@@ -933,6 +945,12 @@ class DebugBridgePage(ToolPage):
             if reg and reg.writable:
                 m.addAction("Config'e ekle (reset değeriyle)",
                             lambda: self.add_config(key, reg.reset & ~reg.mask_of("PULSE", "W1C")))
+        if key[0] == "project" and ip and ip.ref:
+            m.addSeparator()
+            reg_name = key[2]
+            m.addAction("Register haritasını düzenle (Register Map Editor)…",
+                        lambda: self.edit_register_map(ip.ref, reg_name))
+            m.addAction("Adresini düzenle (Address Map Editor)…", lambda: self.edit_address_map(ip.name))
         if key[0] == "extra":
             m.addSeparator()
             m.addAction("Ek IP'yi kaldır", self.remove_extra)
@@ -1502,7 +1520,7 @@ class DebugBridgePage(ToolPage):
             return self.error("Açılamadı", exc)
         self.config = []
         for ipn, regn, value in writes:
-            group = "extra" if any(x.name == ipn for x in self._extra()) and not self.ctx.project.get_ip(ipn) \
+            group = "extra" if any(x.name == ipn for x in self._extra()) and not self.ctx.project.get_instance(ipn) \
                 else "project"
             self.config.append({"key": (group, ipn, regn), "value": value})
         self.cfg_path, self.cfg_edit = path, None

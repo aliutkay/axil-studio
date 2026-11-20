@@ -1,15 +1,12 @@
 """Building blocks shared by the hub and the tools."""
 
 import concurrent.futures
-import os
-import subprocess
-import sys
 
 from PySide6.QtCore import QObject, Qt, Signal
 from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
                                QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
-from axil_studio import ROOT, icons, theme
+from axil_studio import icons, theme
 
 
 def label(text="", role=None, wrap=False):
@@ -243,11 +240,6 @@ def confirm(parent, title, text, ok="Sil", cancel="Vazgeç"):
     R = QMessageBox.ButtonRole
     return _box(parent, title, text, QMessageBox.Icon.Question,
                 [("ok", ok, R.AcceptRole), ("cancel", cancel, R.RejectRole)], "ok") == "ok"
-
-
-def launch_legacy(script):
-    """Open one of the original Tkinter tools while its features are being ported."""
-    subprocess.Popen([sys.executable, os.path.join(ROOT, script)], cwd=ROOT)
 
 
 class DetachableTabs(QTabWidget):

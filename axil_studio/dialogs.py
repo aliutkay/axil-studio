@@ -501,8 +501,8 @@ def size_text(n):
 
 
 class SlaveDialog(FormDialog):
-    """One interconnect slave port. Project IPs: base + window; external slaves: also the name
-    and the used size."""
+    """One address-map entry (Address Map Editor): name, base and window; external slaves also
+    the used size (an IP's comes from its register map)."""
 
     def __init__(self, parent, slave, title, min_window=0x1000, auto=False):
         self.s, self.min_window, self.auto = slave, min_window, auto
@@ -511,7 +511,6 @@ class SlaveDialog(FormDialog):
     def build(self):
         s = self.s
         self.name = QLineEdit(s.name)
-        self.name.setEnabled(s.external)
         self.form.addRow("Ad", self.name)
         self.base = self.row("Base adres", mono_edit(f"0x{s.base:08X}"))
         self.span = mono_edit(f"0x{s.span:X}" if s.span else "0x1000")
@@ -528,10 +527,10 @@ class SlaveDialog(FormDialog):
         self.fixed.toggled.connect(self._sync_base)
         self._sync_base()
         if not s.external:
-            self.extra.addWidget(ui.label("Ad ve kullanılan alan projedeki IP'den gelir.", "muted"))
+            self.extra.addWidget(ui.label("Kullanılan alan IP'nin register haritasından gelir.", "muted"))
         self.span.textChanged.connect(self._fill_windows)
         self._fill_windows()
-        (self.name if s.external else self.base).setFocus()
+        self.name.setFocus()
 
     def _sync_base(self, *_):
         """With auto addressing on, only fixed slaves take a hand-entered base."""
@@ -585,8 +584,9 @@ class CustomValueDialog(FormDialog):
     """Write any value to one bit field in any data type; optionally keep it as a new value
     description in the register map."""
 
-    def __init__(self, parent, f, value, readable=True, writable=True, command=False):
+    def __init__(self, parent, f, value, readable=True, writable=True, command=False, can_keep=True):
         self.f, self.v0, self.readable, self.writable, self.is_command = f, value, readable, writable, command
+        self.can_keep = can_keep    # project IPs: value descriptions are edited in the Register Map Editor
         super().__init__(parent, f"Özel değer: {f.name} {f.bits}", 500)
 
     def build(self):
@@ -610,6 +610,12 @@ class CustomValueDialog(FormDialog):
             w.setEnabled(False)
         self.keep.toggled.connect(lambda on: (self.read.setEnabled(on and self.readable),
                                               self.write.setEnabled(on and self.writable)))
+        if not self.can_keep:
+            for w in (self.keep, self.read, self.write):
+                w.setVisible(False)
+                hint = self.form.labelForField(w)
+                if hint is not None:
+                    hint.setVisible(False)
         self.fmt.combo.currentIndexChanged.connect(self._fmt_changed)
         self.fmt.frac.valueChanged.connect(self._fmt_changed)
         self.val.textEdited.connect(self._update)

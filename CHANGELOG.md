@@ -9,6 +9,31 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.0 — araçlar ayrıldı, adres haritası örnekleri
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.0 |
+| Register Map Editor (yeni) | early-alpha 0.1.0 |
+| Slave Interface Wrapper | early-alpha 0.1.0 |
+| Address Map Editor (yeni) | early-alpha 0.1.0 |
+| Interconnect Configurator | early-alpha 0.1.0 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.2 |
+| IP Library | early-alpha 0.1.0 |
+
+- Eski Tkinter arayüzleri (`app.py`, `wrapgen_gui.py`, `terminal.py`, `widgets.py`) ve "Klasik arayüz" düğmeleri kaldırıldı.
+- Slave Interface Wrapper ikiye ayrıldı: **Register Map Editor** register haritasını tasarlar (base adres yok),
+  **Slave Interface Wrapper** yalnızca HDL / testbench / header / doküman / Excel üretir.
+- Address Map & Interconnect Configurator ikiye ayrıldı: **Address Map Editor** (adresler, pencereler, sıra, harici
+  slave'ler, Excel) ve **Interconnect Configurator** (modül adı, port stili, master'lar, blok diyagramı, üretim).
+- Proje modeli: IP tanımları (`ips`, adres yok, `regspec` ile) ve adres haritası örnekleri (`instances`) ayrıldı;
+  aynı IP adres haritasına birden çok kez eklenebilir. Proje dosyası biçim sürümü 2; sürüm 1 dosyaları açılırken çevrilir.
+- Register haritası düzenlenen her yer Register Map Editor'u, adres düzenlenen her yer Address Map Editor'u,
+  IP seçilen / eklenen her yer IP Library'yi (seçici diyalog) açar.
+- IP Library: projedeki tüm IP'ler ve örnekleri; kütüphane IP'sini projeye alma (adres vermeden) ya da adres
+  haritasına ekleme; aynı adlı IP için kullan / değiştir / yeni adla al.
+- Debug Bridge: adres haritasındaki her örnek ayrı listelenir; register haritası düzenleme Register Map Editor'a taşındı.
+
 ## early-alpha 0.0.1 — ilk sürüm
 
 | Bileşen | Sürüm |

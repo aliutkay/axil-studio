@@ -167,58 +167,9 @@ def window_mask(span, min_window=0x1000):
 
 
 def slaves_from_project(project, min_window=0x1000):
-    out = []
-    for ip in sorted(project.ips, key=lambda i: i.base):
-        span = max((r.offset for r in ip.registers), default=0) + 4
-        out.append(XbarSlave(ip.name, ip.base, window_mask(span, min_window), span, True))
-    return out
-
-
-def ip_span(ip):
-    """Bytes used by a project IP (last register + 4)."""
-    return max((r.offset for r in ip.registers), default=0) + 4
-
-
-def reconcile(spec, project, min_window=0x1000, reset_windows=False, excluded=(), compact=False):
-    """Bring the slave ports in line with the project's IPs, keeping the port order:
-    - a port linked to an IP takes the IP's base and size (its window grows if needed,
-      or is recomputed from min_window when reset_windows is set),
-    - a port whose IP left the project becomes a spare (EN=0),
-    - a new IP takes the first spare port, or a new port at the end,
-    - external ports (address entered by hand) are left alone.
-    compact: no spare ports at all: a port whose IP left is removed and new IPs are appended.
-    Returns spec."""
-    ips = {ip.name: ip for ip in project.ips if ip.name not in excluded}
-    linked = set()
-    for s in spec.slaves:
-        if not s.enabled or s.external:
-            continue
-        ip = ips.get(s.name)
-        if ip is None or s.name in linked:
-            s.enabled, s.span = False, 0
-            continue
-        linked.add(s.name)
-        s.base, s.span = ip.base, ip_span(ip)
-        need = window_mask(s.span, min_window)
-        if reset_windows or s.window < ((~need) & 0xFFFFFFFF) + 1:
-            s.mask = need
-    if compact:
-        spec.slaves = [s for s in spec.slaves if s.enabled]
-    for ip in sorted(project.ips, key=lambda i: i.base):
-        if ip.name in linked or ip.name in excluded:
-            continue
-        new = XbarSlave(ip.name, ip.base, window_mask(ip_span(ip), min_window), ip_span(ip), True)
-        free = None if compact else next((j for j, s in enumerate(spec.slaves) if not s.enabled), None)
-        if free is None:
-            spec.slaves.append(new)
-        else:
-            spec.slaves[free] = new
-    for j, s in enumerate(spec.slaves):
-        if not s.enabled:
-            s.name, s.external = f"spare{j}", False
-    if not spec.slaves and not compact:
-        spec.slaves.append(XbarSlave("spare0", 0, 0xFFFFF000, 0, False))
-    return spec
+    """Slave ports of a project's address map (see addrmap.py)."""
+    import addrmap
+    return addrmap.xbar_slaves(project)
 
 
 def auto_address(spec, start=0x40000000):
