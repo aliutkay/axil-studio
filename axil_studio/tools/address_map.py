@@ -15,13 +15,13 @@ from PySide6.QtGui import QAction, QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit,
                                QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem, QToolTip, QWidget)
 
-import addrmap as A
-import regmap_xlsx
-import xbargen as X
+from axil_studio.core import addrmap as A
+from axil_studio.core import regmap_xlsx
+from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import SlaveDialog, size_text, window_choices
 from axil_studio.tools.base import ToolPage
-from model import IPInstance, hex32, parse_int
+from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # slave table columns
 C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK = range(6)

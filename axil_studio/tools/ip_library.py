@@ -18,12 +18,12 @@ from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
                                QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
 
-import axilgen as G
+from axil_studio.core import axilgen as G
 from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import fill_regmap_tree, regmap_tree
-from library import LibEntry
-from model import Project, hex32, single_line
+from axil_studio.core.library import LibEntry
+from axil_studio.core.model import Project, hex32, single_line
 
 LIB_FILTER = "IP kütüphanesi (*.axlib.json);;JSON (*.json);;Tüm dosyalar (*)"
 ROLE = Qt.ItemDataRole.UserRole

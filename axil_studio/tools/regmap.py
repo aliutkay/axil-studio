@@ -16,12 +16,12 @@ from PySide6.QtWidgets import (QAbstractItemView, QFileDialog, QFormLayout, QHBo
                                QTableWidget, QTableWidgetItem, QToolTip, QTreeWidget, QTreeWidgetItem,
                                QVBoxLayout, QWidget)
 
-import axilgen as G
-import numfmt as N
+from axil_studio.core import axilgen as G
+from axil_studio.core import numfmt as N
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import KIND_SHORT, FieldDialog, RegDialog, ValueDialog
 from axil_studio.tools.base import ToolPage
-from model import KIND_READS, KIND_WRITES, EnumValue, single_line
+from axil_studio.core.model import KIND_READS, KIND_WRITES, EnumValue, single_line
 
 SPEC_FILTER = "Register spesifikasyonu (*.regspec.json);;JSON (*.json);;Tüm dosyalar (*)"
 ROLE = Qt.ItemDataRole.UserRole

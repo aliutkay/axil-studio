@@ -23,14 +23,14 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
                                QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
-import axilgen as G
-import hexbus
-import numfmt as N
+from axil_studio.core import axilgen as G
+from axil_studio.core import hexbus
+from axil_studio.core import numfmt as N
 from axil_studio import ROOT, icons, theme, ui
 from axil_studio.dialogs import BaseDialog, CustomValueDialog, FieldMapDialog
 from axil_studio.tools.base import ToolPage
-from model import KIND_READS, KIND_WRITES
-from model import (Field, IPBlock, Project, Register, hex32, load_config, parse_int, save_config,
+from axil_studio.core.model import KIND_READS, KIND_WRITES
+from axil_studio.core.model import (Field, IPBlock, Project, Register, hex32, load_config, parse_int, save_config,
                    single_line)
 
 BAUDS = ["115200", "230400", "460800", "921600", "1000000", "2000000"]

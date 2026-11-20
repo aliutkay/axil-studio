@@ -11,10 +11,10 @@ from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
 from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import QToolTip, QWidget
 
-import xbargen as X
+from axil_studio.core import xbargen as X
 from axil_studio import theme
 from axil_studio.dialogs import size_text
-from model import hex32
+from axil_studio.core.model import hex32
 
 IN_COLOR = "#3B82F6"     # into the crossbar
 OUT_COLOR = "#D99A00"    # out of the crossbar

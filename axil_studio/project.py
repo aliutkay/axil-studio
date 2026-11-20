@@ -11,12 +11,12 @@ The common file is the project (.axproj.json, model.Project). It holds
 import copy
 import os
 
-import addrmap
+from axil_studio.core import addrmap
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
-from library import IPLibrary, LibEntry
-from model import Project
+from axil_studio.core.library import IPLibrary, LibEntry
+from axil_studio.core.model import Project
 
 PROJECT_FILTER = "AXIL proje (*.axproj.json);;JSON (*.json);;Tüm dosyalar (*)"
 MAX_RECENT = 8

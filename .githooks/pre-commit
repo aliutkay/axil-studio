@@ -1,0 +1,10 @@
+#!/bin/sh
+# Every commit raises AXIL Studio's version by 0.0.1 (see scripts/bump_version.py).
+# Enable once per clone:  git config core.hooksPath .githooks
+ROOT="$(git rev-parse --show-toplevel)"
+PY="$(command -v python3 || command -v python)"
+if [ -z "$PY" ]; then
+    echo "pre-commit: Python bulunamadı, sürüm artırılmadı" >&2
+    exit 0
+fi
+exec "$PY" "$ROOT/scripts/bump_version.py" --hook

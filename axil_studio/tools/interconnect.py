@@ -15,13 +15,13 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDia
                                QPlainTextEdit, QScrollArea, QSplitter, QTableWidget, QTableWidgetItem,
                                QVBoxLayout, QWidget)
 
-import addrmap as A
-import xbargen as X
+from axil_studio.core import addrmap as A
+from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import size_text
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.xbar_diagram import BlockDiagram
-from model import hex32
+from axil_studio.core.model import hex32
 
 XBAR_FILTER = "Interconnect ayarları (*.xbar.json);;JSON (*.json);;Tüm dosyalar (*)"
 STYLE_SHORT = {"packed": "HDL Designer (paketli)", "signals": "Ayrık AXI sinyalleri"}

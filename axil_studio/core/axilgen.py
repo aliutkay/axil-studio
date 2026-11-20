@@ -33,7 +33,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 
-from model import EnumValue, single_line
+from .model import EnumValue, single_line
 
 SPEC_FORMAT = "axil-regspec"
 KINDS = ("RW", "RO", "PULSE", "W1C", "CONST")
@@ -726,7 +726,7 @@ def gen_markdown(spec: ModuleSpec):
 def to_ipblock(spec: ModuleSpec, base=None, with_spec=False):
     """IPBlock (model.py) of the register map; base overrides spec.base. with_spec: the IP also
     keeps the full spec (project IP definitions), so the HDL can be generated from it again."""
-    from model import Field, IPBlock, Register
+    from .model import Field, IPBlock, Register
     regs = []
     for r in spec.regs:
         fields = [Field(f.name, f.lsb, f.width, f.desc or KIND_HELP[f.kind], kind=f.kind,
@@ -766,7 +766,7 @@ def add_to_project(spec: ModuleSpec, path, replace=True):
     """Add (or replace) the IP definition in an existing .axproj.json, or create one. A new IP is
     also placed in the address map at spec.base."""
     import os
-    from model import IPInstance, Project
+    from .model import IPInstance, Project
     if os.path.exists(path):
         proj = Project.load(path)
     else:
@@ -1002,7 +1002,7 @@ def generate_all(spec: ModuleSpec, outdir):
     import os
     os.makedirs(outdir, exist_ok=True)
     m = spec.module
-    import axilpack
+    from . import axilpack
     # the IP itself always has plain S_AXI_* ports
     top_v = gen_verilog(spec)
     files = {
@@ -1026,11 +1026,11 @@ def generate_all(spec: ModuleSpec, outdir):
     spec.save(spec_path)
     paths.append(spec_path)
     proj_path = os.path.join(outdir, f"{m}.axproj.json")
-    from model import IPInstance, Project
+    from .model import IPInstance, Project
     Project(m, [to_ipblock(spec, 0, with_spec=True)], proj_path,
             instances=[IPInstance(m, m, spec.base, 0, True)]).save(proj_path)
     paths.append(proj_path)
-    import regmap_xlsx
+    from . import regmap_xlsx
     if regmap_xlsx.available():
         paths.append(export_xlsx(spec, os.path.join(outdir, f"{m}_regmap.xlsx")))
     return paths
@@ -1038,7 +1038,7 @@ def generate_all(spec: ModuleSpec, outdir):
 
 def hdl_designer_files(info):
     """<name>_pk.v (SLAVE/MASTER_AXI_REQ/RSP wrapper around the plain module) and its templates."""
-    import axilpack
+    from . import axilpack
     name = f"{info['name']}_pk"
     pk_v = axilpack.gen_pack_wrapper(info, name)
     pk_info = axilpack.parse_module(pk_v, name)
@@ -1062,7 +1062,7 @@ def hdl_files(spec: ModuleSpec):
 
 def export_xlsx(spec: ModuleSpec, path, base=None):
     """Register map workbook (see regmap_xlsx.py); addresses follow the base cell in the sheet."""
-    import regmap_xlsx
+    from . import regmap_xlsx
     return regmap_xlsx.export_xlsx([to_ipblock(spec, base)], path, f"{spec.module} kütük haritası")
 
 
@@ -1119,7 +1119,7 @@ def main():
     ap.add_argument("--xbar-name", default="axil_xbar", help="module name for --xbar")
     a = ap.parse_args()
     if a.pack:
-        import axilpack
+        from . import axilpack
         name, text = axilpack.pack_file(a.pack, a.module)
         os.makedirs(a.outdir, exist_ok=True)
         out = os.path.join(a.outdir, f"{name}_pk.v")
@@ -1128,8 +1128,8 @@ def main():
         print(out)
         return
     if a.xbar:
-        import xbargen
-        from model import Project
+        from . import xbargen
+        from .model import Project
         if a.xbar.endswith(".xbar.json"):
             xs = xbargen.XbarSpec.load(a.xbar)
         else:

@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from model import IPBlock
+from .model import IPBlock
 
 LIBRARY_FORMAT = "axil-ip-library"
 
@@ -68,7 +68,7 @@ class IPLibrary:
 
     def versions(self, name):
         """Entries of one IP, newest version first."""
-        from axilgen import version_key
+        from .axilgen import version_key
         return sorted((e for e in self.entries if e.name == name), key=lambda e: version_key(e.version), reverse=True)
 
     def get(self, name, version=None) -> Optional[LibEntry]:

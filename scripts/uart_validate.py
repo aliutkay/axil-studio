@@ -18,10 +18,10 @@ The line interface (PHY_CTRL / PHY_TIMING) is set from --line-type,
 All registers are restored when the run ends.
 
 Examples
-  python uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-  python uart_validate.py --config bench.json --bauds 460800,921600
-  python uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json
-  python uart_validate.py --simulate                 (offline dry run)
+  python scripts/uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
+  python scripts/uart_validate.py --config bench.json --bauds 460800,921600
+  python scripts/uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json
+  python scripts/uart_validate.py --simulate                 (offline dry run)
 """
 
 import argparse
@@ -30,8 +30,11 @@ import random
 import re
 import sys
 import time
+import os
 
-from hexbus import HexbusError, HexbusLink
+# run as a script (python scripts/uart_validate.py): the package lives in the repository root
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from axil_studio.core.hexbus import HexbusError, HexbusLink
 
 try:
     import serial
@@ -956,7 +959,7 @@ def main(argv=None):
     link, line_port = HexbusLink(timeout=2.0), None
     try:
         if args.simulate:
-            from uart_validate_sim import SimBench
+            from uart_validate_sim import SimBench   # same folder
             bench = SimBench(args.base, args.clk, two_wire=args.half, loopback=args.loopback,
                              de_delay_us=args.sim_de_delay_us)
             link.attach(bench.hexbus)

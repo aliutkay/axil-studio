@@ -4,10 +4,18 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracın `version` alanı).
 
 **Sürüm kuralı**
-- Bir aracı değiştiren her commit o aracın sürümünü artırır; hub'ın sürümü de her sürümde artar.
+- Her commit AXIL Studio'nun (hub) sürümünü 0.0.1 artırır; `.githooks/pre-commit` bunu kendiliğinden yapar
+  (`git config core.hooksPath .githooks` ile etkinleştir). Bir aracı değiştiren commit o aracın sürümünü de artırır.
 - `0.0.x`: düzeltme ve küçük değişiklik · `0.x.0`: yeni özellik · aşama değişimi (alpha, beta …) ayrıca duyurulur.
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
+
+## early-alpha 0.1.1 — tek paket
+
+- Çekirdek modüller (model, addrmap, library, axilgen, xbargen, axilpack, hexbus, numfmt, regmap_xlsx) depo kökünden
+  `axil_studio/core/` paketine taşındı; `sys.path` eklemesi kalktı. Komut satırı: `python -m axil_studio.core.axilgen`.
+- `uart_validate.py` / `uart_validate_sim.py` → `scripts/`.
+- Her commit hub sürümünü 0.0.1 artırır (`.githooks/pre-commit`, `scripts/bump_version.py`).
 
 ## early-alpha 0.1.0 — araçlar ayrıldı, adres haritası örnekleri
 

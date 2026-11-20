@@ -14,8 +14,8 @@ Sheets
 
 import datetime
 
-import numfmt as N
-from model import KIND_READS, KIND_WRITES, hex32
+from . import numfmt as N
+from .model import KIND_READS, KIND_WRITES, hex32
 
 try:
     from openpyxl import Workbook

@@ -17,13 +17,13 @@ from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QCheckBox, QFileDialog, QListWidget, QListWidgetItem, QMessageBox,
                                QPlainTextEdit, QSplitter, QVBoxLayout, QWidget)
 
-import axilgen as G
-import axilpack
-import regmap_xlsx
+from axil_studio.core import axilgen as G
+from axil_studio.core import axilpack
+from axil_studio.core import regmap_xlsx
 from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import SPEC_FILTER, fill_regmap_tree, regmap_tree
-from model import hex32
+from axil_studio.core.model import hex32
 
 
 def output_files(spec):

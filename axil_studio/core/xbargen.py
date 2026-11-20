@@ -25,8 +25,8 @@ import re
 from dataclasses import asdict, dataclass, field
 from typing import List
 
-import axilpack as PK
-from model import hex32, parse_int
+from . import axilpack as PK
+from .model import hex32, parse_int
 
 # (suffix, direction at the wrapper's MASTER<i> ports, width key)
 AXIL_SIGNALS = (
@@ -168,7 +168,7 @@ def window_mask(span, min_window=0x1000):
 
 def slaves_from_project(project, min_window=0x1000):
     """Slave ports of a project's address map (see addrmap.py)."""
-    import addrmap
+    from . import addrmap
     return addrmap.xbar_slaves(project)
 
 

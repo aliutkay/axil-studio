@@ -12,11 +12,10 @@ and each can also run on its own:  python -m axil_studio --tool debug
 """
 
 import os
-import sys
 
 APP_NAME = "AXIL Studio"
 RELEASE_STAGE = "early-alpha"     # early-alpha → alpha → beta → release
-APP_VERSION = "0.1.0"
+APP_VERSION = "0.1.1"
 ORG_NAME = "AXIL"
 
 
@@ -24,7 +23,6 @@ def version_text(version=APP_VERSION, stage=RELEASE_STAGE):
     """"early-alpha 0.0.1" style label."""
     return f"{stage} {version}"
 
-# The tool cores (model, hexbus, axilgen, xbargen, ...) live in the repository root.
+# Repository root: default folder of file dialogs, examples/ and hdl/.
+# The tool cores (model, hexbus, axilgen, xbargen, ...) are in axil_studio.core (no Qt).
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if ROOT not in sys.path:
-    sys.path.insert(0, ROOT)

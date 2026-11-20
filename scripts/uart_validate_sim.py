@@ -12,7 +12,7 @@ import random
 import threading
 import time
 
-from hexbus import SimulatedHexbus
+from axil_studio.core.hexbus import SimulatedHexbus
 
 FMT_PARITY = {0b000: "N", 0b001: "N", 0b010: "N", 0b011: "N",
               0b100: "O", 0b101: "E", 0b110: "S", 0b111: "M"}

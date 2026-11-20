@@ -7,8 +7,8 @@ any number of times. The Address Map Editor edits it, the Interconnect Configura
 into the crossbar's slave ports and the Debug Bridge reads registers through it.
 """
 
-import xbargen as X
-from model import IPInstance, hex32, parse_int
+from . import xbargen as X
+from .model import IPInstance, hex32, parse_int
 
 MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it
 DEFAULT_START = 0x40000000

@@ -49,7 +49,7 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 
 - Sol tarafta IP adı ve sürümü, register listesi; sağda 32 bitlik alan haritası (boş bite çift tık yeni alan
   açar), bit alanları ve değer açıklamaları (alan satırına tıklayınca alt tablo olarak açılır), IP açıklaması.
-- Her alanın bir **veri tipi** vardır (`numfmt.py`): hex, unsigned, signed (2's complement), binary, octal,
+- Her alanın bir **veri tipi** vardır (`axil_studio/core/numfmt.py`): hex, unsigned, signed (2's complement), binary, octal,
   bool, ASCII, unsigned/signed fixed point (Q, kesir biti seçilir) ya da enum (değer anlamı). Reset ve değerler
   bu tipte gösterilir/girilir; Debug Bridge alanı varsayılan olarak bu tipte gösterir.
 - **Projeye kaydet** (Ctrl+Shift+S) register haritasını projedeki IP olarak saklar; **IP aç** IP Library'den
@@ -66,7 +66,7 @@ doküman önizlemesi vardır. Register haritasını değiştirmek için **Regist
 bir registera çift tık) Register Map Editor'u açar; değişiklikler Wrapper'a anında yansır.
 
 ```
-python axilgen.py my_ip.regspec.json -o out --project bench.axproj.json   # komut satırı
+python -m axil_studio.core.axilgen my_ip.regspec.json -o out --project bench.axproj.json   # komut satırı
 ```
 
 **Alan tipleri**
@@ -153,8 +153,8 @@ Slave listesi projenin adres haritasından alınır. Maske, IP'nin kullandığı
 Hizalama, çakışma ve sığma kontrol edilir. Ayarlar `.xbar.json` olarak kaydedilir.
 
 ```
-python axilgen.py --xbar bench.axproj.json --nm 2 --ns 8 --xbar-name axil_xbar -o out
-python axilgen.py --xbar out/axil_xbar.xbar.json -o out        # kayıtlı ayarlarla yeniden üret
+python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --ns 8 --xbar-name axil_xbar -o out
+python -m axil_studio.core.axilgen --xbar out/axil_xbar.xbar.json -o out        # kayıtlı ayarlarla yeniden üret
 ```
 
 Projeye `hdl/axilxbar.v` (Verilog-2005 için yamalı: parametre listesindeki `localparam AW` → `parameter`),
@@ -174,7 +174,7 @@ Paketli bus her zaman 32 bit adres ve veri taşır; daha dar adresli çekirdekle
 
 - Xbar paketli stilde portlar `MASTER<i>_AXI_REQ/RSP` ve `SLAVE<j>_AXI_REQ/RSP` olur.
 - Paketli IP'lerin üst modülü `SLAVE_AXI_REQ/RSP` portludur.
-- Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python axilgen.py --pack axilgpio.v -o out`.
+- Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python -m axil_studio.core.axilgen --pack axilgpio.v -o out`.
   ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar ve parametreler aynen geçer.
 - `hdl/` içinde `axilgpio_pk.v`, `axiluart_phy_pk.v`, `hexbus_axil_top_pk.v` hazır.
 
@@ -230,34 +230,54 @@ monitörde yan yana kullanılabilir. Pencere kapatılınca (ya da **Pencereye ge
 Geliştirme aşaması: **early-alpha** (sonra alpha → beta → release). Program ve her araç kendi sürümünü taşır
 (bkz. `CHANGELOG.md`). Kaydedilen proje dosyasına `generator` olarak yazan programın adı ve sürümü eklenir.
 
-## Çekirdek modüller
+**Her commit programın sürümünü 0.0.1 artırır** (`axil_studio/__init__.py` → `APP_VERSION`). Bunu
+`.githooks/pre-commit` kendiliğinden yapar; depoyu klonladıktan sonra bir kez etkinleştir:
 
-| Dosya | İçerik |
+```
+git config core.hooksPath .githooks
+```
+
+Sürüm elle değiştirilmiş bir commit'te (ör. yeni özellik için 0.2.0) hook dokunmaz. Elle artırmak için:
+`python scripts/bump_version.py`.
+
+## Dosya düzeni
+
+| Yer | İçerik |
 |---|---|
-| `axil_studio/` | Hub ve araçlar (PySide6) |
+| `studio.py` | Başlatıcı (`python studio.py`) |
+| `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py` |
+| `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
+| `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
+| `scripts/` | Komut satırı araçları: `uart_validate.py` (+ `uart_validate_sim.py`) |
+| `hdl/` | Hazır Verilog dosyaları (axilxbar, paketli `_pk` örnekleri) |
+| `examples/` | Örnek GPIO projesi ve config dosyaları |
+| `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
+
+`axil_studio/core/`:
+
+| Modül | İçerik |
+|---|---|
 | `model.py` | Proje / IP / register / bit alanı modeli, adres haritası örnekleri, JSON kaydetme |
 | `addrmap.py` | Adres haritası: otomatik adresleme, pencereler, doğrulama, interconnect slave'leri |
 | `library.py` | IP kütüphanesi dosyaları (`.axlib.json`) |
 | `hexbus.py` | Hexbus protokol sürücüsü + `SIMULATOR` portu (GPIO0 @0x60000000, loopback UART0 @0x60001000) |
-| `axilgen.py` | AXI4-Lite wrapper üretici (komut satırı da var) |
+| `axilgen.py` | AXI4-Lite wrapper üretici (komut satırı: `python -m axil_studio.core.axilgen`) |
 | `axilpack.py` | Paketli AXI portu wrapper'ı (`_pk`, REQ/RSP) |
 | `xbargen.py` | axilxbar wrapper üretici (isimli portlar) |
 | `regmap_xlsx.py` | Kütük haritası Excel çıktısı |
 | `numfmt.py` | Bit alanı veri tipleri ve gösterimleri |
-| `uart_validate.py` / `uart_validate_sim.py` | axiluart_phy için otomatik donanım doğrulama scripti ve `--simulate` modeli |
-| `examples/` | Örnek GPIO projesi ve config dosyaları |
 
 Hexbus notları: her işlem `A<adres|1>W<veri>\n` veya `A<adres|1>R\n` olarak gönderilir (adres artırma kapalı);
 yanıtlar `A` adres, `K` yazma onayı, `R` okuma verisi, `E` AXI bus hatası, `Z` idle. Hexbus'ta FIFO yoktur;
 her isteğin yanıtı beklenerek sıralı çalışılır.
 
-## Donanım doğrulama (`uart_validate.py`)
+## Donanım doğrulama (`scripts/uart_validate.py`)
 ```
-python uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-python uart_validate.py --config examples/bench_rs485_4w.json          # ayarlar dosyadan
-python uart_validate.py --config bench.json --bauds 460800,921600      # komut satırı dosyayı ezer
-python uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json   # ayarları kaydet
-python uart_validate.py --simulate                                     # donanımsız deneme
+python scripts/uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
+python scripts/uart_validate.py --config examples/bench_rs485_4w.json          # ayarlar dosyadan
+python scripts/uart_validate.py --config bench.json --bauds 460800,921600      # komut satırı dosyayı ezer
+python scripts/uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json   # ayarları kaydet
+python scripts/uart_validate.py --simulate                                     # donanımsız deneme
 ```
 Hat ayarları (PHY_CTRL / PHY_TIMING) testten önce script tarafından yazılır, kartta o an
 yazılı olan değerler kullanılmaz. Test bitince kartın register'ları eski hâline döner.

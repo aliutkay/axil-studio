@@ -6,10 +6,10 @@ from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog,
                                QPlainTextEdit, QSpinBox, QTableWidget, QTableWidgetItem, QVBoxLayout,
                                QWidget)
 
-import axilgen as G
-import numfmt as N
+from axil_studio.core import axilgen as G
+from axil_studio.core import numfmt as N
 from axil_studio import theme, ui
-from model import KIND_READS, KIND_WRITES, EnumValue, parse_int
+from axil_studio.core.model import KIND_READS, KIND_WRITES, EnumValue, parse_int
 
 KIND_SHORT = {"RW": "kontrol (o_)", "RO": "durum (i_)", "PULSE": "darbe (o_)",
               "W1C": "olay bayrağı (i_)", "CONST": "sabit"}
@@ -558,7 +558,7 @@ class SlaveDialog(FormDialog):
         self.window.setCurrentIndex(max(0, i))
 
     def apply(self):
-        import xbargen as X
+        from axil_studio.core import xbargen as X
         name = self.name.text().strip()
         if not name:
             raise ValueError("Ad boş olamaz")
