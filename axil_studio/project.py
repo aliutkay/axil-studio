@@ -70,6 +70,10 @@ class ProjectContext(QObject):
     def save(self, path=None):
         from axil_studio import APP_NAME, version_text
         self.project.generator = f"{APP_NAME} {version_text()}"
+        if path:      # library paths are relative to the project file: re-base them on the new place
+            libs = [self._abs(p) for p in self.project.libraries]
+            self.project.path = path
+            self.project.libraries = [self._rel(p) for p in libs]
         self.project.save(path)
         self.dirty = False
         self._push_recent(self.project.path)
@@ -133,10 +137,6 @@ class ProjectContext(QObject):
         self.mark_modified(source)
         return inst
 
-    def remove_instance(self, name, source=""):
-        self.project.instances = [i for i in self.project.instances if i.name != name]
-        self.mark_modified(source)
-
     # ------------------------------------------------------------ IP libraries
     def _abs(self, path):
         if os.path.isabs(path) or not self.path:
@@ -192,9 +192,6 @@ class ProjectContext(QObject):
         from axil_studio import APP_NAME, version_text
         lib.save(generator=f"{APP_NAME} {version_text()}")
         self.libraries_changed.emit()
-
-    def library_of(self, name):
-        return next((lib for lib in self.libraries if lib.name == name), None)
 
     def use_library(self, lib):
         """Record that this project uses `lib` (re-opened with the project)."""

@@ -234,7 +234,6 @@ class BlockDiagram(QWidget):
             p.setPen(QColor(t["muted"]))
             p.drawText(QPointF(x + 34, 22), text)
             x += 34 + p.fontMetrics().horizontalAdvance(text) + 24
-        p.drawText(QPointF(x, 22), "· kesikli: kapalı port (EN=0)")
 
         # crossbar
         xr = self.xbar_rect
@@ -264,31 +263,26 @@ class BlockDiagram(QWidget):
 
         for i, m in enumerate(sp.masters):
             box = QRectF(self.mx, self.mslots[i].top(), self.mw, self.mslots[i].height())
-            self._block(p, t, bold, small, box, m.name, f"MASTER{i}", "", "", m.enabled,
-                        ("m", i) == self.selected, False)
-            self._hits.append((box, "m", i, f"MASTER{i} · {m.name}" + ("" if m.enabled else " · EN=0")))
-            self._side(p, t, small, self.left[i], self.mslots[i], True, m.enabled)
+            self._block(p, t, bold, small, box, m.name, f"MASTER{i}", "", "", ("m", i) == self.selected, False)
+            self._hits.append((box, "m", i, f"MASTER{i} · {m.name}"))
+            self._side(p, t, small, self.left[i], self.mslots[i], True)
         for j, s in enumerate(sp.slaves):
             box = QRectF(self.sx, self.sslots[j].top(), self.sw, self.sslots[j].height())
-            rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}" if s.enabled else "boş port"
-            self._block(p, t, bold, small, box, s.name if s.enabled else "yedek", f"SLAVE{j}", rng,
-                        size_text(s.window) if s.enabled else "", s.enabled, ("s", j) == self.selected,
-                        j in self.bad)
+            rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}"
+            self._block(p, t, bold, small, box, s.name, f"SLAVE{j}", rng, size_text(s.window),
+                        ("s", j) == self.selected, j in self.bad)
             self._hits.append((box, "s", j, f"SLAVE{j} · {s.name}\n{rng}"))
-            self._side(p, t, small, self.right[j], self.sslots[j], False, s.enabled)
+            self._side(p, t, small, self.right[j], self.sslots[j], False)
 
-    def _block(self, p, t, bold, small, box, title, port, line2, line3, enabled, selected, bad):
-        fill = QColor(t["surface"] if enabled else t["surface2"])
+    def _block(self, p, t, bold, small, box, title, port, line2, line3, selected, bad):
+        fill = QColor(t["surface"])
         border = QColor(t["danger"]) if bad else QColor(t["text"] if selected else t["border"])
-        pen = QPen(border, 2.5 if selected or bad else 1.2)
-        if not enabled:
-            pen.setStyle(Qt.PenStyle.DashLine)
-        p.setPen(pen)
+        p.setPen(QPen(border, 2.5 if selected or bad else 1.2))
         p.setBrush(fill)
         p.drawRoundedRect(box, 8, 8)
         inner = box.adjusted(10, 6, -10, 0)
         p.setFont(bold)
-        p.setPen(QColor(t["text"] if enabled else t["muted"]))
+        p.setPen(QColor(t["text"]))
         p.drawText(QRectF(inner.left(), inner.top(), inner.width() - 70, 18), Qt.AlignmentFlag.AlignLeft,
                    p.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, int(inner.width() - 70)))
         p.setFont(small)
@@ -315,19 +309,14 @@ class BlockDiagram(QWidget):
         p.setBrush(color)
         p.drawPolygon(poly)
 
-    def _side(self, p, t, small, pins, slot, left, enabled):
+    def _side(self, p, t, small, pins, slot, left):
         ys = self._pin_ys(slot, len(pins))
         x_edge = self.xbar_rect.left() if left else self.xbar_rect.right()
         block_edge = self.mx + self.mw if left else self.sx
         for (d, w, xname, bname, members), y in zip(pins, ys):
             is_in = d == "input"
             color = QColor(IN_COLOR if is_in else OUT_COLOR)
-            if not enabled:
-                color.setAlpha(110)
-            pen = QPen(color, 2)
-            if not enabled:
-                pen.setStyle(Qt.PenStyle.DashLine)
-            p.setPen(pen)
+            p.setPen(QPen(color, 2))
             p.drawLine(QPointF(block_edge, y), QPointF(x_edge, y))
             # arrow at the receiving end: crossbar for its inputs, the block for crossbar outputs
             if left:
@@ -335,7 +324,7 @@ class BlockDiagram(QWidget):
             else:
                 self._arrow(p, QPointF(x_edge if is_in else block_edge, y), -1 if is_in else 1, color)
             p.setFont(small)
-            p.setPen(QColor(t["text"] if enabled else t["muted"]))
+            p.setPen(QColor(t["text"]))
             half = self.xbar_w / 2 - 12
             xr = QRectF(x_edge + 8, y - 9, half, 18) if left else QRectF(x_edge - half - 8, y - 9, half, 18)
             p.drawText(xr, (Qt.AlignmentFlag.AlignLeft if left else Qt.AlignmentFlag.AlignRight) |
@@ -343,7 +332,7 @@ class BlockDiagram(QWidget):
             bw = self.mw if left else self.sw
             br = QRectF(block_edge - bw + 8, y - 9, bw - 16, 18) if left else \
                 QRectF(block_edge + 8, y - 9, bw - 16, 18)
-            p.setPen(QColor(t["muted"] if enabled else t["border"]))
+            p.setPen(QColor(t["muted"]))
             p.drawText(br, (Qt.AlignmentFlag.AlignRight if left else Qt.AlignmentFlag.AlignLeft) |
                        Qt.AlignmentFlag.AlignVCenter, bname)
             own = "output" if is_in else "input"

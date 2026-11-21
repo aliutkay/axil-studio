@@ -467,7 +467,7 @@ class DebugBridgePage(ToolPage):
         w = 0x1000
         while w < spec.span:
             w <<= 1
-        base = BaseDialog.ask(self, f"{spec.module}: base adres", spec.base & ~(w - 1), w,
+        base = BaseDialog.ask(self, f"{spec.module}: base adres", 0x40000000, w,
                               "IP'nin donanımdaki adresi.")
         if base is None:
             return

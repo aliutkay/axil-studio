@@ -311,11 +311,6 @@ class HubWindow(QMainWindow):
         ctx.state_changed.connect(self._update_title)
         self._update_title()
 
-    def show_tool(self, key):
-        """Kept for callers of the old sidebar API."""
-        if key != "home":
-            self.open_tool_window(key)
-
     def open_tool_window(self, tool_id):
         w = self.tool_windows.get(tool_id)
         if w is None:

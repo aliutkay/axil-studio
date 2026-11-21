@@ -51,7 +51,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -322,16 +322,16 @@ class WrapperPage(ToolPage):
             if self.spec is None:
                 text = ""
             else:
-                spec = self._out_spec()
+                spec, base = self.spec, self._project_base()
                 errs = spec.validate()
                 try:
                     if errs:
                         raise G.SpecError("\n".join(errs))
                     if key == "verilog":
                         name = self.vfile_cb.currentData() or f"{spec.module}.v"
-                        text = G.output_texts(spec, name)
+                        text = G.output_texts(spec, name, base)
                     elif key == "header":
-                        text = G.gen_header(spec)
+                        text = G.gen_header(spec, base or 0)
                     else:
                         text = G.gen_markdown(spec)
                 except G.SpecError as exc:
@@ -357,19 +357,13 @@ class WrapperPage(ToolPage):
         return True
 
     def _project_base(self):
-        """Base of the IP's first address-map instance (0 when it is not placed or not in the project)."""
+        """Base of the IP's first address-map instance; None when it is not placed (or not in the
+        project): the outputs then use their defaults (C header 0, automatic address)."""
         if self.origin and self.origin[0] == "project":
             insts = self.ctx.project.instances_of(self.origin[1])
             if insts:
                 return insts[0].base
-        return 0
-
-    def _out_spec(self):
-        """Copy of the spec for the outputs; the base (C header, Excel, test address) is the IP's
-        address in the project's address map: it is never set here."""
-        spec = copy.deepcopy(self.spec)
-        spec.base = self._project_base()
-        return spec
+        return None
 
     def generate(self):
         if not self._ready():
@@ -379,7 +373,7 @@ class WrapperPage(ToolPage):
             return
         self.outdir = outdir
         try:
-            paths = G.generate_all(self._out_spec(), outdir)
+            paths = G.generate_all(self.spec, outdir, self._project_base())
         except Exception as exc:  # noqa: BLE001
             return self.error("Üretim başarısız", exc)
         names = "\n".join(os.path.basename(p) for p in paths)
@@ -409,7 +403,7 @@ class WrapperPage(ToolPage):
                                               "Excel (*.xlsx)")
         if not path:
             return
-        base = self._project_base()
+        base = self._project_base() or 0
         try:
             G.export_xlsx(self.spec, path, base)
         except (OSError, RuntimeError) as exc:
@@ -420,11 +414,11 @@ class WrapperPage(ToolPage):
         if not self._ready():
             return
         d = self.outdir or os.path.join(ROOT, "axilgen_out")
-        spec = self._out_spec()
+        spec, base = copy.deepcopy(self.spec), self._project_base()
         self.status("Testbench çalışıyor…", 0)
 
         def job():
-            G.generate_all(spec, d)
+            G.generate_all(spec, d, base)
             m = spec.module
             exe = os.path.join(d, f"{m}_tb.vvp")
             srcs = [os.path.join(d, f) for f in [f"{m}_tb.v"] + G.hdl_files(spec)]

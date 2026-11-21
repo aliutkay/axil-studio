@@ -49,11 +49,11 @@ STYLES = {
 
 @dataclass
 class XbarSlave:
-    name: str = "spare"       # label only (comments, docs)
+    """One slave port; every port is in use (the ports come from the project's address map)."""
+    name: str = "slave"       # label only (comments, docs)
     base: int = 0
     mask: int = 0xFFFFF000
     span: int = 0             # bytes used by the IP (checked against the window)
-    enabled: bool = True
     external: bool = False    # not an IP of the project (address entered by hand)
     fixed: bool = False       # keeps its base when the map is auto-addressed
 
@@ -65,7 +65,6 @@ class XbarSlave:
 @dataclass
 class XbarMaster:
     name: str = "master"
-    enabled: bool = True
 
 
 @dataclass
@@ -88,19 +87,6 @@ class XbarSpec:
     def ns(self):
         return len(self.slaves)
 
-    def resize(self, nm=None, ns=None):
-        """Change capacity: adds disabled ports, removes only trailing disabled ones."""
-        if nm is not None:
-            while self.nm < nm:
-                self.masters.append(XbarMaster(f"master{self.nm}", False))
-            while self.nm > max(nm, 1) and not self.masters[-1].enabled:
-                self.masters.pop()
-        if ns is not None:
-            while self.ns < ns:
-                self.slaves.append(XbarSlave(f"spare{self.ns}", 0, 0xFFFFF000, 0, False))
-            while self.ns > max(ns, 1) and not self.slaves[-1].enabled:
-                self.slaves.pop()
-
     def validate(self):
         errs = []
         if self.style not in STYLES:
@@ -111,24 +97,18 @@ class XbarSpec:
             errs.append("Master kapasitesi 1..16 olmalı")
         if not 1 <= self.ns <= 64:
             errs.append("Slave kapasitesi 1..64 olmalı")
-        if not any(m.enabled for m in self.masters):
-            errs.append("En az bir master etkin olmalı")
-        if not any(s.enabled for s in self.slaves):
-            errs.append("En az bir slave etkin olmalı")
         for i, s in enumerate(self.slaves):
             inv = (~s.mask) & 0xFFFFFFFF
             tag = f"SLAVE{i} ({s.name})"
             if inv & (inv + 1):
                 errs.append(f"{tag}: maske bitişik olmalı (ör. 0xFFFFF000)")
-            if not s.enabled:
-                continue
             if s.base & inv:
                 errs.append(f"{tag}: base {hex32(s.base)} pencereye ({s.window:#x}) hizalı değil")
             if s.span > s.window:
                 errs.append(f"{tag}: IP {s.span:#x} byte kullanıyor, pencere {s.window:#x}")
             for j in range(i):
                 o = self.slaves[j]
-                if o.enabled and not ((s.base ^ o.base) & s.mask & o.mask):
+                if not ((s.base ^ o.base) & s.mask & o.mask):
                     errs.append(f"{tag} ile SLAVE{j} ({o.name}) adres aralıkları çakışıyor")
         return errs
 
@@ -141,12 +121,13 @@ class XbarSpec:
 
     @staticmethod
     def from_dict(d):
+        """Older files may hold unused ports ("enabled": false); they are left out."""
         return XbarSpec(d.get("module", "axil_xbar"),
-                        [XbarMaster(m.get("name", "master"), bool(m.get("enabled", True))) for m in d["masters"]],
-                        [XbarSlave(s.get("name", "spare"), parse_int(s["base"]), parse_int(s["mask"]),
-                                   parse_int(s.get("span", 0)), bool(s.get("enabled", True)),
-                                   bool(s.get("external", False)), bool(s.get("fixed", False)))
-                         for s in d["slaves"]],
+                        [XbarMaster(m.get("name", "master")) for m in d["masters"] if m.get("enabled", True)],
+                        [XbarSlave(s.get("name", "slave"), parse_int(s["base"]), parse_int(s["mask"]),
+                                   parse_int(s.get("span", 0)), bool(s.get("external", False)),
+                                   bool(s.get("fixed", False)))
+                         for s in d["slaves"] if s.get("enabled", True)],
                         "signals" if d.get("style") == "signals" or (not d.get("style") and not d.get("packed"))
                         else "packed")
 
@@ -160,13 +141,6 @@ class XbarSpec:
             return XbarSpec.from_dict(json.load(fh))
 
 
-def window_mask(span, min_window=0x1000):
-    w = max(min_window, 4)
-    while w < span:
-        w <<= 1
-    return (~(w - 1)) & 0xFFFFFFFF
-
-
 def slaves_from_project(project, min_window=0x1000):
     """Slave ports of a project's address map (see addrmap.py)."""
     from . import addrmap
@@ -174,13 +148,13 @@ def slaves_from_project(project, min_window=0x1000):
 
 
 def auto_address(spec, start=0x40000000):
-    """Give every enabled, non-fixed slave a base address in port order: SLAVE0 first, each
+    """Give every non-fixed slave a base address in port order: SLAVE0 first, each
     window aligned to its size, skipping the windows of fixed slaves. Returns the list of
     (port, old_base, new_base) that changed."""
-    fixed = [(s.base, s.base + s.window) for s in spec.slaves if s.enabled and s.fixed]
+    fixed = [(s.base, s.base + s.window) for s in spec.slaves if s.fixed]
     cur, changed = start & 0xFFFFFFFF, []
     for j, s in enumerate(spec.slaves):
-        if not s.enabled or s.fixed:
+        if s.fixed:
             continue
         w = s.window
         base = (cur + w - 1) & ~(w - 1)
@@ -200,33 +174,21 @@ def auto_address(spec, start=0x40000000):
     return changed
 
 
-def sort_by_address(spec):
-    """Port order = address order; spare ports go to the end."""
-    used = sorted((s for s in spec.slaves if s.enabled), key=lambda s: s.base)
-    spare = [s for s in spec.slaves if not s.enabled]
-    spec.slaves = used + spare
-    for j, s in enumerate(spec.slaves):
-        if not s.enabled:
-            s.name = f"spare{j}"
-
-
 def xbar_ports(spec):
     """[(direction, range, name)] of the generated wrapper's ports, read from its header.
     Works for an unfinished spec too (no slave yet, overlaps, bad name): the port list does not
-    depend on addresses or EN, so a valid stand-in with the same port counts and style is used."""
+    depend on addresses, so a valid stand-in with the same port counts and style is used."""
     import copy
     probe = copy.deepcopy(spec)
     if probe.validate():
         if not IDENT.match(probe.module or ""):
             probe.module = "axil_xbar"
-        for m in probe.masters:
-            m.enabled = True
         if not probe.slaves:
-            probe.slaves.append(XbarSlave("spare0"))
+            probe.slaves.append(XbarSlave("slave0"))
         if not probe.masters:
             probe.masters.append(XbarMaster("master0"))
         for j, sl in enumerate(probe.slaves):
-            sl.enabled, sl.base, sl.mask, sl.span = True, j * 0x1000, 0xFFFFF000, 0
+            sl.base, sl.mask, sl.span = j * 0x1000, 0xFFFFF000, 0
     v = gen_xbar_pk(probe) if probe.packed else gen_xbar(probe)
     head = v[:v.index(");") + 2]
     return [(d, (w or "").strip(), n) for d, w, n in

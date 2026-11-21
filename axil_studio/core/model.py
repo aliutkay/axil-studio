@@ -256,9 +256,6 @@ class Project:
                 out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name))
         return out
 
-    def get_address_ip(self, name) -> Optional[IPBlock]:
-        return next((i for i in self.address_ips() if i.name == name), None)
-
     def save(self, path=None):
         self.path = path or self.path
         data = {"format": PROJECT_FORMAT, "version": PROJECT_VERSION, "name": self.name,
@@ -338,64 +335,3 @@ def load_config(path):
     if data.get("format") != CONFIG_FORMAT:
         raise ValueError("Not a config file")
     return [(w["ip"], w["register"], parse_int(w["value"])) for w in data.get("writes", [])]
-
-
-def gpio_example_ip(base=0x60000000):
-    """Register map of ZipCPU axilgpio (wb2axip/rtl/axilgpio.v)."""
-    outs = [Field("OUT0", 0, 1, "Output bit 0"), Field("OUT1", 1, 1, "Output bit 1")]
-    ins = [Field(f"IN{i}", i, 1, f"Input bit {i}") for i in range(5)]
-    return IPBlock("GPIO0", base, "ZipCPU axilgpio", [
-        Register("LOAD", 0x00, "RW", 0, "Output data (overwrite)", list(outs)),
-        Register("SET", 0x04, "WO", 0, "Set output bits where 1 is written", list(outs)),
-        Register("CLEAR", 0x08, "WO", 0, "Clear output bits where 1 is written", list(outs)),
-        Register("TOGGLE", 0x0C, "WO", 0, "Toggle output bits where 1 is written", list(outs)),
-        Register("INPUT", 0x10, "RO", 0, "Input data (2-FF synchronized)", list(ins)),
-        Register("CHANGED", 0x14, "RW", 0, "Input toggle flags, write 1 to clear", list(ins)),
-        Register("INT_MASK", 0x18, "RW", 0, "1 = toggle does not raise interrupt", list(ins)),
-        Register("INT_ACTIVE", 0x1C, "RO", 0, "CHANGED & ~INT_MASK", list(ins)),
-    ])
-
-
-def uart_phy_example_ip(base=0x60001000):
-    """Register map of axiluart_phy (ZipCPU axiluart_v2 + uart_phy_adapter)."""
-    F, R = Field, Register
-    return IPBlock("UART0", base, "axiluart_phy (axiluart_v2 + uart_phy_adapter)", [
-        R("SETUP", 0x00, "RW", 0x400001B2, "Line format and baud divider (write resets RX/TX)", [
-            F("BAUD_DIV", 0, 24, "ACLK / baud"), F("PAR_SEL", 24, 1, "Even(1)/odd(0), or mark/space if fixed"),
-            F("PAR_FIXED", 25, 1, "Fixed parity bit"), F("PAR_EN", 26, 1, "Parity enable"),
-            F("STOP2", 27, 1, "Two stop bits"), F("DATA_BITS", 28, 2, "0:8 1:7 2:6 3:5 bits"),
-            F("NO_FLOW", 30, 1, "1: ignore RTS/CTS")]),
-        R("FIFO", 0x04, "RO", 0, "RX [15:0] and TX [31:16] FIFO status", [
-            F("RX_AVAIL", 0, 1, "RX data available"), F("RX_HALF", 1, 1, "RX FIFO half full"),
-            F("RX_FILL", 2, 10, "Bytes waiting in RX FIFO"), F("RX_LGLEN", 12, 4, "log2 RX FIFO depth"),
-            F("TX_SPACE", 16, 1, "TX FIFO can accept data"), F("TX_HALF", 17, 1, "TX FIFO half empty"),
-            F("TX_FREE", 18, 10, "Free TX FIFO entries"), F("TX_LGLEN", 28, 4, "log2 TX FIFO depth")]),
-        R("RXREG", 0x08, "RO", 0x100, "Received byte and flags (reading pops the RX FIFO)", [
-            F("DATA", 0, 8, "Received byte"), F("EMPTY", 8, 1, "1: no data, DATA invalid"),
-            F("PERR", 9, 1, "Parity error (sticky)"), F("FERR", 10, 1, "Frame error (sticky)"),
-            F("BREAK", 11, 1, "Break condition on the line"), F("OVFL", 12, 1, "RX FIFO overflow (sticky)"),
-            F("BYTE_PERR", 13, 1, "This byte had a parity error"),
-            F("BYTE_FERR", 14, 1, "This byte had a frame error")]),
-        R("RX_CLEAR", 0x08, "WO", 0, "Write-only view of RXREG for clearing flags", [
-            F("PERR_CLR", 9, 1, "Write 1 to clear PERR"), F("FERR_CLR", 10, 1, "Write 1 to clear FERR"),
-            F("RX_RESET", 12, 1, "Write 1 to reset receiver and RX FIFO (clears OVFL)")]),
-        R("TXREG", 0x0C, "WO", 0, "Write a byte to the TX FIFO", [
-            F("DATA", 0, 8, "Byte to send"), F("BREAK", 9, 1, "1: hold line in break"),
-            F("TX_RESET", 12, 1, "1: reset transmitter and TX FIFO")]),
-        R("PHY_CTRL", 0x10, "RW", 0xC2, "Line interface control (applied when TX idle)", [
-            F("DE_MODE", 0, 2, "0: DE low 1: DE high 2: DE while transmitting"),
-            F("HALF", 2, 1, "Half duplex: RX disabled while driving"),
-            F("ECHO", 3, 1, "Keep RX enabled while driving (HALF only)"),
-            F("TX_INV", 4, 1, "Invert TX line"), F("RX_INV", 5, 1, "Invert RX line"),
-            F("TX_EN", 6, 1, "Transmitter enable"), F("RX_EN", 7, 1, "Receiver enable"),
-            F("APPLY_NOW", 31, 1, "Write 1 to apply even if TX is busy")]),
-        R("PHY_TIMING", 0x14, "RW", 0x00FA0032, "Driver enable timing in ACLK cycles", [
-            F("LEAD", 0, 16, "DE to start bit"), F("TAIL", 16, 16, "Stop bit end to DE release")]),
-        R("PHY_STATUS", 0x18, "RO", 0x0F, "Capabilities and live line state", [
-            F("HAS_TX", 0, 1, ""), F("HAS_RX", 1, 1, ""), F("HAS_DE", 2, 1, ""), F("HAS_RE", 3, 1, ""),
-            F("HAS_FLOW", 4, 1, ""), F("DRIVING", 8, 1, "DE sequence active"), F("DE", 9, 1, "DE pin"),
-            F("RE_N", 10, 1, "/RE pin"), F("PENDING", 11, 1, "New settings waiting for TX idle"),
-            F("CFG_ERR", 12, 1, "Unsupported setting was written")]),
-        R("PHY_STATUS_CLR", 0x18, "WO", 0, "Write-only view of PHY_STATUS", [
-            F("CFG_ERR_CLR", 12, 1, "Write 1 to clear CFG_ERR")]),
-    ])

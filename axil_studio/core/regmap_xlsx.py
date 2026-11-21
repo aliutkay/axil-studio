@@ -52,10 +52,6 @@ def _bits(msb, lsb):
     return f"[{lsb}]" if msb == lsb else f"[{msb}:{lsb}]"
 
 
-def _fhex(v, width):
-    return f"0x{v:0{max(1, (width + 3) // 4)}X}"
-
-
 def _field_access(reg, f):
     if f.kind:
         return KIND_TEXT[f.kind]

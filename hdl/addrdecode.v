@@ -162,7 +162,7 @@ module	addrdecode #(
 		begin
 			for(iM=0; iM<NS; iM=iM+1)
 				r_request[iM] = i_valid && prerequest[iM];
-			if (!OPT_NONESEL && (NS > 1 && |prerequest[NS-1:1]))
+			if (!OPT_NONESEL && (NS > 1 && |(prerequest >> 1)))	// AXIL Studio: was |prerequest[NS-1:1] (a reversed [0:1] select when NS == 1; iverilog error)
 				r_request[0] = 1'b0;
 		end
 

@@ -132,6 +132,9 @@ def _verilog(text):
     t = re.sub(r"/\*.*?\*/", " ", text, flags=re.S)
     t = re.sub(r"//[^\n]*", " ", t)
     t = re.sub(r"\(\*.*?\*\)", " ", t, flags=re.S)        # attributes
+    # the input/output declarations of functions and tasks are not ports of the module
+    t = re.sub(r"\bfunction\b.*?\bendfunction\b", " ", t, flags=re.S)
+    t = re.sub(r"\btask\b.*?\bendtask\b", " ", t, flags=re.S)
     name = re.search(r"\bmodule\s+(\w+)", t)
     params = {}
     for m in re.finditer(r"\b(?:parameter|localparam)\b([^;]*?)(?=;|\)\s*\(|\bparameter\b|\blocalparam\b|$)", t, re.S):

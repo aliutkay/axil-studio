@@ -64,7 +64,7 @@ def xbar_slaves(project):
     out = []
     for inst in project.instances:
         w = window_of(project, inst)
-        out.append(X.XbarSlave(inst.name, inst.base, (~(w - 1)) & 0xFFFFFFFF, span_of(project, inst), True,
+        out.append(X.XbarSlave(inst.name, inst.base, (~(w - 1)) & 0xFFFFFFFF, span_of(project, inst),
                                inst.external, inst.fixed))
     return out
 

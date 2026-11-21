@@ -28,12 +28,12 @@ C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK = range(6)
 
 
 def overlapping(slaves):
-    """Indexes of enabled slaves whose windows overlap another one."""
+    """Indexes of slaves whose windows overlap another one."""
     bad = set()
     for i, a in enumerate(slaves):
         for j in range(i):
             b = slaves[j]
-            if a.enabled and b.enabled and not ((a.base ^ b.base) & a.mask & b.mask):
+            if not ((a.base ^ b.base) & a.mask & b.mask):
                 bad.update((i, j))
     return bad
 
@@ -64,7 +64,7 @@ class MemoryMap(QWidget):
         self.update()
 
     def _layout(self):
-        items = sorted(((s.base, j) for j, s in enumerate(self.slaves) if s.enabled))
+        items = sorted((s.base, j) for j, s in enumerate(self.slaves))
         r = QRectF(self.rect()).adjusted(1, 18, -1, -22)
         gaps = sum(1 for k in range(1, len(items))
                    if self.slaves[items[k][1]].base > self.slaves[items[k - 1][1]].base
@@ -125,7 +125,7 @@ class MemoryMap(QWidget):
             p.setPen(QColor(t["muted"]))
             p.drawText(QRectF(inner.left(), 0, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
                        p.fontMetrics().elidedText(hex32(s.base), Qt.TextElideMode.ElideRight, int(inner.width())))
-        used = [s for s in self.slaves if s.enabled]
+        used = list(self.slaves)
         lo = min(s.base for s in used)
         hi = max(s.base + s.window for s in used) - 1
         p.setFont(small)
@@ -195,7 +195,7 @@ class AddressMapPage(ToolPage):
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
                    "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.1.0"
+    version = "0.1.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -566,7 +566,7 @@ class AddressMapPage(ToolPage):
         while self.proj.get_instance(f"EXT{k}"):
             k += 1
         name = f"EXT{k}"
-        proto = X.XbarSlave(name, 0, 0xFFFFF000, 0x1000, True, True, False)
+        proto = X.XbarSlave(name, 0, 0xFFFFF000, 0x1000, True, False)    # external, automatic address
         new = SlaveDialog.ask(self, proto, "Harici slave", A.MIN_WINDOW, False)
         if new is None:
             return

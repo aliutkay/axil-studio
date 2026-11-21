@@ -521,9 +521,6 @@ class SlaveDialog(FormDialog):
         self.fixed = QCheckBox("Sabit adres (işaretli değilse sıraya göre otomatik verilir)")
         self.fixed.setChecked(s.fixed)
         self.form.addRow("", self.fixed)
-        self.enabled = QCheckBox("Kullanımda (EN = 1)")
-        self.enabled.setChecked(True)
-        self.enabled.hide()           # every slave port is enabled; unwanted ones are deleted
         self.fixed.toggled.connect(self._sync_base)
         self._sync_base()
         if not s.external:
@@ -575,7 +572,7 @@ class SlaveDialog(FormDialog):
             raise ValueError(f"Base adres pencereye ({w:#x}) hizalı olmalı")
         if not 0 <= base <= 0xFFFFFFFF:
             raise ValueError("Base adres 32 bite sığmalı")
-        return X.XbarSlave(name, base, (~(w - 1)) & 0xFFFFFFFF, span, self.enabled.isChecked(), self.s.external,
+        return X.XbarSlave(name, base, (~(w - 1)) & 0xFFFFFFFF, span, self.s.external,
                            fixed)
 
 

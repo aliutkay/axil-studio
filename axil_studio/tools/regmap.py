@@ -682,12 +682,13 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self.spec = G.ModuleSpec()
-        self.origin = None          # ("project", ip name) | ("file", path) | ("library", label) | None
+        self.origin = None          # ("project", ip name) | ("file", path) | ("other", label) | None
+        self.source_lib = ""        # library a handed-over map came from ("other" origin only)
         self.outdir = None
         self.dirty = False
         self._loading = False
@@ -1610,12 +1611,14 @@ class RegMapEditorPage(ToolPage):
         self.status(f"{name} açıldı")
         return True
 
-    def load_spec(self, spec, origin=""):
-        """Open a register map handed over by another tool (e.g. from an IP library)."""
+    def load_spec(self, spec, origin="", library=""):
+        """Open a register map handed over by another tool; `origin`: a label for the user,
+        `library`: the IP library it comes from (becomes the IP's source when saved to the project)."""
         if not self._confirm_discard():
             return False
         self.spec = spec
-        self.origin = ("library", origin) if origin else None
+        self.origin = ("other", origin) if origin else None
+        self.source_lib = library
         self._set_clean()
         self._load_spec()
         self._raise()
@@ -1707,8 +1710,7 @@ class RegMapEditorPage(ToolPage):
                 return False
         prev = self.ctx.project.get_ip(old or name)
         ip = G.to_ipblock(copy.deepcopy(self.spec), 0, with_spec=True)
-        ip.source = prev.source if prev else (self.origin[1].split(" ")[0] if self.origin and
-                                              self.origin[0] == "library" else "")
+        ip.source = prev.source if prev else (self.source_lib if self.origin and self.origin[0] == "other" else "")
         replaced = self.ctx.put_ip(ip, self.tool_id, old_name=old)
         self.origin = ("project", name)
         self._set_clean()

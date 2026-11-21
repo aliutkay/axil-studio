@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -227,7 +227,7 @@ class InterconnectPage(ToolPage):
         d = self.ctx.project.interconnect or {}
         self.module = d.get("module", "axil_xbar")
         self.style = d.get("style", "packed")
-        self.masters = [X.XbarMaster(m.get("name", "master"), True) for m in d.get("masters", [])] \
+        self.masters = [X.XbarMaster(m.get("name", "master")) for m in d.get("masters", [])] \
             or [X.XbarMaster("hexbus")]
         self._load_widgets()
         self._refresh()
@@ -374,7 +374,7 @@ class InterconnectPage(ToolPage):
     def add_master(self):
         if len(self.masters) >= 16:
             return
-        self.masters.append(X.XbarMaster(f"master{len(self.masters)}", True))
+        self.masters.append(X.XbarMaster(f"master{len(self.masters)}"))
         self._after_change()
         self.master_tbl.selectRow(len(self.masters) - 1)
 
@@ -411,7 +411,7 @@ class InterconnectPage(ToolPage):
         except Exception as exc:  # noqa: BLE001 - shown to the user
             return self.error("Açılamadı", exc)
         self.module, self.style = spec.module, spec.style if spec.style in STYLE_SHORT else "packed"
-        self.masters = [X.XbarMaster(m.name, True) for m in spec.masters if m.enabled] or [X.XbarMaster("hexbus")]
+        self.masters = [X.XbarMaster(m.name) for m in spec.masters] or [X.XbarMaster("hexbus")]
         self._load_widgets()
         self._after_change()
         self.status(f"Crossbar ayarları alındı: {path} (slave'ler ve adresler Address Map Editor'dan gelir)")

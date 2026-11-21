@@ -58,7 +58,7 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
 - **Port içe aktar…** (Ctrl+I): register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
   ya da VHDL olarak yapıştırılır (modülün / entity'nin tamamı, yalnızca port listesi ya da port satırları; dil
-  kendiliğinden anlaşılır). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
+  kendiliğinden anlaşılır; modülün içindeki `function` / `task` bildirimleri port sayılmaz). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
   çok boyutlu diziler, `integer range` çözülür; çözülemeyen genişlik tabloda elle yazılır. Çekirdeğin girişleri
   RW (registerdan sürülür), çıkışları RO (registerdan okunur) olarak gelir; tip satır başına değiştirilebilir. Saat
   ve reset portları baştan seçili gelmez. 32 bitten geniş sinyaller 32 bitlik parçalara bölünür
@@ -93,6 +93,7 @@ bir registera çift tık) Register Map Editor'u açar; değişiklikler Wrapper'a
 
 ```
 python -m axil_studio.core.axilgen my_ip.regspec.json -o out --project bench.axproj.json   # komut satırı
+python -m axil_studio.core.axilgen my_ip.regspec.json -o out --base 0x40002000            # adresi vererek
 ```
 
 VHDL dosyası üretilmez (ZipCPU kaynaklarının da VHDL karşılığı yok). **Verilog önizleme** sekmesinde *Dosya*
@@ -128,7 +129,8 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - *Bit Görünümü*: 32 bitlik yerleşim, tipe göre renkli
 
 **Notlar**
-- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın Excel / `.axproj.json` çıktısı IP'nin adres haritasındaki ilk adresini kullanır). Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir; header'daki `<IP>_BASE` `#ifndef` ile ezilebilir.
+- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın C header, testbench, Excel ve `.axproj.json` çıktıları IP'nin adres haritasındaki ilk adresini kullanır; komut satırında `--base` ile verilir, verilmezse IP adres haritasında sıradaki boş adrese yerleşir). Eski `.regspec.json` dosyalarındaki `base` okunurken yok sayılır. Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir; header'daki `<IP>_BASE` `#ifndef` ile ezilebilir.
+- `i_reset` ve `o_irq` port adları ayrılmıştır (easyaxil'in iç reset sinyali ve kesme çıkışı); bunları üretecek register / alan adları doğrulamada reddedilir (ör. `RESET` registerında `RESET` RO alanı).
 - Libero: `C_AXI_ADDR_WIDTH` parametresini interconnect slave adres genişliğine eşitle; BIF tipi AXI4, slave slotu AXI4-Lite.
 - Tüm registerlar `S_AXI_ARESETN` ile resetlenir (PolarFire `initial` bloğunu yok sayar).
 - Testbench: `iverilog -g2012 -o sim <ip>_tb.v <ip>.v && vvp sim` → `... 0 errors: PASSED`.
@@ -165,9 +167,13 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 
 ZipCPU `axilxbar.v` (`hdl/axilxbar.v`) yapısına dokunulmadan kullanılır; yalnızca parametreleriyle
 yapılandırılır: `NM`, `NS`, `SLAVE_ADDR`, `SLAVE_MASK`, `OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST`,
-`C_AXI_DATA_WIDTH`, `C_AXI_ADDR_WIDTH`. Dosyada wb2axip'e göre tek satır farklıdır: parametre listesindeki
-`localparam AW` (yalnızca SystemVerilog'da geçerli) Verilog-2005 araçları için `parameter AW` yazılmıştır;
-`AW` dışarıdan verilmez. Mantık değişmez.
+`C_AXI_DATA_WIDTH`, `C_AXI_ADDR_WIDTH`. wb2axip dosyalarında yalnızca iki tek satırlık, satırında
+`AXIL Studio:` notuyla işaretli uyumluluk yaması vardır; mantık değişmez:
+
+- `axilxbar.v`: parametre listesindeki `localparam AW` (yalnızca SystemVerilog'da geçerli) Verilog-2005 araçları
+  için `parameter AW` yazılmıştır; `AW` dışarıdan verilmez.
+- `addrdecode.v` (165. satır): `|prerequest[NS-1:1]` yerine eşdeğeri `|(prerequest >> 1)`. Tek slave'de (`NS=1`)
+  çalışmayan bir dalda bile ters sıralı `[0:1]` dilimi oluşuyor ve iverilog elaborasyonda hata veriyordu.
 
 axilxbar'ın portları düz vektörlerdir; üstüne iki wrapper üretilir, ikisi de mantık eklemez, yalnızca
 sinyalleri adlandırır ve dilimler:
@@ -184,7 +190,7 @@ da çıkarmak için Address Map Editor'da değiştirip yeniden üret. Generic'i 
 adres haritasını da güncelle.
 
 ```
-python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --xbar-name axil_xbar -o out
+python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --xbar-name axil_xbar -o out   # 2 master
 python -m axil_studio.core.axilgen --xbar out/axil_xbar.xbar.json -o out        # kayıtlı ayarlarla yeniden üret
 python -m axil_studio.core.axilgen --xbar bench.axproj.json --xbar-style signals -o out   # _pk.v olmadan
 ```

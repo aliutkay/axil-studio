@@ -37,7 +37,7 @@ class IPLibraryPage(ToolPage):
     description = ("Projedeki IP'leri ve adres haritasındaki örneklerini listeler; birden fazla IP kütüphanesi "
                    "(.axlib.json) açılır, IP'ler projeye alınır ya da projeden kütüphaneye kaydedilir.")
     icon_name = "library"
-    version = "0.1.0"
+    version = "0.1.1"
 
     picked = Signal()          # picker mode: an IP was double-clicked
 
@@ -580,7 +580,7 @@ class IPLibraryPage(ToolPage):
             lib, e = self._sel[1], self._sel[2]
             spec = G.ModuleSpec.from_dict(e.regspec) if e.regspec else G.spec_from_ipblock(e.ip)
             w = self.open_tool("regmap")
-            w.page.load_spec(spec, f"{lib.name} kütüphanesinden {e.version}")
+            w.page.load_spec(spec, f"{lib.name} kütüphanesinden {e.version}", lib.name)
 
     def open_in_wrapper(self):
         if self._sel and self._sel[0] == "proj":

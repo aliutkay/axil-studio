@@ -10,6 +10,33 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.5 — hata düzeltmeleri ve temizlik
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.5 |
+| Register Map Editor | early-alpha 0.2.1 |
+| Slave Interface Wrapper | early-alpha 0.2.2 |
+| Address Map Editor | early-alpha 0.1.1 |
+| Interconnect Configurator | early-alpha 0.2.2 |
+| IP Library | early-alpha 0.1.1 |
+
+- Komut satırı `--xbar`: `--ns` kaldırıldı (slave'ler adres haritasından gelir); `--nm` artık gerçek master portları
+  ekler. Önceden yedek portlar `0x0` adresinde çakışan ve yanıt vermeyen slave'ler üretiyordu.
+- Proje başka klasöre kaydedilince kütüphane yolları yeni konuma göre yeniden hesaplanır (önceden kütüphane
+  bulunamıyordu).
+- `i_reset` / `o_irq` port adını üretecek register / alan adları doğrulamada reddedilir (HDL derlenmiyordu).
+- Register Map Editor: başka araçtan gelen haritanın kaynağı yanlış yazılıyordu ("Slave", "Yeni"); kaynak artık
+  kütüphane adı olarak ayrı taşınır.
+- Port içe aktar: Verilog `function` / `task` bildirimlerinin girişleri port sayılmaz.
+- `hdl/addrdecode.v`: tek satırlık, belgelenmiş uyumluluk yaması; tek slave'li interconnect iverilog'da derlenir.
+- Register spesifikasyonundan `base` kaldırıldı; adres gerektiren çıktılar adresi parametre olarak alır, komut
+  satırına `--base` eklendi. Eski dosyalardaki `base` yok sayılır.
+- Temizlik: xbar modelinden EN (kapalı/yedek port) kalıntıları, blok diyagramındaki "kapalı port (EN=0)"
+  açıklaması, kullanılmayan fonksiyonlar (`show_tool`, `remove_instance`, `library_of`, `get_address_ip`,
+  `gpio_example_ip`, `uart_phy_example_ip`, `_sig`, `core_spec`, `_fhex`, `resize`, `sort_by_address`,
+  `window_mask`).
+
 ## early-alpha 0.1.4 — port listesinden bit alanları
 
 | Bileşen | Sürüm |
