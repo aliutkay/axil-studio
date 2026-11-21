@@ -10,6 +10,11 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.8 — yerleşik örnek kaldırıldı
+
+- `axilgen.example_spec()` ve komut satırındaki `--example` seçeneği kaldırıldı; komut satırı bir `.regspec.json`
+  dosyası ister. (Hub'daki *Örnek proje* `examples/` altındaki hazır dosyayı açar, örnek oluşturmaz.)
+
 ## early-alpha 0.1.7 — doğrulama alt çubukta, kaydetme pencereleri, arama
 
 | Bileşen | Sürüm |

@@ -1087,46 +1087,11 @@ def export_xlsx(spec: ModuleSpec, path, base=0):
     return regmap_xlsx.export_xlsx([to_ipblock(spec, base)], path, f"{spec.module} kütük haritası")
 
 
-def example_spec():
-    F, R, V = FieldSpec, RegSpec, EnumValue
-    return ModuleSpec("example_ip_axil", "Example IP register wrapper", [
-        R("ID", 0x00, "IP identification", fields=[
-            F("VERSION", 0, 16, "CONST", 0x0102, "Version 1.2"),
-            F("MAGIC", 16, 16, "CONST", 0xA5A5, "Constant pattern")]),
-        R("CTRL", 0x04, "Control", wr_strobe=True, fields=[
-            F("ENABLE", 0, 1, "RW", 0, "IP enable", values=[
-                V(0, "IP disabled", "Disable the IP (outputs idle)"),
-                V(1, "IP enabled", "Enable the IP")]),
-            F("MODE", 1, 3, "RW", 2, "Operating mode\nOther codes are reserved.", values=[
-                V(0, "Idle", "Stop"), V(1, "Single shot", "Run one transfer per START"),
-                V(2, "Continuous", "Run continuously"), V(3, "Loopback", "Internal loopback test")]),
-            F("START", 8, 1, "PULSE", desc="Start a transfer", values=[
-                V(1, "", "Starts one transfer (ignored while BUSY=1)")]),
-            F("SOFT_RESET", 9, 1, "PULSE", desc="Reset the IP"),
-            F("DIVIDER", 16, 16, "RW", 0x1B2, "Clock divider")]),
-        R("STATUS", 0x08, "Status", fields=[
-            F("BUSY", 0, 1, "RO", desc="IP busy", values=[
-                V(0, "Idle, a new START is accepted"), V(1, "Transfer in progress")]),
-            F("LEVEL", 4, 8, "RO", desc="FIFO level"),
-            F("EXT_PIN", 16, 2, "RO", desc="Asynchronous inputs", sync=True)]),
-        R("IRQ", 0x0C, "Event flags", fields=[
-            F("DONE", 0, 1, "W1C", desc="Transfer finished", irq=True, values=[
-                V(0, "No transfer finished since last clear", "No effect"),
-                V(1, "A transfer finished", "Clear the flag")]),
-            F("ERROR", 1, 1, "W1C", desc="Transfer error", irq=True),
-            F("OVERRUN", 4, 4, "W1C", desc="Overrun per channel")]),
-        R("DATA", 0x14, "Data FIFO", rd_strobe=True, wr_strobe=True, fields=[
-            F("RXDATA", 0, 16, "RO", desc="Head of RX FIFO (read pops)"),
-            F("TXDATA", 16, 16, "RW", desc="TX data (write pushes)")]),
-    ])
-
-
 def main():
     import argparse
     ap = argparse.ArgumentParser(description="easyaxil-based AXI4-Lite wrapper generator")
-    ap.add_argument("spec", nargs="?", help=".regspec.json file (omit with --example)")
+    ap.add_argument("spec", nargs="?", help=".regspec.json file")
     ap.add_argument("-o", "--outdir", default="axilgen_out")
-    ap.add_argument("--example", action="store_true", help="use the built-in example spec")
     ap.add_argument("--project", help="also add/replace the IP in this .axproj.json")
     ap.add_argument("--base", type=lambda t: int(t, 0), default=None,
                     help="the IP's bus address (C header, testbench, Excel, project); default: next free "
@@ -1168,9 +1133,9 @@ def main():
         for p in xbargen.write_xbar(xs, a.outdir):
             print(p)
         return
-    if not (a.spec or a.example):
-        ap.error("spec file or --example required")
-    spec = example_spec() if a.example else ModuleSpec.load(a.spec)
+    if not a.spec:
+        ap.error("a .regspec.json file is required")
+    spec = ModuleSpec.load(a.spec)
     if a.signals:
         spec.packed = False
     errs = spec.validate()
