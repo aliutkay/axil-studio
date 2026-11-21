@@ -42,7 +42,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.1"
+    version = "0.3.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -392,8 +392,8 @@ class InterconnectPage(ToolPage):
                 self.master_tbl.removeCellWidget(i, 2)
             else:
                 self.master_tbl.setItem(i, 1, name)
-                ui.table_row_actions(self.master_tbl, i, 2, lambda i=i: self.rename_master(i),
-                                     lambda i=i: self.delete_master(i),
+                ui.table_row_actions(self.master_tbl, i, 2, lambda *_, i=i: self.rename_master(i),
+                                     lambda *_, i=i: self.delete_master(i),
                                      edit_tip="Master'ın adını değiştir", delete_tip="Master'ı sil")
         self.master_note.setText("" if b is None else
                                  f"MASTER0 her zaman {b.name}'dir (üst bus'tan gelen istekler). Eklenen master'lar "

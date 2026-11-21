@@ -772,8 +772,8 @@ class ValueTable(QTableWidget):
                     it.setForeground(muted)
                 it.setToolTip("Çift tık: düzenle · Delete: sil")
                 self.setItem(row, col, it)
-            ui.table_row_actions(self, row, self.act_col, lambda v=e.value: self.editRequested.emit(v),
-                                 lambda v=e.value: self.deleteRequested.emit(v),
+            ui.table_row_actions(self, row, self.act_col, lambda *_, v=e.value: self.editRequested.emit(v),
+                                 lambda *_, v=e.value: self.deleteRequested.emit(v),
                                  edit_tip="Değer açıklamasını düzenle", delete_tip="Değer açıklamasını sil")
         add = QTableWidgetItem("+ değer açıklaması ekle")
         add.setForeground(theme.manager().color("accent"))
@@ -844,7 +844,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.5.1"
+    version = "0.5.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)

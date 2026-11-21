@@ -29,7 +29,7 @@ from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # tree columns
-C_PORT, C_NAME, C_IP, C_ADDR, C_ALOCK, C_SIZE, C_SLOCK, C_ACT = range(8)
+C_PORT, C_NAME, C_IP, C_ALOCK, C_ADDR, C_SIZE, C_SLOCK, C_ACT = range(8)
 ROLE = Qt.ItemDataRole.UserRole          # instance name ("" for a bridge's own-window row)
 BRIDGE = A.BRIDGE_LABEL
 
@@ -281,7 +281,7 @@ class AddressMapPage(ToolPage):
                    "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
                    "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.3.1"
+    version = "0.3.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -343,7 +343,7 @@ class AddressMapPage(ToolPage):
         self.map.slaveActivated.connect(lambda n: self.edit_slave(self.proj.get_instance(n)))
         right.lay.addWidget(self.map)
         self.tree = AddressTree()
-        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "Adres", "", "Boyut", "", ""])
+        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "", "Adres", "Boyut", "", ""])
         self.tree.setUniformRowHeights(True)
         self.tree.setIndentation(18)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -506,7 +506,7 @@ class AddressMapPage(ToolPage):
         sl = A.xbar_slaves(self.proj, bridge)
         bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
         if bridge is not None and bridge.self_window:
-            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, hex32(bridge.base), "",
+            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, "", hex32(bridge.base),
                                    size_text(bridge.self_window), "", ""])
             own.setData(0, ROLE, "")
             own.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -527,7 +527,7 @@ class AddressMapPage(ToolPage):
                 kind = f"{inst.ip} (projede yok)"
             else:
                 kind = ip.name + (f" {ip.version}" if ip.version else "")
-            it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, hex32(s.base), "", "", "", ""])
+            it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, "", hex32(s.base), "", "", ""])
             it.setData(0, ROLE, inst.name)
             it.setData(0, Qt.ItemDataRole.UserRole + 1, inst.bridge)
             it.setData(0, Qt.ItemDataRole.UserRole + 2, j)
@@ -562,15 +562,15 @@ class AddressMapPage(ToolPage):
             self._items[inst.name] = it
             self.tree.setItemWidget(it, C_SIZE, self._size_combo(inst, s))
             self.tree.setItemWidget(it, C_ALOCK, self._lock_button(
-                inst.fixed, lambda i=inst: self._toggle_lock(i),
+                inst.fixed, lambda *_, i=inst: self._toggle_lock(i),
                 "Adres kilitli (sabit): tıkla, otomatik adrese dön" if inst.fixed else
                 "Adres otomatik: tıkla, bu adreste kilitle"))
             self.tree.setItemWidget(it, C_SLOCK, self._lock_button(
-                bool(inst.window), lambda i=inst: self._toggle_size_lock(i),
+                bool(inst.window), lambda *_, i=inst: self._toggle_size_lock(i),
                 "Boyut kilitli: tıkla, " + ("içerikle büyüsün" if inst.bridge else "varsayılanı izlesin")
                 if inst.window else "Boyut otomatik: tıkla, bu boyutta kilitle"))
-            ui.tree_row_actions(self.tree, it, C_ACT, lambda i=inst: self.edit_slave(i),
-                                lambda i=inst: self.delete_slave(i),
+            ui.tree_row_actions(self.tree, it, C_ACT, lambda *_, i=inst: self.edit_slave(i),
+                                lambda *_, i=inst: self.delete_slave(i),
                                 edit_tip="Ad, adres ve boyut",
                                 delete_tip="Adres haritasından çıkar" + (
                                     " (içindekilerle birlikte)" if inst.bridge else " (IP tanımı projede kalır)"))
@@ -657,7 +657,7 @@ class AddressMapPage(ToolPage):
                 if b is here or (inst.bridge and A.is_inside(self.proj, inst, b)):
                     continue
                 label = "Üst bus" if b is None else "  " * (len(A.path_of(self.proj, b)) - 1) + b.name
-                mv.addAction(label, lambda b=b: self._move_to(inst, b, None))
+                mv.addAction(label, lambda *_, b=b: self._move_to(inst, b, None))
             mv.setEnabled(bool(mv.actions()))
             m.addSeparator()
             m.addAction("Adres haritasından çıkar", lambda: self.delete_slave(inst))

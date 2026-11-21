@@ -52,7 +52,7 @@ class ProjectActions:
             a = self.recent_menu.addAction("(boş)")
             a.setEnabled(False)
         for p in items:
-            self.recent_menu.addAction(os.path.basename(p), lambda p=p: self.open(p))
+            self.recent_menu.addAction(os.path.basename(p), lambda *_, p=p: self.open(p))
 
     def confirm_discard(self):
         if not self.ctx.dirty:
@@ -318,7 +318,7 @@ class HubWindow(QMainWindow):
         build_view_menu(self, mb)
         tm = mb.addMenu("&Araçlar")
         for i, tool in enumerate(TOOLS):
-            a = tm.addAction(tool.title, lambda t=tool: self.open_tool_window(t.tool_id))
+            a = tm.addAction(tool.title, lambda *_, t=tool: self.open_tool_window(t.tool_id))
             a.setShortcut(QKeySequence(f"Ctrl+{i + 1}"))
         hm = mb.addMenu("&Yardım")
         hm.addAction(f"{APP_NAME} hakkında", self._about)

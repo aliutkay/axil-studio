@@ -10,6 +10,23 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.13 — kilit düğmesi düzeltmesi
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.13 |
+| Register Map Editor | early-alpha 0.5.2 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.3.2 |
+| Interconnect Configurator | early-alpha 0.3.2 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.4 |
+| IP Library | early-alpha 0.2.1 |
+
+- Düzeltme: Address Map Editor'da kilit düğmeleri `'bool' object has no attribute 'window'` hatası veriyordu (Qt'nin
+  `clicked(bool)` değeri örnek parametresine gidiyordu). Aynı hata sağ tık → Taşı menüsünde, son açılan projeler
+  menüsünde, Araçlar menüsünde ve satır ikonlarında da önlendi.
+- Address Map Editor: adres kilidi adresin önünde.
+
 ## early-alpha 0.1.12 — kilitler, pastel blok renkleri, diyagram dışa aktarma
 
 | Bileşen | Sürüm |
