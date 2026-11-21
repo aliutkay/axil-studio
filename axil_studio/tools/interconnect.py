@@ -15,7 +15,7 @@ import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout,
+from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormLayout,
                                QHBoxLayout, QHeaderView, QInputDialog, QLineEdit, QMessageBox,
                                QPlainTextEdit, QScrollArea, QSplitter, QStackedWidget, QTableWidget,
                                QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
@@ -25,7 +25,7 @@ from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import size_text
 from axil_studio.tools.base import ToolPage
-from axil_studio.tools.xbar_diagram import BlockDiagram, SystemDiagram
+from axil_studio.tools.xbar_diagram import DETAILS, BlockDiagram, SystemDiagram
 from axil_studio.core.model import hex32
 
 XBAR_FILTER = "Interconnect ayarları (*.xbar.json);;JSON (*.json);;Tüm dosyalar (*)"
@@ -42,7 +42,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.2"
+    version = "0.3.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -166,11 +166,12 @@ class InterconnectPage(ToolPage):
         self.view_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.view_cb)
         self.sig_cb = QComboBox()
-        self.sig_cb.addItem("AXI4-Lite sinyalleri", "axi")
-        self.sig_cb.addItem("HDL Designer (REQ / RSP)", "packed")
-        self.sig_cb.setToolTip("Bağlantıların gösterimi: AXI4-Lite kanalları / ayrık sinyaller ya da HDL Designer "
-                               "paketli REQ / RSP portları (üretilen dosyaları değiştirmez; dışa aktarma bu "
-                               "gösterimle yapılır)")
+        for key, text in DETAILS.items():
+            self.sig_cb.addItem(text, key)
+        self.sig_cb.setToolTip("Bağlantıların ayrıntısı: Master / slave (bağlantı başına tek ok) · AXI Lite "
+                               "basitleştirilmiş (AW / W / B / AR / R kanalları, ayrık sinyaller yöne göre "
+                               "gruplu) · AXI Lite detaylı (tüm pinler) · HDL Designer (paketli REQ / RSP). "
+                               "Üretilen dosyaları değiştirmez; dışa aktarma bu gösterimle yapılır.")
         self.sig_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.sig_cb)
         drow.addSpacing(8)
@@ -183,10 +184,6 @@ class InterconnectPage(ToolPage):
         drow.addWidget(ui.button("Sığdır", None, "ghost", lambda: self._dia().set_zoom(None), "Genişliğe sığdır"))
         drow.addWidget(ui.button("100%", None, "ghost", lambda: self._dia().set_zoom(1.0), "Gerçek boyut"))
         drow.addStretch(1)
-        self.all_sig_cb = QCheckBox("Tüm sinyalleri göster")
-        self.all_sig_cb.setToolTip("Ayrık sinyal stilinde her AXI sinyalini ayrı pin olarak çizer")
-        self.all_sig_cb.toggled.connect(lambda on: self.diagram.set_all_signals(on))
-        drow.addWidget(self.all_sig_cb)
         drow.addWidget(ui.button("PDF…", "file", "ghost", lambda: self.export_diagram("pdf"),
                                  "Gösterilen diyagramı PDF olarak kaydet (beyaz zeminde)"))
         drow.addWidget(ui.button("draw.io…", "file", "ghost", lambda: self.export_diagram("drawio"),
@@ -243,9 +240,6 @@ class InterconnectPage(ToolPage):
 
         self.module_ed.editingFinished.connect(self._settings_changed)
         self.style_cb.currentIndexChanged.connect(self._settings_changed)
-        self.sig_cb.blockSignals(True)
-        self.sig_cb.setCurrentIndex(1 if self.style == "packed" else 0)
-        self.sig_cb.blockSignals(False)
         self.load_from_project()
 
     # ================================================================ menus
@@ -488,7 +482,6 @@ class InterconnectPage(ToolPage):
 
     def _switch_view(self):
         self.dia_stack.setCurrentIndex(0 if self.view_cb.currentData() == "system" else 1)
-        self.all_sig_cb.setVisible(self.view_cb.currentData() != "system" and self.sig_cb.currentData() == "axi")
         self._update_diagram()
         self.zoom_lbl.setText(f"{round(self._dia()._scale * 100)}%")
 
@@ -507,6 +500,7 @@ class InterconnectPage(ToolPage):
         else:
             spec = self.spec()
             spec.style = "packed" if self.sig_cb.currentData() == "packed" else "signals"
+            self.diagram.detail = self.sig_cb.currentData()
             kinds = ["bridge" if i.bridge else "ext" if i.external else "ip" for i in self.proj.level(b)]
             self.diagram.set_spec(spec, sel, bad, kinds)
         self._refresh_preview()
@@ -515,7 +509,7 @@ class InterconnectPage(ToolPage):
         d = self._dia()
         system = d is self.system
         stem = (f"{self.proj.name}_sistem" if system else self.spec().module) + \
-            ("_hdld" if self.sig_cb.currentData() == "packed" else "_axi")
+            {"simple": "", "axi": "_axi", "axi_full": "_axi_detay", "packed": "_hdld"}[self.sig_cb.currentData()]
         stem = re.sub(r"[^\w.-]+", "_", stem)
         ext, flt = (".pdf", "PDF (*.pdf)") if fmt == "pdf" else (".drawio", "draw.io (*.drawio)")
         path, _ = QFileDialog.getSaveFileName(self, "Blok diyagramını kaydet",

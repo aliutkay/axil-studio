@@ -37,12 +37,22 @@ MARGIN = 24
 TOP = 92
 ZOOM_MIN, ZOOM_MAX = 0.3, 3.0
 
-# how a connection is shown in the whole-system diagram
+# how much of a connection is shown (both diagrams), from the plainest to the HDL Designer ports
+DETAILS = {
+    "simple": "Master / slave",
+    "axi": "AXI Lite (Basitleştirilmiş Görünüm)",
+    "axi_full": "AXI Lite (Detaylı Görünüm)",
+    "packed": "HDL Designer (REQ / RSP)",
+}
+# whole-system diagram: the lines drawn per connection: (label, 1 towards the slave / -1 back)
 CHANNELS = {
+    "simple": [("", 1)],
     "axi": [("AW", 1), ("W", 1), ("B", -1), ("AR", 1), ("R", -1)],
+    "axi_full": [(name, 1 if d == "in" else -1) for name, d, _w in X.AXIL_SIGNALS],
     "packed": [("REQ", 1), ("RSP", -1)],
 }
-MODE_TEXT = {"axi": "AXI4-Lite sinyalleri", "packed": "HDL Designer (REQ / RSP)"}
+STEP = {"simple": 0, "axi": 9, "axi_full": 8, "packed": 13}
+MODE_TEXT = DETAILS
 
 
 def block_pin_name(xbar_name):
@@ -174,7 +184,7 @@ class BlockDiagram(QWidget):
         super().__init__()
         self.spec = None
         self.selected = None          # ("m", i) | ("s", j)
-        self.all_signals = False
+        self.detail = "axi"           # see DETAILS
         self.bad = set()
         self.kinds = []               # per slave: "ip" | "ext" | "bridge"
         self.error = None
@@ -202,9 +212,12 @@ class BlockDiagram(QWidget):
             self.error = f"Blok diyagramı çizilemedi: {exc}"
         self.update()
 
-    def set_all_signals(self, on):
-        self.all_signals = on
-        self.set_spec(self.spec, self.selected, self.bad, self.kinds)
+    def set_detail(self, detail):
+        """How much of each connection to show; the spec's port style must match (packed for
+        "packed", signals otherwise)."""
+        self.detail = detail if detail in DETAILS else "axi"
+        if self.spec is not None:
+            self.set_spec(self.spec, self.selected, self.bad, self.kinds)
 
     # ------------------------------------------------------------ zoom
     def set_zoom(self, z):
@@ -345,10 +358,14 @@ class BlockDiagram(QWidget):
 
     # ------------------------------------------------------------ layout
     def _pins(self, pins, side_prefix):
-        """[(dir, range, xbar_label, block_label, members)]; the signals style is bundled per
-        direction unless all signals are shown."""
-        if self.spec.style == "signals" and not self.all_signals:
-            short = "M" if side_prefix.startswith("MASTER") else "S"
+        """[(dir, range, xbar_label, block_label, members)]: one arrow per port (master / slave),
+        the signals bundled per direction (simplified AXI Lite) or every pin (detailed AXI Lite,
+        HDL Designer)."""
+        short = "M" if side_prefix.startswith("MASTER") else "S"
+        if self.detail == "simple":
+            d = "input" if short == "M" else "output"         # requests flow master -> crossbar -> slave
+            return [(d, "", f"{side_prefix}_AXI", f"{short}_AXI", pins)]
+        if self.spec.style == "signals" and self.detail != "axi_full":
             out = []
             for d in ("input", "output"):
                 grp = [p for p in pins if p[0] == d]
@@ -419,7 +436,9 @@ class BlockDiagram(QWidget):
 
         # legend
         x = MARGIN
-        for color, text in ((IN_COLOR, "crossbar girişi (input)"), (OUT_COLOR, "crossbar çıkışı (output)")):
+        legend = (((IN_COLOR, "istek yönü (master → slave)"),) if self.detail == "simple" else
+                  ((IN_COLOR, "crossbar girişi (input)"), (OUT_COLOR, "crossbar çıkışı (output)")))
+        for color, text in legend:
             cv.line(QPointF(x, 18), QPointF(x + 26, 18), color, 2, 1)
             w = QFontMetrics(base).horizontalAdvance(text) + 4
             cv.text(QRectF(x + 34, 8, w, 20), text, t["muted"], base, elide=False)
@@ -478,7 +497,7 @@ class BlockDiagram(QWidget):
         block_edge = self.mx + self.mw if left else self.sx
         for (d, w, xname, bname, members), y in zip(pins, ys):
             is_in = d == "input"
-            color = IN_COLOR if is_in else OUT_COLOR
+            color = IN_COLOR if is_in or self.detail == "simple" else OUT_COLOR    # simple: request direction
             # arrow at the receiving end: crossbar for its inputs, the block for crossbar outputs
             a, b = QPointF(block_edge, y), QPointF(x_edge, y)
             cv.line(a, b, color, 2, 1 if is_in else -1)
@@ -495,7 +514,10 @@ class BlockDiagram(QWidget):
                     Qt.AlignmentFlag.AlignVCenter)
             own = "output" if is_in else "input"
             tip = f"crossbar: {d} {w} {xname}\nblok: {own} {w} {block_pin_name(xname)}".replace("  ", " ")
-            if members:
+            if members and self.detail == "simple":
+                tip = f"{xname}: AXI4-Lite bağlantısı ({len(members)} sinyal)\n" + "\n".join(
+                    f"  {m[0]:<6} {m[2]:<22} {m[1]}" for m in members)
+            elif members:
                 tip = f"crossbar {d}, blok {own}:\n" + "\n".join(
                     f"  {m[2]:<22} {m[1]}  ↔  {block_pin_name(m[2])}" for m in members)
             self._hits.append((QRectF(min(block_edge, x_edge), y - 8, abs(x_edge - block_edge), 16),
@@ -562,7 +584,7 @@ class SystemDiagram(BlockDiagram):
     instActivated = Signal(str)
 
     XW, SW, SWIRE = 190, 230, 84
-    LEAF_H, BRIDGE_H, MASTER_H, VGAP, XHEAD = 58, 66, 50, 12, 30
+    VGAP, XHEAD = 12, 30
 
     def __init__(self):
         super().__init__()
@@ -573,9 +595,15 @@ class SystemDiagram(BlockDiagram):
         self._items = []
         self._wires = []
 
-    def set_project(self, project, mode="axi", level_sel="", inst_sel=None):
+    def set_detail(self, detail):
+        if self.project is not None:
+            self.set_project(self.project, detail, self.level_sel, self.inst_sel)
+
+    def set_project(self, project, mode="simple", level_sel="", inst_sel=None):
         self.project, self.level_sel, self.inst_sel = project, level_sel, inst_sel
-        self.mode = mode if mode in CHANNELS else "axi"
+        self.mode = mode if mode in CHANNELS else "simple"
+        span = (len(CHANNELS[self.mode]) - 1) * STEP[self.mode] + 16      # the lines of one connection
+        self.LEAF_H, self.BRIDGE_H, self.MASTER_H = max(58, span), max(66, span), max(42, span)
         self.spec = project          # "something to draw" for the base class
         try:
             self._build()
@@ -583,9 +611,6 @@ class SystemDiagram(BlockDiagram):
         except Exception as exc:  # noqa: BLE001 - keep the page working
             self.error = f"Sistem diyagramı çizilemedi: {exc}"
         self.update()
-
-    def set_all_signals(self, on):
-        pass
 
     # ------------------------------------------------------------ layout
     def _colx(self, depth):
@@ -660,7 +685,7 @@ class SystemDiagram(BlockDiagram):
         tiny.setPixelSize(8)
         base = QFont(self.font())
         cv.text(QRectF(MARGIN, 8, 1400, 20),
-                f"Bağlantılar: {MODE_TEXT[self.mode]} · istek yönü soldan sağa (master → interconnect → slave) · "
+                f"Gösterim: {MODE_TEXT[self.mode]} · istek yönü soldan sağa (master → interconnect → slave) · "
                 "Sub-bus Bridge: üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı", t["muted"], base,
                 elide=False)
         # legend: one swatch per block kind
@@ -673,14 +698,16 @@ class SystemDiagram(BlockDiagram):
             cv.text(QRectF(x + 22, 29, w, 18), text, t["muted"], base, elide=False)
             x += 22 + w + 16
         chans = CHANNELS[self.mode]
-        step = 9 if self.mode == "axi" else 13
+        step = STEP[self.mode]
         for a, b, y, label, side in self._wires:
             n = len(chans)
             for k, (name, d) in enumerate(chans):
                 yy = y + (k - (n - 1) / 2) * step
                 color = IN_COLOR if d > 0 else OUT_COLOR
-                cv.line(QPointF(a, yy), QPointF(b, yy), color, 1.4 if self.mode == "axi" else 2, d)
-                f = tiny if self.mode == "axi" else small
+                cv.line(QPointF(a, yy), QPointF(b, yy), color, 1.4 if self.mode.startswith("axi") else 2, d)
+                if not name:
+                    continue
+                f = tiny if self.mode.startswith("axi") else small
                 tw = QFontMetrics(f).horizontalAdvance(name) + 6
                 lab = QRectF(a + (b - a) / 2 - tw / 2, yy - step / 2, tw, step)
                 cv.rect(lab, t["diagram_bg"], None, 0, 2)          # the label cuts its line

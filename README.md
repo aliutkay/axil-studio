@@ -197,7 +197,8 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   başlar. **Boyut** hücresinden seçilen boyut ya da boyutun yanındaki **kilit düğmesi** o slave'in
   boyutunu kilitler, varsayılan değişse de değişmez; kilit açılınca (ya da *varsayılan* seçilince) yeniden bu ayarı
   izler. Tablo başlığında *Adres* ve *Boyut* yazılarının önündeki kilit ikonları tüm adres / tüm boyut
-  kilitlerini birden kapatır ya da açar (üzerine gelince açıklar). IP pencereden büyükse pencere kendiliğinden büyür.
+  kilitlerini birden kapatır ya da açar (üzerine gelince açıklar). Satırlardaki kilitler kendi sütunlarında sağa,
+  değerin hemen yanına yaslıdır; başlıktaki ikon onlarla aynı hizadadır. IP pencereden büyükse pencere kendiliğinden büyür.
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
 - **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (bridge içindeki IP'lerin
   bus'ı Özet sayfasında yazar).
@@ -217,10 +218,11 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   master'lar onun altında durur. Bir interconnect'e ya da master'a tıklamak onu seçer, bridge'e çift tık arkasındaki
   interconnect'i seçer. *Seçili interconnect (pinlerle)* görünümü tek crossbar'ı üretilen HDL'deki pin adları,
   genişlikleri ve yönleriyle çizer. Bloklar türüne göre pastel renklidir (master yeşil, interconnect lila, IP mavi,
-  harici slave gri, Sub-bus Bridge şeftali), zemin beyazdır. **Sinyaller** seçimi bağlantıları *AXI4-Lite* (tüm
-  sistemde AW / W / B / AR / R kanalları, tek crossbar'da ayrık sinyaller) ya da *HDL Designer* (REQ / RSP) olarak
-  gösterir; üretilen dosyaları değiştirmez. **PDF…** ve **draw.io…** gösterilen diyagramı o anki görünüm ve sinyal
-  gösterimiyle, açık renklerde ve beyaz zeminde kaydeder; draw.io dosyasında her blok, yazı ve bağlantı ayrı,
+  harici slave gri, Sub-bus Bridge şeftali), zemin beyazdır. **Gösterim** seçimi bağlantıların ayrıntısını belirler: *Master / slave*
+  (bağlantı başına tek ok, varsayılan), *AXI Lite (Basitleştirilmiş Görünüm)* (tüm sistemde AW / W / B / AR / R
+  kanalları, tek crossbar'da yöne göre gruplu sinyaller), *AXI Lite (Detaylı Görünüm)* (tüm pinler) ve *HDL
+  Designer (REQ / RSP)*; üretilen dosyaları değiştirmez. **PDF…** ve **draw.io…** gösterilen diyagramı o anki görünüm
+  ve gösterimle, açık renklerde ve beyaz zeminde kaydeder; draw.io dosyasında her blok, yazı ve bağlantı ayrı,
   düzenlenebilir bir şekildir. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır,
   trackpad'de iki parmakla sıkıştırma da çalışır.
 - **Verilog önizleme** sekmesi her interconnect'in üretilecek wrapper'larını gösterir. **Wrapper** seçimi:

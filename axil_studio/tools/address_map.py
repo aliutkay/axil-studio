@@ -30,7 +30,9 @@ from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # tree columns
 C_PORT, C_NAME, C_IP, C_ALOCK, C_ADDR, C_SLOCK, C_SIZE, C_ACT = range(8)
-LOCK_W = 26                              # lock columns: the lock sits right next to its value
+LOCK_W = 34                              # lock columns: the lock sits at the right, next to its value
+LOCK_BTN = 20
+LOCK_RIGHT = 2                           # gap between the lock and its value
 ROLE = Qt.ItemDataRole.UserRole          # instance name ("" for a bridge's own-window row)
 BRIDGE = A.BRIDGE_LABEL
 
@@ -232,6 +234,28 @@ class MemoryMap(QWidget):
 
 
 # ============================================================================ address tree
+class LockHeader(QHeaderView):
+    """Tree header that draws the lock-all icons right-aligned in the lock columns, exactly above
+    the rows' lock buttons (a header icon would sit on the left of its section)."""
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self.locks = {}                           # column -> all locked
+        self.setDefaultAlignment(Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter)
+
+    def paintSection(self, painter, rect, index):
+        painter.save()
+        super().paintSection(painter, rect, index)
+        painter.restore()
+        if index in self.locks:
+            on = self.locks[index]
+            pm = icons.pixmap("lock" if on else "unlock", 14,
+                              theme.manager().tokens["accent" if on else "muted"])
+            cx = rect.x() + rect.width() - LOCK_RIGHT - 2 - LOCK_BTN / 2   # the cell widget sits 2 px in
+            painter.drawPixmap(int(cx - 7), int(rect.center().y() - 7), pm)
+
+
+
 class AddressTree(QTreeWidget):
     """The address map as a tree; rows are dragged within a bus or onto / into another bus.
     moved(name, parent bridge name or "" for the top bus, index or -1 for the end)."""
@@ -282,7 +306,7 @@ class AddressMapPage(ToolPage):
                    "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
                    "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.3.3"
+    version = "0.3.4"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -344,6 +368,7 @@ class AddressMapPage(ToolPage):
         self.map.slaveActivated.connect(lambda n: self.edit_slave(self.proj.get_instance(n)))
         right.lay.addWidget(self.map)
         self.tree = AddressTree()
+        self.tree.setHeader(LockHeader(self.tree))
         self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "", "Adres", "", "Boyut", ""])
         hdr = self.tree.header()
         hdr.setSectionsClickable(True)
@@ -476,7 +501,7 @@ class AddressMapPage(ToolPage):
         for col, on, what, more in ((C_ALOCK, all_a, "adres", "kilitli adres sabit kalır, açık olan otomatik verilir"),
                                     (C_SLOCK, all_s, "boyut", "kilitli boyut sabit kalır, açık olan varsayılanı "
                                                               "izler ya da içerikle büyür")):
-            head.setIcon(col, icons.icon("lock" if on else "unlock", "accent" if on else "muted", 14))
+            self.tree.header().locks[col] = on
             head.setToolTip(col, (f"Tıkla: tüm {what} kilitlerini aç" if on else f"Tıkla: tüm {what}ları kilitle")
                             + f" ({more})")
         if sel in self._items:
@@ -580,7 +605,7 @@ class AddressMapPage(ToolPage):
         b = QToolButton()
         b.setAutoRaise(True)
         b.setObjectName("RowAction")
-        b.setFixedSize(22, 22)
+        b.setFixedSize(LOCK_BTN, 22)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.setIcon(icons.icon("lock", "accent", 15) if locked else ui.row_icon("unlock", "text"))
         b.setToolTip(tip)
@@ -588,8 +613,9 @@ class AddressMapPage(ToolPage):
         box = QWidget()
         box.setObjectName("RowActions")
         lay = QHBoxLayout(box)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(b, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)   # next to its value
+        lay.setContentsMargins(0, 0, LOCK_RIGHT, 0)
+        lay.addStretch(1)                         # free room on the left keeps it apart from the column before
+        lay.addWidget(b, 0, Qt.AlignmentFlag.AlignVCenter)                                  # next to its value
         return box
 
     def _size_combo(self, inst, s):

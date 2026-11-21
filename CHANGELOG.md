@@ -10,6 +10,25 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.15 — diyagram gösterim seviyeleri, kilit hizası
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.15 |
+| Register Map Editor | early-alpha 0.5.2 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.3.4 |
+| Interconnect Configurator | early-alpha 0.3.3 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.4 |
+| IP Library | early-alpha 0.2.1 |
+
+- Interconnect Configurator: *Tüm sinyalleri göster* kalktı; **Gösterim** seçimi dört seviyeli: *Master / slave*
+  (tek ok, varsayılan; görünüm varsayılan olarak hiyerarşik *Tüm sistem*), *AXI Lite (Basitleştirilmiş Görünüm)*,
+  *AXI Lite (Detaylı Görünüm)* (tüm pinler; tüm sistem görünümünde de) ve *HDL Designer (REQ / RSP)*. Her iki
+  görünümde ve PDF / draw.io çıktısında geçerli.
+- Address Map Editor: satırlardaki adres ve boyut kilitleri sağa, değerin hemen yanına yaslı, solda boşlukla;
+  başlıktaki kilit ikonları onlarla aynı hizada.
+
 ## early-alpha 0.1.14 — kilitler başlıkta, başlangıç adresi 0
 
 | Bileşen | Sürüm |
