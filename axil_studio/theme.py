@@ -23,13 +23,13 @@ LIGHT = {
     "hover": "#E6EAF2", "selection": "#CCD6E7", "danger": "#C62828", "success": "#2E7D32",
     "warning": ORANGE, "highlight": ORANGE, "input": "#FFFFFF",
 }
-DARK = {
-    "bg": "#0A1220", "surface": "#101B2E", "surface2": "#15233A", "sidebar": "#0D1626",
-    "border": "#22324F", "text": "#F2F4F8", "muted": "#97A3B8", "accent": "#99ACCF",
-    "accent_hover": "#CCD6E7", "accent_text": "#FFFFFF", "accent_soft": "#1A2C4D",
+DARK = {   # black / graphite, not navy; the corporate blue stays on buttons and accents
+    "bg": "#0B0B0D", "surface": "#151518", "surface2": "#1C1C20", "sidebar": "#111114",
+    "border": "#2D2D33", "text": "#F2F2F4", "muted": "#9C9CA6", "accent": "#99ACCF",
+    "accent_hover": "#CCD6E7", "accent_text": "#FFFFFF", "accent_soft": "#202634",
     "primary": "#1F4C9C", "primary_hover": "#33599F",
-    "hover": "#1A2A45", "selection": "#24406F", "danger": "#EF6B6B", "success": "#5CBF73",
-    "warning": ORANGE, "highlight": ORANGE, "input": "#0C1525",
+    "hover": "#232328", "selection": "#2C3A57", "danger": "#EF6B6B", "success": "#5CBF73",
+    "warning": ORANGE, "highlight": ORANGE, "input": "#101013",
 }
 # Field-kind colours are their own signal colours (not the corporate palette, which is for
 # menus and buttons): blue control, green status, amber pulse, red event flag, grey constant.

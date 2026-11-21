@@ -4,7 +4,7 @@
   "description": "Both outputs high",
   "writes": [
     {
-      "ip": "GPIO0",
+      "ip": "GPIO_0",
       "register": "LOAD",
       "value": "0x00000003"
     }

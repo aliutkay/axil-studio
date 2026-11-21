@@ -10,7 +10,7 @@ into the crossbar's slave ports and the Debug Bridge reads registers through it.
 from . import xbargen as X
 from .model import IPInstance, hex32, parse_int
 
-MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it
+MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it (changeable per project)
 DEFAULT_START = 0x40000000
 
 
@@ -30,10 +30,25 @@ def span_of(project, inst):
     return ip.span if ip else 4
 
 
+def default_window(project):
+    """Window of every instance whose size was not set by hand (project setting, 4 KB by default)."""
+    d = project.address_map or {}
+    try:
+        w = parse_int(d.get("window", MIN_WINDOW))
+    except ValueError:
+        return MIN_WINDOW
+    return w if w >= 4 and not w & (w - 1) else MIN_WINDOW
+
+
+def set_default_window(project, window):
+    project.address_map = dict(project.address_map or {}, window=f"0x{window:X}")
+
+
 def window_of(project, inst):
-    """Address window of an instance: the chosen size, grown to fit the IP when needed."""
-    need = need_window(span_of(project, inst))
-    return max(inst.window or 0, need)
+    """Address window of an instance: its own size when it was set by hand (inst.window, kept
+    when the default changes), otherwise the project default; grown to fit the IP when needed."""
+    need = need_window(span_of(project, inst), 4)
+    return max(inst.window or default_window(project), need)
 
 
 def start_of(project):
@@ -49,11 +64,9 @@ def set_start(project, start):
 
 
 def unique_name(project, stem):
-    """`stem` if no instance has that name yet, otherwise stem_1, stem_2 …"""
+    """Instance name for IP `stem`: stem_0, stem_1 … (the first number not taken)."""
     names = {i.name for i in project.instances}
-    if stem not in names:
-        return stem
-    k = 1
+    k = 0
     while f"{stem}_{k}" in names:
         k += 1
     return f"{stem}_{k}"
@@ -120,8 +133,10 @@ def validate(project):
 
 
 def add_instance(project, ip_name, name=None):
-    """Place IP definition `ip_name` in the address map once more (at the end, automatic address)."""
-    inst = IPInstance(unique_name(project, name or ip_name), ip_name)
+    """Place IP definition `ip_name` in the address map once more (at the end, automatic address);
+    named `name` when given and free, otherwise <ip>_0, <ip>_1 …"""
+    taken = {i.name for i in project.instances}
+    inst = IPInstance(name if name and name not in taken else unique_name(project, ip_name), ip_name)
     project.instances.append(inst)
     try:
         readdress(project)

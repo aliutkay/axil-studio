@@ -4,7 +4,7 @@ import argparse
 import os
 import sys
 
-from PySide6.QtCore import QCoreApplication, QSize, Qt
+from PySide6.QtCore import QCoreApplication, QObject, QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
@@ -106,21 +106,29 @@ class ProjectActions:
         return True
 
 
+class _ThemeMenu(QObject):
+    """Theme actions of one window's View menu. A QObject child of the window, so its connection to
+    the theme manager ends with the window (a plain function would outlive the deleted actions)."""
+
+    def __init__(self, window, menu):
+        super().__init__(window)
+        self.group = []
+        for mode in theme.MODES:
+            a = QAction(theme.MODE_LABELS[mode], window, checkable=True)
+            a.setChecked(theme.manager().mode == mode)
+            a.triggered.connect(lambda _=False, mode=mode: theme.manager().set_mode(mode))
+            menu.addAction(a)
+            self.group.append((mode, a))
+        theme.manager().changed.connect(self.sync)
+
+    def sync(self):
+        for mode, a in self.group:
+            a.setChecked(theme.manager().mode == mode)
+
+
 def build_view_menu(window, menubar):
     m = menubar.addMenu("&Görünüm")
-    tm = m.addMenu("Tema")
-    group = []
-    for mode in theme.MODES:
-        a = QAction(theme.MODE_LABELS[mode], window, checkable=True)
-        a.setChecked(theme.manager().mode == mode)
-        a.triggered.connect(lambda _=False, mode=mode: theme.manager().set_mode(mode))
-        tm.addAction(a)
-        group.append((mode, a))
-
-    def sync():
-        for mode, a in group:
-            a.setChecked(theme.manager().mode == mode)
-    theme.manager().changed.connect(sync)
+    window._theme_menu = _ThemeMenu(window, m.addMenu("Tema"))
     return m
 
 

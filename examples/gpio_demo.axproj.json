@@ -4,7 +4,7 @@
   "name": "GPIO demo",
   "ips": [
     {
-      "name": "GPIO0",
+      "name": "GPIO",
       "desc": "ZipCPU axilgpio",
       "registers": [
         {
@@ -252,8 +252,8 @@
   ],
   "instances": [
     {
-      "name": "GPIO0",
-      "ip": "GPIO0",
+      "name": "GPIO_0",
+      "ip": "GPIO",
       "base": "0x60000000",
       "fixed": true
     }

@@ -10,6 +10,7 @@ The common file is the project (.axproj.json, model.Project). It holds
 
 import copy
 import os
+import re
 
 from axil_studio.core import addrmap
 
@@ -103,8 +104,10 @@ class ProjectContext(QObject):
                 self.project.ips.remove(other)
             for inst in self.project.instances_of(old_name):
                 inst.ip = ip.name
-                if inst.name == old_name and not self.project.get_instance(ip.name):
-                    inst.name = ip.name
+                # instances named after the IP follow the rename: OLD_0 -> NEW_0 (OLD -> NEW)
+                m = re.fullmatch(re.escape(old_name) + r"(_\d+)?", inst.name)
+                if m and not self.project.get_instance(ip.name + (m.group(1) or "")):
+                    inst.name = ip.name + (m.group(1) or "")
         if old:
             self.project.ips[self.project.ips.index(old)] = ip
         else:

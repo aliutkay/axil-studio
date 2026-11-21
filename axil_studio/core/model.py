@@ -200,7 +200,7 @@ class IPInstance:
     name: str
     ip: str = ""            # IP definition name; "" = external slave
     base: int = 0
-    window: int = 0         # address window in bytes; 0 = smallest that fits (min 4 KB)
+    window: int = 0         # address window set by hand (bytes); 0 = the project's default window
     fixed: bool = False     # keeps its base when the map is auto-addressed
     span: int = 0           # external slaves: bytes used (IPs: from the register map)
 

@@ -10,6 +10,24 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.6 — adres haritası ve register haritası düzenlemeleri
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.6 |
+| Register Map Editor | early-alpha 0.3.0 |
+| Address Map Editor | early-alpha 0.2.0 |
+
+- Address Map Editor: **Varsayılan pencere** ayarı (başlangıç adresi gibi); elle seçilen boyut o slave'de kilitli
+  kalır, *varsayılan* ile açılır. "Bir kez daha ekle" kaldırıldı. *+ IP Kütüphanesinden slave ekle* ve *+ Harici slave
+  ekle* yan yana. Örnek adları `<IP>_0`, `<IP>_1` … (harici: `EXT_0` …); IP yeniden adlandırılınca izlerler.
+- Register Map Editor: sol panelde yalnızca registerlar; yerleştirilmemiş bit alanları ve *Port içe aktar* Bit
+  alanları sekmesinin altında (üst çubuktan kaldırıldı). Yerleşmiş alanlar bit haritasında sürüklenerek taşınır,
+  yerleştirilmemiş listesine sürüklenince geri alınır.
+- Hata: bir araç penceresi kapandıktan sonra tema değiştirince `hub.py` 122. satırda "already deleted" hatası.
+- Koyu tema lacivert yerine siyah / grafit.
+- Örnek proje: IP `GPIO`, adres haritasında `GPIO_0` (config örnekleri de).
+
 ## early-alpha 0.1.5 — hata düzeltmeleri ve temizlik
 
 | Bileşen | Sürüm |

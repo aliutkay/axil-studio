@@ -195,16 +195,16 @@ class AddressMapPage(ToolPage):
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
                    "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.1.1"
+    version = "0.2.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self._loading = False
 
-        self.header.add(ui.button("IP ekle…", "library", "primary", self.add_ip,
-                                  "IP Library'den bir IP seç ve adres haritasına ekle (aynı IP birden çok kez "
-                                  "eklenebilir)"))
         bar = ui.ActionBar()
+        bar.add("IP Kütüphanesinden slave ekle…", "plus", self.add_ip,
+                "IP Library'den bir IP seç ve adres haritasına ekle (aynı IP birden çok kez eklenebilir: "
+                "<IP>_0, <IP>_1 …)")
         bar.add("Harici slave ekle…", "plus", self.add_external,
                 "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle")
         bar.sep()
@@ -232,6 +232,18 @@ class AddressMapPage(ToolPage):
         left.lay.addWidget(ui.label("Otomatik adresli IP'ler bu adresten başlayarak liste sırasıyla, pencere "
                                     "boyutlarına hizalı yerleşir. Adres hücresine yazılan değer sabitlenir (🔒); "
                                     "kilide tıkla: otomatiğe dön.", "muted", wrap=True))
+        left.lay.addWidget(ui.Divider())
+        left.lay.addWidget(ui.label("VARSAYILAN PENCERE", "section"))
+        self.window_cb = QComboBox()
+        for w in window_choices(0x100):
+            self.window_cb.addItem(f"{size_text(w)}  ({w:#x})", w)
+        self.window_cb.setToolTip("Boyutu elle seçilmemiş her slave'e ayrılan adres aralığı")
+        self.window_cb.currentIndexChanged.connect(self._default_window_changed)
+        left.lay.addWidget(self.window_cb)
+        left.lay.addWidget(ui.label("Boyutu elle seçilmemiş her slave bu pencereyi alır (IP daha büyükse "
+                                    "kendiliğinden büyür). Boyut sütununda elle seçilen boyut o slave'de kalır "
+                                    "(🔒); listeden \"varsayılan\"ı seçince yeniden bu ayarı izler.",
+                                    "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label("DOĞRULAMA", "section"))
         self.issues = ui.IssueList("Hata yok")
@@ -266,8 +278,6 @@ class AddressMapPage(ToolPage):
         sbar.setSpacing(4)
         sbar.addWidget(ui.button("Düzenle", None, "ghost", lambda: self.edit_slave(self._sel_row()),
                                  "Ad, adres ve boyut"))
-        sbar.addWidget(ui.button("Bir kez daha ekle", None, "ghost", self.duplicate,
-                                 "Seçili IP'nin yeni bir örneğini ekle (aynı register haritası, ayrı adres)"))
         sbar.addWidget(ui.button("Sil", None, "ghost", self.delete_slave,
                                  "Seçili örneği adres haritasından çıkar (Delete); IP tanımı projede kalır"))
         sbar.addStretch(1)
@@ -287,8 +297,8 @@ class AddressMapPage(ToolPage):
     def build_menus(self, menubar):
         m = menubar.addMenu("&Address Map")
         win = self.window()
-        for text, slot in (("IP ekle (IP Library)…", self.add_ip), ("Harici slave ekle…", self.add_external),
-                           ("Seçili IP'yi bir kez daha ekle", self.duplicate), (None, None),
+        for text, slot in (("IP Kütüphanesinden slave ekle…", self.add_ip), ("Harici slave ekle…", self.add_external),
+                           (None, None),
                            ("Adrese göre sırala", self.sort_slaves),
                            ("Tüm adresleri otomatiğe çevir", self.unlock_all), (None, None),
                            ("Register haritasını düzenle", self.edit_regs),
@@ -330,6 +340,7 @@ class AddressMapPage(ToolPage):
         sel = self._sel_row() if select is None else select
         self._loading = True
         self.start_ed.setText(hex32(A.start_of(self.proj)))
+        self.window_cb.setCurrentIndex(max(0, self.window_cb.findData(A.default_window(self.proj))))
         slaves = A.xbar_slaves(self.proj)
         bad = A.overlapping(self.proj)
         self.table.setRowCount(len(slaves))
@@ -394,12 +405,15 @@ class AddressMapPage(ToolPage):
         self._sync_buttons()
 
     def _size_combo(self, j, s):
+        inst = self.proj.instances[j]
         cb = QComboBox()
-        need = A.need_window(s.span)
-        for w in window_choices(need):
-            cb.addItem(size_text(w), w)
-        cb.setCurrentIndex(max(0, cb.findData(s.window)))
-        cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar)")
+        default = max(A.default_window(self.proj), A.need_window(s.span, 4))
+        cb.addItem(f"varsayılan · {size_text(default)}", 0)
+        for w in window_choices(A.need_window(s.span, 4)):
+            cb.addItem(("🔒 " if inst.window == w else "") + size_text(w), w)
+        cb.setCurrentIndex(max(0, cb.findData(inst.window if inst.window else 0)))
+        cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar). Elle seçilen boyut bu "
+                      "slave'de kalır (🔒); \"varsayılan\" Varsayılan pencere ayarını izler.")
         cb.currentIndexChanged.connect(lambda _i, j=j, cb=cb: self._size_changed(j, cb.currentData()))
         return cb
 
@@ -435,7 +449,6 @@ class AddressMapPage(ToolPage):
             m.addAction("Düzenle…", lambda: self.edit_slave(row))
             if not inst.external:
                 m.addAction("Register haritasını düzenle", self.edit_regs)
-                m.addAction("Bir kez daha ekle", self.duplicate)
             m.addAction("Otomatik adrese dön" if inst.fixed else "Adresi sabitle", lambda: self._cell_clicked(row, C_LOCK))
             m.addSeparator()
             m.addAction("Adres haritasından çıkar", self.delete_slave)
@@ -457,6 +470,15 @@ class AddressMapPage(ToolPage):
         if v != A.start_of(self.proj):
             A.set_start(self.proj, v)
             self._changed()
+
+    def _default_window_changed(self, *_):
+        if self._loading:
+            return
+        w = self.window_cb.currentData()
+        if w and w != A.default_window(self.proj):
+            A.set_default_window(self.proj, w)
+            self._changed()
+            self.status(f"Varsayılan pencere {size_text(w)}; elle boyut seçilmiş slave'ler (🔒) değişmedi")
 
     def _rename(self, inst, name):
         if not X.IDENT.match(name):
@@ -502,7 +524,8 @@ class AddressMapPage(ToolPage):
         if self._loading or not 0 <= j < len(self.proj.instances):
             return
         inst = self.proj.instances[j]
-        inst.window = w
+        inst.window = w                       # 0: follow the default window again
+        w = A.window_of(self.proj, inst)
         if inst.fixed and inst.base & (w - 1):
             inst.base &= ~(w - 1)
             self.status(f"{inst.name} adresi yeni boyuta hizalandı: {hex32(inst.base)}")
@@ -533,12 +556,14 @@ class AddressMapPage(ToolPage):
             return
         inst = self.proj.instances[row]
         s = A.xbar_slaves(self.proj)[row]
-        new = SlaveDialog.ask(self, s, f"SLAVE{row}: {inst.name}", A.MIN_WINDOW, False)
+        new = SlaveDialog.ask(self, s, f"SLAVE{row}: {inst.name}", 4, False)
         if new is None:
             return
         if new.name != inst.name and not self._rename(inst, new.name):
             return
-        inst.base, inst.window, inst.fixed = new.base, new.window, new.fixed
+        if new.window != s.window:            # a size chosen here is kept for this slave
+            inst.window = new.window
+        inst.base, inst.fixed = new.base, new.fixed
         if inst.external:
             inst.span = new.span
         self._changed(row)
@@ -553,28 +578,19 @@ class AddressMapPage(ToolPage):
         self._changed(len(self.proj.instances) - 1)
         self.status(f"{inst.name} eklendi ({hex32(inst.base)})")
 
-    def duplicate(self):
-        inst = self._sel_inst()
-        if inst is None or inst.external:
-            return
-        new = A.add_instance(self.proj, inst.ip)
-        self._changed(len(self.proj.instances) - 1)
-        self.status(f"{inst.ip} bir kez daha eklendi: {new.name} ({hex32(new.base)})")
-
     def add_external(self):
-        k = 0
-        while self.proj.get_instance(f"EXT{k}"):
-            k += 1
-        name = f"EXT{k}"
+        name = A.unique_name(self.proj, "EXT")                # EXT_0, EXT_1 …
         proto = X.XbarSlave(name, 0, 0xFFFFF000, 0x1000, True, False)    # external, automatic address
-        new = SlaveDialog.ask(self, proto, "Harici slave", A.MIN_WINDOW, False)
+        proto.mask = (~(A.default_window(self.proj) - 1)) & 0xFFFFFFFF
+        new = SlaveDialog.ask(self, proto, "Harici slave", 4, False)
         if new is None:
             return
         if self.proj.get_instance(new.name) or not X.IDENT.match(new.name):
             QMessageBox.warning(self, self.title, f"“{new.name}” kullanılamaz: ad benzersiz olmalı, harfle başlamalı "
                                                   "ve sadece harf/rakam/_ içermeli.")
             return
-        self.proj.instances.append(IPInstance(new.name, "", new.base, new.window, new.fixed, new.span))
+        window = 0 if new.window == A.default_window(self.proj) else new.window   # 0: follows the default
+        self.proj.instances.append(IPInstance(new.name, "", new.base, window, new.fixed, new.span))
         self._changed(len(self.proj.instances) - 1)
 
     def delete_slave(self):

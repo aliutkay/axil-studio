@@ -37,7 +37,7 @@ Proje dosyası (`.axproj.json`, biçim sürümü 2) iki ayrı şey tutar:
 - **IP'ler** (`ips`): register haritaları (IP tanımları). Adres yoktur. Register Map Editor'da kaydedilen
   IP tam register spesifikasyonunu da (`regspec`) saklar, böylece Wrapper HDL'i yeniden üretebilir.
 - **Adres haritası** (`instances`): IP örnekleri — ad, hangi IP, base adres, pencere boyutu, sabit/otomatik.
-  Aynı IP birden çok kez yerleştirilebilir (ör. `UART0`, `UART1` ikisi de `axiluart` IP'si). Harici
+  Aynı IP birden çok kez yerleştirilebilir (ör. `UART_0`, `UART_1` ikisi de `UART` IP'si). Harici
   slave'ler (bellek, hazır IP) register haritası olmadan adres ve boyutla girilir. Liste sırası slave port
   numarasıdır.
 
@@ -56,7 +56,9 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   bir IP açar. `.regspec.json` dosyasına kaydedip açmak ve **Kütüphaneye kaydet** de mümkündür.
 - **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
-- **Port içe aktar…** (Ctrl+I): register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
+- **Bit alanları** sekmesinin altında **yerleştirilmemiş bit alanları** bölümü ve **Port içe aktar…** düğmesi vardır
+  (Ctrl+I). Sol panelde yalnızca registerlar listelenir.
+- **Port içe aktar…**: register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
   ya da VHDL olarak yapıştırılır (modülün / entity'nin tamamı, yalnızca port listesi ya da port satırları; dil
   kendiliğinden anlaşılır; modülün içindeki `function` / `task` bildirimleri port sayılmaz). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
   çok boyutlu diziler, `integer range` çözülür; çözülemeyen genişlik tabloda elle yazılır. Çekirdeğin girişleri
@@ -68,7 +70,10 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   tekrarlanabilir. Alanlar bit haritasına sürüklenir (yeşil önizleme: yer uygun, kırmızı: dolu; birden çok alan yan
   yana yerleşir), bir registerın üstüne bırakılınca ilk boş bitlere, register listesinin boş alanına bırakılınca
   yeni bir registera girer. *Yerleştir* / çift tık seçili registera, *Yeni registera* yeni registera koyar; *Sil* /
-  Delete istenmeyenleri siler. Yerleşmiş bir alan sağ tık → *Yerleştirilmemişlere geri al* ile listeye döner.
+  Delete istenmeyenleri siler.
+- Yerleşmiş bir alan bit haritasında **sürüklenerek taşınır** (tutulan bit imlecin altında kalır; önizleme yeşilse
+  yer boştur, kırmızıysa bırakılmaz). Yerleştirilmemiş listesine sürüklenince ya da sağ tık → *Yerleştirilmemişlere
+  geri al* ile registerdan çıkıp listeye döner.
   Yerleştirilmemiş alanlar IP ile birlikte saklanır (proje, `.regspec.json`, kütüphane) ama HDL'e girmez.
 - Kısayollar: Ctrl+R yeni register, Ctrl+F yeni alan, Ctrl+I port içe aktar, Enter düzenle, Delete sil.
 
@@ -142,14 +147,16 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 
 - Tablodaki her satır bir slave portudur; sıra port numarasıdır (SLAVE0, SLAVE1 …). Satırlar sürükle-bırak ya da
   ↑/↓ ile sıralanır, **Adrese göre sırala** listeyi bir kez adres sırasına dizer.
-- **IP ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, her örnek benzersiz bir ad alır
-  (`GPIO0`, `GPIO0_1` …). Ad hücresine çift tıklayarak örnek yeniden adlandırılır. **Bir kez daha ekle** seçili
-  IP'nin yeni bir örneğini ekler. **Sil** örneği haritadan çıkarır; IP tanımı projede kalır.
+- **+ IP Kütüphanesinden slave ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, örnekler IP adı
+  ve 0'dan başlayan numarayla adlandırılır (`GPIO_0`, `GPIO_1` …; IP yeniden adlandırılırsa örnekler de izler).
+  **+ Harici slave ekle…** yanındadır (`EXT_0` …). Ad hücresine çift tıklayarak örnek yeniden adlandırılır. **Sil**
+  örneği haritadan çıkarır; IP tanımı projede kalır.
 - **Adresler**: her örnek ya *otomatik* ya *sabit*tir. Otomatikler başlangıç adresinden itibaren liste sırasıyla
   ardışık ve boyutlarına hizalı adres alır; sabitlerin aralığını atlar. Adres hücresine yazılan değer sabitlenir
   (🔒), *Adresleme* hücresine tıklayınca otomatiğe döner.
-- **Boyut**: örneğe ayrılan adres aralığı; varsayılan 4 KB, IP daha büyükse kendiliğinden büyür, hücredeki
-  listeden büyütülebilir.
+- **Varsayılan pencere** (başlangıç adresinin altında): boyutu elle seçilmemiş her slave'in adres aralığı, 4 KB ile
+  başlar. **Boyut** hücresinden elle seçilen boyut o slave'de kalır (🔒) ve varsayılan değişse de değişmez;
+  listeden *varsayılan* seçilince yeniden bu ayarı izler. IP pencereden büyükse pencere kendiliğinden büyür.
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
 - **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar.
 

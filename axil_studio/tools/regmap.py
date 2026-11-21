@@ -11,8 +11,8 @@ import os
 import re
 
 from PySide6.QtCore import QMimeData, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QAction, QBrush, QColor, QKeySequence, QPainter, QPen, QShortcut
-from PySide6.QtWidgets import (QAbstractItemView, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
+from PySide6.QtGui import QAction, QBrush, QColor, QDrag, QKeySequence, QPainter, QPen, QShortcut
+from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog,
                                QFormLayout, QHBoxLayout, QHeaderView,
                                QInputDialog, QLineEdit, QMenu, QMessageBox, QPlainTextEdit, QSplitter,
                                QTableWidget, QTableWidgetItem, QToolTip, QTreeWidget, QTreeWidgetItem,
@@ -29,6 +29,7 @@ from axil_studio.core.model import KIND_READS, KIND_WRITES, EnumValue, single_li
 SPEC_FILTER = "Register spesifikasyonu (*.regspec.json);;JSON (*.json);;Tüm dosyalar (*)"
 ROLE = Qt.ItemDataRole.UserRole
 UNPLACED_MIME = "application/x-axil-unplaced-fields"     # drag data: indexes into spec.unplaced
+PLACED_MIME = "application/x-axil-placed-field"          # drag data: "<register>\n<field>"
 # field tree columns
 C_NAME, C_BITS, C_KIND, C_TYPE, C_RESET, C_VALUES, C_PORT, C_DESC = range(8)
 
@@ -76,6 +77,7 @@ class BitMap(QWidget):
     fieldActivated = Signal(str)
     freeBitActivated = Signal(int)
     unplacedDropped = Signal(list, int)     # unplaced field indexes, lsb of the first one
+    fieldMoved = Signal(str, int)           # a placed field dragged to a new lsb
 
     TOP = 18      # bit-number row
     BOTTOM = 16   # legend row
@@ -84,7 +86,8 @@ class BitMap(QWidget):
         super().__init__()
         self.reg = None
         self.selected = None
-        self.drop = None                    # (lsb, width, fits) while unplaced fields are dragged over
+        self.drop = None                    # (lsb, width, fits) while fields are dragged over
+        self._press = None                  # (position, field name, grab offset) of a possible drag
         self.widths_of = lambda indexes: []
         self.setMinimumHeight(76)
         self.setMouseTracking(True)
@@ -179,20 +182,44 @@ class BitMap(QWidget):
                    f"{free} bit kullanılmıyor")
 
     def mouseMoveEvent(self, ev):
+        if self._press and ev.buttons() & Qt.MouseButton.LeftButton:
+            pos, name, offset = self._press
+            if (ev.position() - pos).manhattanLength() >= QApplication.startDragDistance():
+                self._press = None
+                self._drag_field(name, offset)
+                return
         bit = self._bit_at(ev.position().x())
         f = self._field_at(bit)
         if bit is None:
             QToolTip.hideText()
             return
-        tip = (f"{f.name} {f.bits} · {f.kind} · {N.label(f.fmt, f.width)}\n{single_line(f.desc)}" if f
+        tip = (f"{f.name} {f.bits} · {f.kind} · {N.label(f.fmt, f.width)}\n{single_line(f.desc)}\n"
+               "Sürükle: başka bitlere taşı ya da yerleştirilmemişlere bırak" if f
                else f"Bit {bit} kullanılmıyor\nÇift tık: bu bitte yeni bit alanı")
         QToolTip.showText(ev.globalPosition().toPoint(), tip.strip(), self)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, ev):
-        f = self._field_at(self._bit_at(ev.position().x()))
+        bit = self._bit_at(ev.position().x())
+        f = self._field_at(bit)
+        self._press = None
         if f:
             self.fieldClicked.emit(f.name)
+            if ev.button() == Qt.MouseButton.LeftButton:
+                self._press = (ev.position(), f.name, bit - f.lsb)
+
+    def mouseReleaseEvent(self, ev):
+        self._press = None
+
+    def _drag_field(self, name, offset):
+        """Drag a placed field: onto another bit position here, or onto the unplaced list."""
+        md = QMimeData()
+        md.setData(PLACED_MIME, f"{self.reg.name}\n{name}".encode())
+        self._grab = offset
+        drag = QDrag(self)
+        drag.setMimeData(md)
+        drag.exec(Qt.DropAction.MoveAction)
+        self._grab = 0
 
     def mouseDoubleClickEvent(self, ev):
         bit = self._bit_at(ev.position().x())
@@ -202,21 +229,35 @@ class BitMap(QWidget):
         elif bit is not None and self.reg is not None:
             self.freeBitActivated.emit(bit)
 
-    # ---- dropping unplaced bit fields
+    # ---- dropping unplaced fields / moving placed ones
     def _dragged(self, ev):
+        """("unplaced", [indexes]) | ("placed", field) | None"""
         md = ev.mimeData()
-        if self.reg is None or not md.hasFormat(UNPLACED_MIME):
+        if self.reg is None:
             return None
-        return [int(x) for x in bytes(md.data(UNPLACED_MIME)).decode().split(",") if x]
+        if md.hasFormat(UNPLACED_MIME):
+            return "unplaced", [int(x) for x in bytes(md.data(UNPLACED_MIME)).decode().split(",") if x]
+        if md.hasFormat(PLACED_MIME):
+            reg, name = bytes(md.data(PLACED_MIME)).decode().split("\n", 1)
+            f = next((x for x in self.reg.fields if x.name == name), None) if reg == self.reg.name else None
+            return ("placed", f) if f else None
+        return None
 
-    def _landing(self, ev, indexes):
-        """(lsb, total width, fits): the dragged fields side by side, centred on the cursor bit."""
-        total = sum(self.widths_of(indexes))
+    def _landing(self, ev, what):
+        """(lsb, width, fits). Unplaced fields: side by side, centred on the cursor bit. A placed
+        field keeps the bit it was grabbed by under the cursor; its own bits count as free."""
+        kind, data = what
         bit = self._bit_at(ev.position().x())
         bit = 0 if bit is None else bit
-        lsb = max(0, min(bit - (total - 1) // 2, 32 - total)) if total <= 32 else 0
+        if kind == "placed":
+            total, start = data.width, bit - getattr(self, "_grab", 0)
+            others = [f for f in self.reg.fields if f is not data]
+        else:
+            total = sum(self.widths_of(data))
+            start, others = bit - (total - 1) // 2, self.reg.fields
+        lsb = max(0, min(start, 32 - total)) if total <= 32 else 0
         used = 0
-        for f in self.reg.fields:
+        for f in others:
             used |= f.mask
         fits = 0 < total <= 32 and not used & (((1 << total) - 1) << lsb)
         return lsb, total, fits
@@ -226,10 +267,10 @@ class BitMap(QWidget):
             ev.acceptProposedAction()
 
     def dragMoveEvent(self, ev):
-        idx = self._dragged(ev)
-        if idx is None:
+        what = self._dragged(ev)
+        if what is None:
             return
-        self.drop = self._landing(ev, idx)
+        self.drop = self._landing(ev, what)
         self.update()
         ev.acceptProposedAction()
 
@@ -238,14 +279,18 @@ class BitMap(QWidget):
         self.update()
 
     def dropEvent(self, ev):
-        idx = self._dragged(ev)
+        what = self._dragged(ev)
         self.drop = None
         self.update()
-        if idx is None:
+        if what is None:
             return
-        lsb, _total, _fits = self._landing(ev, idx)
+        lsb, _total, fits = self._landing(ev, what)
         ev.acceptProposedAction()
-        self.unplacedDropped.emit(idx, lsb)
+        if what[0] == "placed":
+            if fits and lsb != what[1].lsb:
+                self.fieldMoved.emit(what[1].name, lsb)
+        else:
+            self.unplacedDropped.emit(what[1], lsb)
 
 
 class RegTree(QTreeWidget):
@@ -284,9 +329,11 @@ class RegTree(QTreeWidget):
 
 
 class UnplacedTree(QTreeWidget):
-    """Bit fields that are not in a register yet; drag them onto the bit map or a register."""
+    """Bit fields that are not in a register yet; drag them onto the bit map or a register. A
+    placed field dragged here from the bit map is taken out of its register."""
 
     deleteRequested = Signal()
+    placedDropped = Signal(str, str)        # register, field
 
     def __init__(self):
         super().__init__()
@@ -296,7 +343,9 @@ class UnplacedTree(QTreeWidget):
         self.setAlternatingRowColors(True)
         self.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
         self.setDragEnabled(True)
-        self.setDragDropMode(QAbstractItemView.DragDropMode.DragOnly)
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+        self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         h = self.header()
         h.setStretchLastSection(True)
         for c in (0, 1, 2):
@@ -318,6 +367,26 @@ class UnplacedTree(QTreeWidget):
             self.deleteRequested.emit()
         else:
             super().keyPressEvent(ev)
+
+    # only placed fields are dropped here (the list itself is not reordered)
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(PLACED_MIME):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasFormat(PLACED_MIME):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dropEvent(self, ev):
+        if not ev.mimeData().hasFormat(PLACED_MIME):
+            return ev.ignore()
+        reg, name = bytes(ev.mimeData().data(PLACED_MIME)).decode().split("\n", 1)
+        ev.acceptProposedAction()
+        self.placedDropped.emit(reg, name)
 
 
 # ============================================================================ port import
@@ -682,7 +751,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.2.1"
+    version = "0.3.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -705,9 +774,6 @@ class RegMapEditorPage(ToolPage):
         bar.add("Yeni IP", "file", self.new_spec, "Boş register haritası")
         bar.add("IP aç…", "library", self.choose_ip, "IP Library'den projedeki ya da bir kütüphanedeki IP'yi aç")
         bar.add("Örnek", "play", self.load_example, "Örnek register haritasını yükle")
-        bar.sep()
-        bar.add("Port içe aktar…", "plus", self.import_ports,
-                "IP çekirdeğinin Verilog / VHDL port listesinden yerleştirilmemiş bit alanları oluştur")
         bar.sep()
         bar.add("Dosyadan aç…", "folder", self.open_spec, ".regspec.json dosyası")
         bar.add("Dosyaya kaydet…", None, self.save_file, ".regspec.json olarak kaydet")
@@ -740,8 +806,6 @@ class RegMapEditorPage(ToolPage):
         left.lay.addLayout(form)
         left.lay.addWidget(ui.Divider())
 
-        lsplit = QSplitter(Qt.Orientation.Vertical)
-        lsplit.setChildrenCollapsible(False)
         regs_box = QWidget()
         rl = QVBoxLayout(regs_box)
         rl.setContentsMargins(0, 0, 0, 0)
@@ -776,37 +840,7 @@ class RegMapEditorPage(ToolPage):
         rbar.addWidget(small_button("↓", lambda: self.move_reg(1), "Aşağı taşı (offset'leri değiştirir)"))
         rbar.addWidget(small_button("Sırala", self.repack, "Offset'leri 0x00'dan itibaren 4'er artır"))
         rl.addLayout(rbar)
-        lsplit.addWidget(regs_box)
-        unp_box = QWidget()
-        ul = QVBoxLayout(unp_box)
-        ul.setContentsMargins(0, 8, 0, 0)
-        ul.setSpacing(8)
-        uhead = QHBoxLayout()
-        self.unp_title = ui.label("YERLEŞTİRİLMEMİŞ BİT ALANLARI", "section")
-        uhead.addWidget(self.unp_title)
-        uhead.addStretch(1)
-        uhead.addWidget(small_button("Port içe aktar", self.import_ports,
-                                     "IP çekirdeğinin Verilog / VHDL port listesinden (Ctrl+I)", None, "plus"))
-        ul.addLayout(uhead)
-        self.unplaced = UnplacedTree()
-        self.unplaced.deleteRequested.connect(self.delete_unplaced)
-        self.unplaced.itemDoubleClicked.connect(lambda *_: self.place_selected())
-        self.unplaced.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.unplaced.customContextMenuRequested.connect(self._unplaced_menu)
-        ul.addWidget(self.unplaced, 1)
-        ubar = QHBoxLayout()
-        ubar.setSpacing(4)
-        ubar.addWidget(small_button("Yerleştir", self.place_selected,
-                                    "Seçilenleri seçili registerın ilk boş bitlerine koy (çift tık da olur)"))
-        ubar.addWidget(small_button("Yeni registera", lambda: self.place_selected(new_register=True),
-                                    "Seçilenlerle yeni bir register aç"))
-        ubar.addStretch(1)
-        ubar.addWidget(small_button("Sil", self.delete_unplaced, "Seçilenleri sil (Delete)"))
-        ubar.addWidget(small_button("Tümünü sil", self.clear_unplaced))
-        ul.addLayout(ubar)
-        lsplit.addWidget(unp_box)
-        lsplit.setSizes([320, 320])
-        left.lay.addWidget(lsplit, 1)
+        left.lay.addWidget(regs_box, 1)
         left.setMinimumWidth(360)
         split.addWidget(left)
 
@@ -832,6 +866,7 @@ class RegMapEditorPage(ToolPage):
         self.bitmap.fieldActivated.connect(self._activate_field)
         self.bitmap.freeBitActivated.connect(self.add_field)
         self.bitmap.unplacedDropped.connect(self._drop_on_bitmap)
+        self.bitmap.fieldMoved.connect(self._move_field)
         self.bitmap.widths_of = lambda idx: [self.spec.unplaced[i].width for i in idx if i < len(self.spec.unplaced)]
         fl.addWidget(self.bitmap)
 
@@ -849,7 +884,13 @@ class RegMapEditorPage(ToolPage):
         self.fields.currentItemChanged.connect(lambda *_: self._field_selection_changed())
         self.fields.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.fields.customContextMenuRequested.connect(self._field_menu)
-        fl.addWidget(self.fields, 1)
+        fsplit = QSplitter(Qt.Orientation.Vertical)
+        fsplit.setChildrenCollapsible(False)
+        fields_box = QWidget()
+        fbl = QVBoxLayout(fields_box)
+        fbl.setContentsMargins(0, 0, 0, 0)
+        fbl.setSpacing(8)
+        fbl.addWidget(self.fields, 1)
         fbar = QHBoxLayout()
         fbar.setSpacing(4)
         fbar.addWidget(small_button("Düzenle", self.edit_field, "Seçili bit alanını düzenle (Enter)"))
@@ -863,7 +904,43 @@ class RegMapEditorPage(ToolPage):
             fbar.addWidget(dot)
             fbar.addSpacing(6)
             self.legend.append(dot)
-        fl.addLayout(fbar)
+        fbl.addLayout(fbar)
+        fsplit.addWidget(fields_box)
+        unp_box = QWidget()
+        ul = QVBoxLayout(unp_box)
+        ul.setContentsMargins(0, 10, 0, 0)
+        ul.setSpacing(8)
+        uhead = QHBoxLayout()
+        self.unp_title = ui.label("YERLEŞTİRİLMEMİŞ BİT ALANLARI", "section")
+        uhead.addWidget(self.unp_title)
+        uhead.addStretch(1)
+        uhead.addWidget(ui.label("Bit haritasına ya da bir registera sürükle; yerleşmiş bir alanı buraya "
+                                 "sürüklemek onu geri alır", "muted"))
+        uhead.addSpacing(8)
+        uhead.addWidget(small_button("Port içe aktar…", self.import_ports,
+                                     "IP çekirdeğinin Verilog / VHDL port listesinden bit alanları oluştur (Ctrl+I)",
+                                     None, "plus"))
+        ul.addLayout(uhead)
+        self.unplaced = UnplacedTree()
+        self.unplaced.deleteRequested.connect(self.delete_unplaced)
+        self.unplaced.placedDropped.connect(self.unplace_field)
+        self.unplaced.itemDoubleClicked.connect(lambda *_: self.place_selected())
+        self.unplaced.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.unplaced.customContextMenuRequested.connect(self._unplaced_menu)
+        ul.addWidget(self.unplaced, 1)
+        ubar = QHBoxLayout()
+        ubar.setSpacing(4)
+        ubar.addWidget(small_button("Yerleştir", self.place_selected,
+                                    "Seçilenleri seçili registerın ilk boş bitlerine koy (çift tık da olur)"))
+        ubar.addWidget(small_button("Yeni registera", lambda: self.place_selected(new_register=True),
+                                    "Seçilenlerle yeni bir register aç"))
+        ubar.addStretch(1)
+        ubar.addWidget(small_button("Sil", self.delete_unplaced, "Seçilenleri sil (Delete)"))
+        ubar.addWidget(small_button("Tümünü sil", self.clear_unplaced))
+        ul.addLayout(ubar)
+        fsplit.addWidget(unp_box)
+        fsplit.setSizes([380, 220])
+        fl.addWidget(fsplit, 1)
         self.tabs.addTab(ftab, "Bit alanları")
 
         dtab = QWidget()
@@ -1509,8 +1586,13 @@ class RegMapEditorPage(ToolPage):
                                     + ", ".join(f"{f.name} ({f.width} bit)" for f in failed)
                                     + ". Yerleştirilmemişlerde kaldı.")
 
-    def unplace_field(self):
-        r, f = self._sel_field()
+    def unplace_field(self, reg_name=None, field_name=None):
+        """Take a placed field (the selected one, or reg_name.field_name) back to the unplaced list."""
+        if field_name is None:
+            r, f = self._sel_field()
+        else:
+            r = next((x for x in self.spec.registers if x.name == reg_name), None)
+            f = next((x for x in (r.fields if r else []) if x.name == field_name), None)
         if not f:
             return
         r.fields.remove(f)
@@ -1521,6 +1603,18 @@ class RegMapEditorPage(ToolPage):
         self._refresh_unplaced({len(self.spec.unplaced) - 1})
         self._mark()
         self.status(f"{r.name}.{f.name} yerleştirilmemişlere alındı")
+
+    def _move_field(self, name, lsb):
+        """A placed field dragged on the bit map to a free position."""
+        r, f = self._field(name)
+        if not f:
+            return
+        old = f.bits
+        f.lsb = lsb
+        self._refresh_regs(r.name)
+        self._refresh_fields(f.name)
+        self._mark()
+        self.status(f"{r.name}.{f.name}: {old} → {f.bits}")
 
     # ================================================================ theme
     def _paint_legend(self):
