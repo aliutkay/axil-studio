@@ -56,7 +56,7 @@ class DebugBridgePage(ToolPage):
     description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
                    "SIMULATOR portu kullanılabilir.")
     icon_name = "debug"
-    version = "0.0.3"
+    version = "0.0.4"
 
     _log = Signal(str, str)
 
@@ -379,7 +379,6 @@ class DebugBridgePage(ToolPage):
         target = None
 
         def add_group(title, ips, group):
-            nonlocal target
             if not ips and group == "extra":
                 return
             g = QTreeWidgetItem([title, "", ""])
@@ -394,23 +393,45 @@ class DebugBridgePage(ToolPage):
                 e.setForeground(0, muted)
                 e.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 g.addChild(e)
+            if group == "project":           # the address map's tree: IPs under their Sub-bus Bridge
+                by_name = {ip.name: ip for ip in ips}
+
+                def level(items, parent_item):
+                    for inst in sorted(items, key=lambda i: i.base):
+                        if inst.bridge:
+                            node = QTreeWidgetItem([inst.name, hex32(inst.base), ""])
+                            node.setFont(1, mono)
+                            node.setForeground(0, theme.manager().color("accent"))
+                            node.setFlags(Qt.ItemFlag.ItemIsEnabled)
+                            node.setToolTip(0, "Sub-bus Bridge: arkasındaki interconnect'teki IP'ler "
+                                               "(adresler globaldir)")
+                            parent_item.addChild(node)
+                            level(inst.children, node)
+                        elif inst.name in by_name:
+                            parent_item.addChild(ip_item(by_name[inst.name], group))
+                level(self.ctx.project.instances, g)
+                return
             for ip in sorted(ips, key=lambda i: i.base):
-                top = QTreeWidgetItem([ip.name, hex32(ip.base), ""])
-                top.setFont(1, mono)
-                bf = top.font(0)
-                bf.setBold(True)
-                top.setFont(0, bf)
-                top.setToolTip(0, single_line(ip.desc))
-                top.setData(0, ROLE, (group, ip.name, None))
-                for reg in ip.registers:
-                    it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
-                    it.setFont(1, mono)
-                    it.setData(0, ROLE, (group, ip.name, reg.name))
-                    it.setToolTip(0, single_line(reg.desc))
-                    top.addChild(it)
-                    if sel == (group, ip.name, reg.name):
-                        target = it
-                g.addChild(top)
+                g.addChild(ip_item(ip, group))
+
+        def ip_item(ip, group):
+            nonlocal target
+            top = QTreeWidgetItem([ip.name, hex32(ip.base), ""])
+            top.setFont(1, mono)
+            bf = top.font(0)
+            bf.setBold(True)
+            top.setFont(0, bf)
+            top.setToolTip(0, single_line(ip.desc))
+            top.setData(0, ROLE, (group, ip.name, None))
+            for reg in ip.registers:
+                it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
+                it.setFont(1, mono)
+                it.setData(0, ROLE, (group, ip.name, reg.name))
+                it.setToolTip(0, single_line(reg.desc))
+                top.addChild(it)
+                if sel == (group, ip.name, reg.name):
+                    target = it
+            return top
         add_group("PROJE", self.ctx.address_ips(), "project")
         add_group("EK IP'LER", self._extra(), "extra")
         raw = QTreeWidgetItem(["Ham adres erişimi", "", "RW"])
@@ -519,7 +540,7 @@ class DebugBridgePage(ToolPage):
         self._add_extra([ip])
 
     def _add_extra(self, new):
-        taken = {i.name for i in self.ctx.project.instances}
+        taken = {i.name for i in self.ctx.project.all_instances()}
         clash = [ip.name for ip in new if ip.name in taken]
         if clash:
             QMessageBox.warning(self, self.title, f"Projede aynı adlı IP var: {', '.join(clash)}. Bu IP'ler eklenmedi.")

@@ -118,7 +118,7 @@ class ProjectContext(QObject):
     def remove_ip(self, name, source=""):
         """Remove an IP definition and all of its address-map instances."""
         self.project.ips = [x for x in self.project.ips if x.name != name]
-        self.project.instances = [i for i in self.project.instances if i.ip != name]
+        self.project.remove_instances(lambda i: not i.bridge and i.ip == name)
         self.mark_modified(source)
 
     def unique_ip_name(self, stem):

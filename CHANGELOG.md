@@ -10,6 +10,33 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.11 — Sub-bus Bridge: hiyerarşik adres haritası ve interconnect'ler
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.11 |
+| Register Map Editor | early-alpha 0.5.1 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.3.0 |
+| Interconnect Configurator | early-alpha 0.3.0 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.4 |
+| IP Library | early-alpha 0.2.1 |
+
+- **Sub-bus Bridge**: adres haritasında bir pencere kaplayan, isteğe bağlı kendi penceresi olan ve kalan adresleri
+  değiştirmeden arkasındaki interconnect'e ileten blok (yer tutucu; HDL'i üretilmez). Altına IP, harici slave ve
+  başka Sub-bus Bridge eklenir, derinlik sınırsız. Adresler globaldir; bridge'in içindekiler otomatik olarak onun
+  penceresine yerleşir. Pencere otomatikse içerikle büyür ve sonraki adresler yeniden dizilir; elle seçilmişse
+  sığmayan ekleme / taşıma / boyut değişikliği yapılmaz.
+- Address Map Editor: tablo yerine ağaç; **+ Sub-bus Bridge ekle…**; satırlar sürükle-bırak ya da sağ tık → Taşı ile
+  bus'lar arasında taşınır (başka bus'a taşınan sabit adres otomatiğe döner); bellek şeridi iç içe çizilir.
+- Interconnect Configurator: interconnect hiyerarşisi listesi; her interconnect'in kendi modül adı ve master'ları
+  (bridge arkasında MASTER0 bridge'in kendisi, ek master eklenebilir); **Tüm sistem** blok diyagramı; **Üret…** her
+  interconnect için ayrı wrapper yazar. Kademeli iki axilxbar ile global adreslemenin çalıştığı iverilog
+  simülasyonuyla doğrulandı (boş adresler DECERR döner).
+- Debug Bridge: adres ağacında IP'ler Sub-bus Bridge'lerinin altında gösterilir.
+- Proje dosyası: Sub-bus Bridge kaydı `"kind": "bridge"`, `self_window`, `xbar`, `children` alanlarıyla; eski projeler
+  değişmeden açılır.
+
 ## early-alpha 0.1.10 — satır ikonları, beyaz paneller, başlık düzeltmeleri
 
 | Bileşen | Sürüm |

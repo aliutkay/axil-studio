@@ -577,6 +577,70 @@ class SlaveDialog(FormDialog):
                            fixed)
 
 
+class BridgeDialog(FormDialog):
+    """A Sub-bus Bridge (Address Map Editor): name, its own window at the start, the window size
+    (grows with the contents unless chosen) and the address (automatic or fixed)."""
+
+    def __init__(self, parent, title, name, base, self_window, window, fixed, need):
+        self.v = (name, base, self_window, window, fixed)
+        self.need = need
+        super().__init__(parent, title, 480)
+
+    def build(self):
+        name, base, self_window, window, fixed = self.v
+        self.name = QLineEdit(name)
+        self.form.addRow("Ad", self.name)
+        self.own = QComboBox()
+        self.own.addItem("yok", 0)
+        for w in window_choices(0x100):
+            self.own.addItem(f"{size_text(w)}  ({w:#x})", w)
+        self.own.setCurrentIndex(max(0, self.own.findData(self_window)))
+        self.own.setToolTip("Pencerenin başında köprünün kendisine ayrılan alan; alt bus'taki slave'ler "
+                            "bundan sonra yerleşir")
+        self.form.addRow("Kendi penceresi", self.own)
+        self.window = QComboBox()
+        self.form.addRow("Pencere", self.window)
+        self.base = self.row("Base adres", mono_edit(f"0x{base:08X}"))
+        self.fixed = QCheckBox("Sabit adres (işaretli değilse sıraya göre otomatik verilir)")
+        self.fixed.setChecked(fixed)
+        self.form.addRow("", self.fixed)
+        self.fixed.toggled.connect(lambda on: self.base.setEnabled(on))
+        self.base.setEnabled(fixed)
+        self.extra.addWidget(ui.label("Sub-bus Bridge'in penceresindeki adresler (kendi penceresi dışında kalanlar) "
+                                      "değiştirilmeden alt bus'ın interconnect'ine iletilir. Otomatik pencere "
+                                      "içerik büyüdükçe büyür; elle seçilen pencereye sığmayan slave eklenemez.",
+                                      "muted", wrap=True))
+        self.own.currentIndexChanged.connect(self._fill)
+        self._fill()
+        self.name.setFocus()
+
+    def _fill(self, *_):
+        cur = self.window.currentData() if self.window.count() else self.v[3]
+        rest = max(0, self.need - self.v[2])            # the children's part keeps its size
+        need = self.own.currentData() + rest
+        self.window.clear()
+        self.window.addItem("otomatik (içeriğe göre büyür)", 0)
+        first = 4
+        while first < need:
+            first <<= 1                         # windows are powers of two
+        for w in window_choices(first):
+            self.window.addItem(f"🔒 {size_text(w)}  ({w:#x})", w)
+        self.window.setCurrentIndex(max(0, self.window.findData(cur or 0)))
+
+    def apply(self):
+        name = self.name.text().strip()
+        if not name:
+            raise ValueError("Ad boş olamaz")
+        try:
+            base = parse_int(self.base.text()) & 0xFFFFFFFF
+        except ValueError:
+            raise ValueError("Base adres sayı olmalı") from None
+        w = self.window.currentData() or 0
+        if self.fixed.isChecked() and w and base & (w - 1):
+            raise ValueError(f"Base adres pencereye ({w:#x}) hizalı olmalı")
+        return name, base, self.own.currentData(), w, self.fixed.isChecked()
+
+
 # ============================================================================ debug: custom value / map edits
 class CustomValueDialog(FormDialog):
     """Write any value to one bit field in any data type; optionally keep it as a new value

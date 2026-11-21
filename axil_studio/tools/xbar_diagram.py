@@ -257,9 +257,10 @@ class BlockDiagram(QWidget):
             p.setPen(QColor(t["text"]))
             p.drawText(QPointF(cx + 6, xr.top() - 22), n)
         p.setPen(QColor(t["muted"]))
-        p.drawText(QRectF(xr.left(), xr.bottom() - 22, xr.width(), 18), Qt.AlignmentFlag.AlignCenter,
-                   f"{sp.module}_pk (HDL Designer): port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
-                   else f"{sp.module}: ayrık AXI4-Lite sinyalleri")
+        foot = (f"{sp.module}_pk (HDL Designer): port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
+                else f"{sp.module}: ayrık AXI4-Lite sinyalleri")
+        p.drawText(QRectF(xr.left() + 6, xr.bottom() - 22, xr.width() - 12, 18), Qt.AlignmentFlag.AlignCenter,
+                   p.fontMetrics().elidedText(foot, Qt.TextElideMode.ElideRight, int(xr.width() - 12)))
 
         for i, m in enumerate(sp.masters):
             box = QRectF(self.mx, self.mslots[i].top(), self.mw, self.mslots[i].height())
@@ -388,3 +389,255 @@ class BlockDiagram(QWidget):
             self.masterActivated.emit(idx)
         elif kind == "s":
             self.slaveActivated.emit(idx)
+
+
+# ============================================================================ whole system
+class SystemDiagram(BlockDiagram):
+    """The whole bus hierarchy left to right: every interconnect with its masters on the left and
+    its slaves on the right. A Sub-bus Bridge is drawn as its own block: a slave of the bus on its
+    left and MASTER0 of the interconnect behind it (whose extra masters sit below it). Click an
+    interconnect or a master to pick that interconnect, a slave to select it; double-click a
+    bridge to pick its interconnect, any other slave to edit it in the Address Map Editor."""
+
+    levelClicked = Signal(str)
+    instClicked = Signal(str)
+    instActivated = Signal(str)
+
+    MW, XW, SW, SWIRE = 170, 190, 230, 56
+    LEAF_H, BRIDGE_H, MASTER_H, VGAP, XHEAD = 56, 66, 42, 12, 30
+
+    def __init__(self):
+        super().__init__()
+        self.project = None
+        self.style = "packed"
+        self.level_sel = ""
+        self.inst_sel = None
+        self._items = []
+
+    def set_project(self, project, style, level_sel="", inst_sel=None):
+        self.project, self.style, self.level_sel, self.inst_sel = project, style, level_sel, inst_sel
+        self.spec = project          # BlockDiagram.paintEvent guard
+        try:
+            self._build()
+            self.error = None
+        except Exception as exc:  # noqa: BLE001 - keep the page working
+            self.error = f"Sistem diyagramı çizilemedi: {exc}"
+        self.update()
+
+    def set_all_signals(self, on):
+        pass
+
+    # ------------------------------------------------------------ layout
+    def _colx(self, depth):
+        return MARGIN + depth * (self.SW + self.SWIRE + self.XW + self.SWIRE)
+
+    def _build(self):
+        from axil_studio.core import addrmap as A
+        proj = self.project
+        self._items = []          # (kind, rect, data)
+        self._wires = []          # (QPointF, QPointF)
+        self._maxdepth = 0
+        top_masters = A.xbar_masters(proj, None)
+        mrects = []
+        y = TOP - 40 + self.XHEAD + 6
+        for i, m in enumerate(top_masters):
+            r = QRectF(self._colx(0), y, self.SW, self.MASTER_H)
+            self._items.append(("m", r, ("", i, m.name, False)))
+            mrects.append(r)
+            y += self.MASTER_H + self.VGAP
+        bottom = self._level(A, None, TOP - 40, 0, mrects)
+        w = self._colx(self._maxdepth + 1) + self.SW + MARGIN
+        self._size = QSize(int(w), int(max(bottom, y) + 30))
+        self._fit()
+        self.updateGeometry()
+
+    def _level(self, A, bridge, y0, depth, mrects):
+        """Lay out one interconnect starting at y0 (its masters' rects given); returns its bottom."""
+        proj = self.project
+        self._maxdepth = max(self._maxdepth, depth)
+        xx = self._colx(depth) + self.SW + self.SWIRE
+        sx = self._colx(depth + 1)
+        y = y0 + self.XHEAD + 6
+        ports = []
+        sl = A.xbar_slaves(proj, bridge)
+        bad = A.overlapping(proj, bridge) | (A.outside(proj, bridge) if bridge is not None else set())
+        for j, (inst, s) in enumerate(zip(proj.level(bridge), sl)):
+            if not inst.bridge:
+                r = QRectF(sx, y, self.SW, self.LEAF_H)
+                self._items.append(("s", r, (inst, s, j, j in bad)))
+                ports.append(r.center().y())
+                y = r.bottom() + self.VGAP
+                continue
+            r = QRectF(sx, y, self.SW, self.BRIDGE_H)
+            self._items.append(("b", r, (inst, s, j, j in bad)))
+            ports.append(r.center().y())
+            sub = [r]
+            yy = r.bottom() + self.VGAP
+            for k, name in enumerate(inst.xbar_masters):
+                mr = QRectF(sx, yy, self.SW, self.MASTER_H)
+                self._items.append(("m", mr, (inst.name, k + 1, name, True)))
+                sub.append(mr)
+                yy = mr.bottom() + self.VGAP
+            child_bottom = self._level(A, inst, y - 8, depth + 1, sub)
+            y = max(yy, child_bottom + self.VGAP)
+        last = max([y - self.VGAP] + [r.bottom() for r in mrects]) + 10
+        xr = QRectF(xx, y0, self.XW, max(last - y0, self.XHEAD + 40))
+        spec_name = A.xbar_module(proj, bridge)
+        self._items.append(("x", xr, (bridge.name if bridge else "", spec_name, len(mrects), len(ports))))
+        for i, r in enumerate(mrects):
+            self._wires.append((QPointF(r.right(), r.center().y()), QPointF(xr.left(), r.center().y()), f"M{i}"))
+        for j, py in enumerate(ports):
+            self._wires.append((QPointF(xr.right(), py), QPointF(sx, py), f"S{j}"))
+        return xr.bottom()
+
+    # ------------------------------------------------------------ paint
+    def paintEvent(self, _):
+        if self.project is None:
+            return
+        t = theme.manager().tokens
+        p = QPainter(self)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.error:
+            p.setPen(QColor(t["danger"]))
+            p.drawText(QRectF(self.rect()).adjusted(16, 16, -16, -16),
+                       Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self.error)
+            return
+        p.scale(self._scale, self._scale)
+        self._hits = []
+        bold = QFont(self.font())
+        bold.setBold(True)
+        small = theme.mono_font()
+        small.setPixelSize(10)
+        p.setFont(self.font())
+        p.setPen(QColor(t["muted"]))
+        p.drawText(QPointF(MARGIN, 22), "İstek yönü soldan sağa: master → interconnect → slave · "
+                                        "Sub-bus Bridge: üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı")
+        # wires, blocks, then the port labels on the interconnects
+        for a, b, label in self._wires:
+            p.setPen(QPen(QColor(IN_COLOR), 2))
+            p.drawLine(a, b)
+            self._arrow(p, b, 1, QColor(IN_COLOR))
+        self._blocks(p, t, bold, small)
+        for a, b, label in self._wires:
+            p.setFont(small)
+            p.setPen(QColor(t["muted"]))
+            if label.startswith("M"):
+                p.drawText(QRectF(b.x() + 4, b.y() - 8, 40, 16), Qt.AlignmentFlag.AlignLeft |
+                           Qt.AlignmentFlag.AlignVCenter, label)
+            else:
+                p.drawText(QRectF(a.x() - 44, a.y() - 8, 40, 16), Qt.AlignmentFlag.AlignRight |
+                           Qt.AlignmentFlag.AlignVCenter, label)
+
+    def _blocks(self, p, t, bold, small):
+        for kind, r, data in self._items:
+            if kind == "x":
+                self._xbar(p, t, bold, small, r, *data)
+            elif kind == "m":
+                lvl, i, name, extra = data
+                sel = lvl == self.level_sel
+                p.setPen(QPen(QColor(t["text"] if sel else t["border"]), 1.8 if sel else 1.2))
+                p.setBrush(QColor(t["surface"]))
+                p.drawRoundedRect(r, 8, 8)
+                p.setFont(bold)
+                p.setPen(QColor(t["text"]))
+                p.drawText(r.adjusted(10, 0, -60, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
+                           p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, int(r.width() - 70)))
+                p.setFont(small)
+                p.setPen(QColor(t["muted"]))
+                p.drawText(r.adjusted(0, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
+                           f"MASTER{i}")
+                where = "üst bus" if not lvl else lvl
+                self._hits.append((r, "m", lvl, f"MASTER{i} · {name}\n{where} interconnect'i"
+                                   + ("\n(ek master: yalnızca bu interconnect'in slave'lerine erişir)" if extra else "")))
+            else:
+                inst, s, j, bad = data
+                self._slave(p, t, bold, small, r, kind == "b", inst, s, j, bad)
+
+    def _xbar(self, p, t, bold, small, r, lvl, module, nm, ns):
+        sel = lvl == self.level_sel
+        p.setPen(QPen(QColor(t["text"] if sel else t["primary"]), 3 if sel else 2))
+        p.setBrush(QColor(t["surface"]))
+        p.drawRoundedRect(r, 10, 10)
+        head = QRectF(r.left(), r.top(), r.width(), self.XHEAD)
+        path = QPainterPath()
+        path.addRoundedRect(head, 10, 10)
+        p.fillPath(path, QColor(t["primary"]))
+        p.fillRect(QRectF(head.left(), head.bottom() - 10, head.width(), 10), QColor(t["primary"]))
+        p.setPen(QColor("#FFFFFF"))
+        p.setFont(bold)
+        p.drawText(head.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignCenter,
+                   p.fontMetrics().elidedText(module, Qt.TextElideMode.ElideRight, int(head.width() - 16)))
+        p.setFont(small)
+        p.setPen(QColor(t["muted"]))
+        p.drawText(QRectF(r.left(), r.bottom() - 22, r.width(), 16), Qt.AlignmentFlag.AlignCenter,
+                   f"axilxbar · {nm}M × {ns}S")
+        self._hits.append((r, "x", lvl, f"{module}\n{'üst bus' if not lvl else lvl + ' arkasındaki'} interconnect · "
+                                        f"{nm} master, {ns} slave\nTıkla: seç"))
+
+    def _slave(self, p, t, bold, small, r, is_bridge, inst, s, j, bad):
+        from axil_studio.core import addrmap as A
+        sel = inst.name == self.inst_sel or (is_bridge and inst.name == self.level_sel)
+        if is_bridge:
+            p.setBrush(QColor(t["accent_soft"]))
+            border = QColor(t["danger"] if bad else t["text"] if sel else t["accent"])
+            p.setPen(QPen(border, 2.5 if sel or bad else 1.6))
+        else:
+            p.setBrush(QColor(t["surface"]))
+            border = QColor(t["danger"] if bad else t["text"] if sel else t["border"])
+            p.setPen(QPen(border, 2.5 if sel or bad else 1.2))
+        p.drawRoundedRect(r, 8, 8)
+        inner = r.adjusted(10, 5, -10, -4)
+        p.setFont(bold)
+        p.setPen(QColor(t["accent"] if is_bridge else t["text"]))
+        p.drawText(QRectF(inner.left(), inner.top(), inner.width() - 60, 18), Qt.AlignmentFlag.AlignLeft,
+                   p.fontMetrics().elidedText(inst.name, Qt.TextElideMode.ElideRight, int(inner.width() - 60)))
+        p.setFont(small)
+        p.setPen(QColor(t["muted"]))
+        p.drawText(QRectF(inner.left(), inner.top(), inner.width(), 18), Qt.AlignmentFlag.AlignRight, f"SLAVE{j}")
+        rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}"
+        p.setPen(QColor(t["danger"]) if bad else QColor(t["muted"]))
+        p.drawText(QRectF(inner.left(), inner.top() + 19, inner.width(), 15), Qt.AlignmentFlag.AlignLeft, rng)
+        p.setPen(QColor(t["muted"]))
+        if is_bridge:
+            kind = A.BRIDGE_LABEL + (f" · kendi {size_text(inst.self_window)}" if inst.self_window else "")
+        else:
+            kind = "harici" if inst.external else inst.ip
+        p.drawText(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), Qt.AlignmentFlag.AlignLeft,
+                   p.fontMetrics().elidedText(kind, Qt.TextElideMode.ElideRight, int(inner.width() - 60)))
+        p.drawText(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), Qt.AlignmentFlag.AlignRight,
+                   size_text(s.window))
+        if is_bridge:
+            tip = (f"{inst.name} · {A.BRIDGE_LABEL}\n{rng}\nüst bus'ta SLAVE{j}, arkasındaki interconnect'te MASTER0"
+                   f"\nÇift tık: arkasındaki interconnect'i seç")
+        else:
+            tip = f"SLAVE{j} · {inst.name}\n{rng}\nÇift tık: Address Map Editor'da düzenle"
+        self._hits.append((r, "b" if is_bridge else "s", inst.name, tip))
+
+    # ------------------------------------------------------------ mouse
+    def mousePressEvent(self, ev):
+        kind, name, _ = self._hit(ev.position())
+        if kind in ("x", "m"):
+            self.levelClicked.emit(name)
+        elif kind in ("s", "b"):
+            self.instClicked.emit(name)
+        else:
+            self._pan = ev.globalPosition()
+            self.setCursor(Qt.CursorShape.ClosedHandCursor)
+
+    def mouseDoubleClickEvent(self, ev):
+        kind, name, _ = self._hit(ev.position())
+        if kind == "b":
+            self.levelClicked.emit(name)
+        elif kind == "s":
+            self.instActivated.emit(name)
+
+    def mouseMoveEvent(self, ev):
+        if self._pan is not None:
+            return super().mouseMoveEvent(ev)
+        kind, _, tip = self._hit(ev.position())
+        if tip:
+            QToolTip.showText(ev.globalPosition().toPoint(), tip, self)
+        else:
+            QToolTip.hideText()
+        self.setCursor(Qt.CursorShape.PointingHandCursor if kind in ("x", "m", "s", "b")
+                       else Qt.CursorShape.ArrowCursor)

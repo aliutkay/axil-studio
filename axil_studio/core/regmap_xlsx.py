@@ -135,8 +135,9 @@ def _put(ws, row, values, fill=None, bold=False, italic=False, color=None, align
             cell.font = Font(bold=bold, italic=italic, color=color)
 
 
-def export_xlsx(ips, path, title=None):
-    """Write the register map of one or more IPBlocks to an .xlsx file."""
+def export_xlsx(ips, path, title=None, bus_of=None):
+    """Write the register map of one or more IPBlocks to an .xlsx file. bus_of: {IP name: bus name}
+    (the Sub-bus Bridge an instance sits behind), written next to its base address."""
     if not HAVE_OPENPYXL:
         raise RuntimeError("Excel çıktısı için openpyxl gerekli: pip install openpyxl")
     ips = list(ips)
@@ -163,7 +164,9 @@ def export_xlsx(ips, path, title=None):
         c.font = Font(bold=True)
         c.border = BORDER
         c.alignment = CENTER
-        s.cell(row=r, column=3, value="← interconnect'teki base adresi buraya yaz; tüm adresler güncellenir")
+        bus = (bus_of or {}).get(ip.name)
+        s.cell(row=r, column=3, value=(f"bus: {bus} · " if bus else "")
+               + "← interconnect'teki base adresi buraya yaz; tüm adresler güncellenir")
         s.cell(row=r, column=3).font = Font(italic=True, color="808080")
         base_ref[ip.name] = f"'Özet'!$B${r}"
     summary_start = 6 + len(ips)

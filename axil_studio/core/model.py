@@ -196,32 +196,64 @@ class IPBlock:
 @dataclass
 class IPInstance:
     """One entry of the project's address map: an IP definition placed at a base address,
-    or an external slave (ip == "") that has no register map in the project."""
+    an external slave (ip == "") that has no register map in the project, or a Sub-bus Bridge.
+
+    A Sub-bus Bridge (bridge=True) takes one window on its bus like a slave; the first
+    `self_window` bytes of it belong to the bridge itself, the rest is forwarded unchanged
+    (global addresses) to the interconnect behind it, whose slaves are `children` (IP instances,
+    external slaves and further Sub-bus Bridges). `xbar` holds that interconnect's settings:
+    {"module": "" (= axil_xbar_<name>), "masters": [extra master names]}; the bridge itself is
+    always its MASTER0."""
     name: str
-    ip: str = ""            # IP definition name; "" = external slave
-    base: int = 0
+    ip: str = ""            # IP definition name; "" = external slave (or a bridge)
+    base: int = 0           # global address
     window: int = 0         # address window set by hand (bytes); 0 = the project's default window
+                            # (bridges: 0 = grows with its contents)
     fixed: bool = False     # keeps its base when the map is auto-addressed
     span: int = 0           # external slaves: bytes used (IPs: from the register map)
+    bridge: bool = False
+    self_window: int = 0    # bridges: bytes reserved for the bridge itself at the start of its window
+    children: list = field(default_factory=list)
+    xbar: Optional[dict] = None
 
     @property
     def external(self):
-        return not self.ip
+        return not self.ip and not self.bridge
+
+    @property
+    def xbar_module(self):
+        return (self.xbar or {}).get("module") or f"axil_xbar_{self.name}"
+
+    @property
+    def xbar_masters(self):
+        return list((self.xbar or {}).get("masters", []))
 
     def to_dict(self):
         d = {"name": self.name, "ip": self.ip, "base": hex32(self.base)}
+        if self.bridge:
+            d = {"name": self.name, "kind": "bridge", "base": hex32(self.base)}
         if self.window:
             d["window"] = f"0x{self.window:X}"
         if self.fixed:
             d["fixed"] = True
         if self.external:
             d["span"] = f"0x{self.span:X}"
+        if self.bridge:
+            if self.self_window:
+                d["self_window"] = f"0x{self.self_window:X}"
+            if self.xbar and (self.xbar.get("module") or self.xbar.get("masters")):
+                d["xbar"] = self.xbar
+            d["children"] = [c.to_dict() for c in self.children]
         return d
 
     @staticmethod
     def from_dict(d):
-        return IPInstance(d["name"], d.get("ip", ""), parse_int(d.get("base", 0)), parse_int(d.get("window", 0)),
-                          bool(d.get("fixed", False)), parse_int(d.get("span", 0)))
+        bridge = d.get("kind") == "bridge"
+        return IPInstance(d["name"], "" if bridge else d.get("ip", ""), parse_int(d.get("base", 0)),
+                          parse_int(d.get("window", 0)), bool(d.get("fixed", False)), parse_int(d.get("span", 0)),
+                          bridge, parse_int(d.get("self_window", 0)),
+                          [IPInstance.from_dict(c) for c in d.get("children", [])] if bridge else [],
+                          d.get("xbar") if bridge else None)
 
 
 @dataclass
@@ -240,17 +272,50 @@ class Project:
         """IP definition by name."""
         return next((i for i in self.ips if i.name == name), None)
 
+    def walk(self, items=None, parent=None):
+        """(instance, parent bridge or None) for every entry of the address map, depth first,
+        in port order."""
+        for inst in self.instances if items is None else items:
+            yield inst, parent
+            if inst.bridge:
+                yield from self.walk(inst.children, inst)
+
+    def all_instances(self):
+        return [i for i, _ in self.walk()]
+
+    def leaf_instances(self):
+        """IP instances and external slaves (no bridges), at every level."""
+        return [i for i, _ in self.walk() if not i.bridge]
+
+    def bridges(self):
+        return [i for i, _ in self.walk() if i.bridge]
+
+    def parent_of(self, inst):
+        return next((p for i, p in self.walk() if i is inst), None)
+
+    def level(self, bridge=None):
+        """Slave list of the top interconnect (None) or of the one behind `bridge`."""
+        return bridge.children if bridge is not None else self.instances
+
+    def remove_instances(self, pred, items=None):
+        """Remove every instance (at any level) for which pred(inst) is true."""
+        items = self.instances if items is None else items
+        items[:] = [i for i in items if not pred(i)]
+        for i in items:
+            if i.bridge:
+                self.remove_instances(pred, i.children)
+
     def get_instance(self, name) -> Optional[IPInstance]:
-        return next((i for i in self.instances if i.name == name), None)
+        return next((i for i, _ in self.walk() if i.name == name), None)
 
     def instances_of(self, ip_name):
-        return [i for i in self.instances if i.ip == ip_name]
+        return [i for i in self.leaf_instances() if i.ip == ip_name]
 
     def address_ips(self) -> List[IPBlock]:
         """One IPBlock per address-map instance of an IP: instance name, instance base and the
-        definition's registers (shared, not copied). External slaves are left out."""
+        definition's registers (shared, not copied). External slaves and bridges are left out."""
         out = []
-        for inst in self.instances:
+        for inst in self.leaf_instances():
             d = self.get_ip(inst.ip) if inst.ip else None
             if d is not None:
                 out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name))

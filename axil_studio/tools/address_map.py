@@ -1,189 +1,272 @@
 """Address Map Editor: where every IP instance sits on the bus.
 
-The address map is the project's list of IP instances (model.IPInstance) in slave port order.
-An IP definition can be placed any number of times, each instance with its own name and base.
-Each instance's address is either automatic (consecutive, aligned, in list order from the start
-address) or fixed (typed by hand, marked with a lock). External slaves (memories, ready-made
-IPs without a register map in the project) are entered with their size. IPs are added through
-the IP Library; every address edit in the studio opens this tool.
+The address map is a tree of IP instances (model.IPInstance): the top list is the top
+interconnect's slave ports in order; a Sub-bus Bridge is one slave whose window is forwarded
+to the interconnect behind it, with its own slaves (any depth). Addresses are global. An IP
+definition can be placed any number of times, each instance with its own name and base. Each
+entry's address is either automatic (consecutive, aligned, in list order: from the start
+address, inside a bridge after its own window) or fixed (typed by hand, marked with a lock).
+External slaves (memories, ready-made IPs without a register map in the project) are entered
+with their size. Entries are moved between buses by drag & drop or the context menu. IPs are
+added through the IP Library; every address edit in the studio opens this tool.
 """
 
+import copy
 import os
 
 from PySide6.QtCore import QRectF, Qt, Signal
-from PySide6.QtGui import QAction, QColor, QPainter, QPen
+from PySide6.QtGui import QAction, QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit,
-                               QMenu, QMessageBox, QSplitter, QTableWidget, QTableWidgetItem, QToolTip, QWidget)
+                               QMenu, QMessageBox, QSplitter, QToolTip, QTreeWidget, QTreeWidgetItem, QWidget)
 
 from axil_studio.core import addrmap as A
 from axil_studio.core import regmap_xlsx
 from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
-from axil_studio.dialogs import SlaveDialog, size_text, window_choices
+from axil_studio.dialogs import BridgeDialog, SlaveDialog, size_text, window_choices
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
 
-# slave table columns
+# tree columns
 C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK, C_ACT = range(7)
+ROLE = Qt.ItemDataRole.UserRole          # instance name ("" for a bridge's own-window row)
+BRIDGE = A.BRIDGE_LABEL
 
 
-def overlapping(slaves):
-    """Indexes of slaves whose windows overlap another one."""
-    bad = set()
-    for i, a in enumerate(slaves):
-        for j in range(i):
-            b = slaves[j]
-            if not ((a.base ^ b.base) & a.mask & b.mask):
-                bad.update((i, j))
-    return bad
+def _weight(inst):
+    if not inst.bridge:
+        return 1
+    return max(1, sum(_weight(c) for c in inst.children) + (1 if inst.self_window else 0))
+
+
+def _depth(items):
+    return max([0] + [1 + _depth(i.children) for i in items if i.bridge])
 
 
 # ============================================================================ memory map strip
 class MemoryMap(QWidget):
-    """Enabled slaves in address order: one block per slave with its base and size, a gap marker
-    where the map is not contiguous, overlapping windows in red. Click selects, double-click edits."""
+    """The address map in address order: one block per slave with its base and size, a gap marker
+    where a bus is not contiguous, overlapping windows in red. A Sub-bus Bridge is a framed block
+    with its own window and its slaves inside. Click selects, double-click edits."""
 
-    slaveClicked = Signal(int)
-    slaveActivated = Signal(int)
+    slaveClicked = Signal(str)
+    slaveActivated = Signal(str)
 
-    GAP = 22
+    GAP = 18
+    TITLE = 18
 
     def __init__(self):
         super().__init__()
-        self.slaves = []
+        self.project = None
         self.selected = None
-        self.bad = set()
         self._boxes = []
         self.setMinimumHeight(92)
         self.setMouseTracking(True)
 
-    def set_slaves(self, slaves, selected=None):
-        self.slaves = slaves
+    def set_project(self, project, selected=None):
+        self.project = project
         self.selected = selected
-        self.bad = overlapping(slaves)
+        self.setMinimumHeight(92 + 30 * _depth(project.instances) if project else 92)
         self.update()
 
-    def _layout(self):
-        items = sorted((s.base, j) for j, s in enumerate(self.slaves))
-        r = QRectF(self.rect()).adjusted(1, 18, -1, -22)
-        gaps = sum(1 for k in range(1, len(items))
-                   if self.slaves[items[k][1]].base > self.slaves[items[k - 1][1]].base
-                   + self.slaves[items[k - 1][1]].window)
-        n = len(items)
-        w = (r.width() - gaps * self.GAP) / n if n else 0
-        boxes, x, prev_end = [], r.left(), None
-        for base, j in items:
-            s = self.slaves[j]
-            if prev_end is not None and s.base > prev_end:
-                boxes.append(("gap", QRectF(x, r.top(), self.GAP, r.height()), None))
-                x += self.GAP
-            boxes.append(("slave", QRectF(x, r.top(), w, r.height()), j))
-            x += w
-            prev_end = max(prev_end or 0, s.base + s.window)
-        return r, boxes
+    def _bad(self, bridge):
+        bad = A.overlapping(self.project, bridge)
+        if bridge is not None:
+            bad |= A.outside(self.project, bridge)
+        return bad
 
     def paintEvent(self, _):
         t = theme.manager().tokens
         p = QPainter(self)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        r, boxes = self._layout()
-        self._boxes = boxes
-        if not any(k == "slave" for k, _, _ in boxes):
+        r = QRectF(self.rect()).adjusted(1, 18, -1, -22)
+        self._boxes = []
+        items = self.project.instances if self.project else []
+        if not items:
             p.setPen(QPen(QColor(t["border"]), 1, Qt.PenStyle.DashLine))
             p.setBrush(QColor(t["surface2"]))
             p.drawRoundedRect(r, 6, 6)
             p.setPen(QColor(t["muted"]))
-            p.drawText(r, Qt.AlignmentFlag.AlignCenter, "Kullanımda slave yok")
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, "Adres haritası boş")
             return
+        self._level(p, t, None, r, 0)
+        sl = A.xbar_slaves(self.project)
+        small = theme.mono_font()
+        small.setPixelSize(10)
+        p.setFont(small)
+        p.setPen(QColor(t["muted"]))
+        n = len(self.project.leaf_instances())
+        lo = min(s.base for s in sl)
+        hi = max(s.base + s.window for s in sl) - 1
+        p.drawText(QRectF(r.left(), r.bottom() + 4, r.width(), 16), Qt.AlignmentFlag.AlignRight,
+                   f"{n} slave · {len(self.project.bridges())} {BRIDGE} · {hex32(lo)} – {hex32(hi)}")
+
+    def _level(self, p, t, bridge, r, depth):
+        """Draw the entries of one bus (and a bridge's own window) side by side in `r`."""
+        proj = self.project
+        items = list(proj.level(bridge))
+        sl = A.xbar_slaves(proj, bridge)
+        bad = self._bad(bridge)
+        entries = [(s.base, j) for j, s in enumerate(sl)]
+        if bridge is not None and bridge.self_window:
+            entries.append((bridge.base, -1))
+        entries.sort()
+        weights = [1 if j < 0 else _weight(items[j]) for _, j in entries]
+        prev_end, gaps = None, 0
+        for base, j in entries:
+            win = bridge.self_window if j < 0 else sl[j].window
+            if prev_end is not None and base > prev_end:
+                gaps += 1
+            prev_end = max(prev_end or 0, base + win)
+        unit = (r.width() - gaps * self.GAP) / max(1, sum(weights))
         small = theme.mono_font()
         small.setPixelSize(10)
         name_font = self.font()
         name_font.setBold(True)
-        for kind, box, j in boxes:
-            if kind == "gap":
+        x, prev_end = r.left(), None
+        for (base, j), wgt in zip(entries, weights):
+            win = bridge.self_window if j < 0 else sl[j].window
+            if prev_end is not None and base > prev_end:
                 p.setPen(QColor(t["muted"]))
                 p.setFont(name_font)
-                p.drawText(box, Qt.AlignmentFlag.AlignCenter, "⋯")
-                continue
-            s = self.slaves[j]
+                p.drawText(QRectF(x, r.top(), self.GAP, r.height()), Qt.AlignmentFlag.AlignCenter, "⋯")
+                x += self.GAP
+            prev_end = max(prev_end or 0, base + win)
+            box = QRectF(x, r.top(), unit * wgt, r.height())
+            x += unit * wgt
             inner = box.adjusted(2, 0, -2, 0)
-            fill = QColor(t["danger"]) if j in self.bad else QColor(t["primary"])
-            if s.external and j not in self.bad:
+            if depth == 0:
+                p.setFont(small)
+                p.setPen(QColor(t["muted"]))
+                p.drawText(QRectF(inner.left(), 0, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
+                           p.fontMetrics().elidedText(hex32(base), Qt.TextElideMode.ElideRight, int(inner.width())))
+            if j < 0:                                   # the bridge's own window
+                p.setBrush(QBrush(QColor(t["muted"]), Qt.BrushStyle.BDiagPattern))
+                p.setPen(QPen(QColor(t["border"]), 1))
+                p.drawRoundedRect(inner, 4, 4)
+                p.setFont(small)
+                text = p.fontMetrics().elidedText(f"kendi · {size_text(win)}", Qt.TextElideMode.ElideRight,
+                                                  int(inner.width() - 12))
+                tw = p.fontMetrics().horizontalAdvance(text) + 10
+                label = QRectF(inner.center().x() - tw / 2, inner.center().y() - 9, tw, 18)
+                p.setPen(Qt.PenStyle.NoPen)
+                p.setBrush(QColor(t["surface"]))
+                p.drawRoundedRect(label, 4, 4)
+                p.setPen(QColor(t["muted"]))
+                p.drawText(label, Qt.AlignmentFlag.AlignCenter, text)
+                continue
+            inst, s = items[j], sl[j]
+            self._boxes.append((inner, inst.name))
+            sel = inst.name == self.selected
+            if inst.bridge:
+                p.setBrush(QColor(t["accent_soft"]))
+                p.setPen(QPen(QColor(t["danger"] if j in bad else t["text"] if sel else t["accent"]),
+                              2.5 if sel or j in bad else 1.2))
+                p.drawRoundedRect(inner, 6, 6)
+                p.setPen(QColor(t["accent"]))
+                p.setFont(name_font)
+                title = QRectF(inner.left() + 6, inner.top() + 2, inner.width() - 12, self.TITLE)
+                p.drawText(title, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+                           p.fontMetrics().elidedText(f"{inst.name} · {size_text(s.window)}",
+                                                      Qt.TextElideMode.ElideRight, int(title.width())))
+                body = inner.adjusted(4, self.TITLE + 4, -4, -4)
+                if inst.children or inst.self_window:
+                    self._level(p, t, inst, body, depth + 1)
+                else:
+                    p.setPen(QColor(t["muted"]))
+                    p.setFont(small)
+                    p.drawText(body, Qt.AlignmentFlag.AlignCenter, "boş")
+                continue
+            fill = QColor(t["danger"]) if j in bad else QColor(t["primary"])
+            if s.external and j not in bad:
                 fill = QColor(t["accent_hover"] if not theme.manager().dark else t["primary_hover"])
             p.setBrush(fill)
-            p.setPen(QPen(QColor(t["text"]), 2.5) if j == self.selected else Qt.PenStyle.NoPen)
+            p.setPen(QPen(QColor(t["text"]), 2.5) if sel else Qt.PenStyle.NoPen)
             p.drawRoundedRect(inner, 5, 5)
             p.setPen(QColor("#FFFFFF"))
             p.setFont(name_font)
             fm = p.fontMetrics()
-            p.drawText(inner.adjusted(4, 6, -4, -inner.height() / 2), Qt.AlignmentFlag.AlignCenter,
+            two = inner.height() >= 34
+            p.drawText(inner.adjusted(4, 2, -4, -inner.height() / 2 if two else -2), Qt.AlignmentFlag.AlignCenter,
                        fm.elidedText(s.name, Qt.TextElideMode.ElideRight, int(inner.width() - 8)))
-            p.setFont(small)
-            p.drawText(inner.adjusted(4, inner.height() / 2, -4, -4), Qt.AlignmentFlag.AlignCenter,
-                       p.fontMetrics().elidedText(size_text(s.window), Qt.TextElideMode.ElideRight,
-                                                  int(inner.width() - 8)))
-            p.setPen(QColor(t["muted"]))
-            p.drawText(QRectF(inner.left(), 0, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
-                       p.fontMetrics().elidedText(hex32(s.base), Qt.TextElideMode.ElideRight, int(inner.width())))
-        used = list(self.slaves)
-        lo = min(s.base for s in used)
-        hi = max(s.base + s.window for s in used) - 1
-        p.setFont(small)
-        p.setPen(QColor(t["muted"]))
-        p.drawText(QRectF(r.left(), r.bottom() + 4, r.width(), 16), Qt.AlignmentFlag.AlignRight,
-                   f"{len(used)} slave · {hex32(lo)} – {hex32(hi)}"
-                   + (" · çakışan pencereler kırmızı" if self.bad else ""))
+            if two:
+                p.setFont(small)
+                p.drawText(inner.adjusted(4, inner.height() / 2, -4, -2), Qt.AlignmentFlag.AlignCenter,
+                           p.fontMetrics().elidedText(size_text(s.window), Qt.TextElideMode.ElideRight,
+                                                      int(inner.width() - 8)))
 
     def _slave_at(self, pos):
-        return next((j for kind, box, j in self._boxes if kind == "slave" and box.contains(pos)), None)
+        """The innermost block under the mouse."""
+        hit = None
+        for box, name in self._boxes:
+            if box.contains(pos) and (hit is None or hit[0].contains(box)):
+                hit = (box, name)
+        return hit[1] if hit else None
 
     def mouseMoveEvent(self, ev):
-        j = self._slave_at(ev.position())
-        if j is None:
+        name = self._slave_at(ev.position())
+        inst = self.project.get_instance(name) if name and self.project else None
+        if inst is None:
             QToolTip.hideText()
             self.setCursor(Qt.CursorShape.ArrowCursor)
             return
-        s = self.slaves[j]
+        w = A.window_of(self.project, inst)
+        kind = BRIDGE if inst.bridge else "harici slave" if inst.external else inst.ip
         QToolTip.showText(ev.globalPosition().toPoint(),
-                          f"SLAVE{j} · {s.name}\n{hex32(s.base)} – {hex32(s.base + s.window - 1)}\n"
-                          f"pencere {size_text(s.window)}, kullanılan {s.span:#x}", self)
+                          f"{inst.name} · {kind}\n{hex32(inst.base)} – {hex32(inst.base + w - 1)}\n"
+                          f"pencere {size_text(w)}, kullanılan {A.span_of(self.project, inst):#x}", self)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, ev):
-        j = self._slave_at(ev.position())
-        if j is not None:
-            self.slaveClicked.emit(j)
+        name = self._slave_at(ev.position())
+        if name:
+            self.slaveClicked.emit(name)
 
     def mouseDoubleClickEvent(self, ev):
-        j = self._slave_at(ev.position())
-        if j is not None:
-            self.slaveActivated.emit(j)
+        name = self._slave_at(ev.position())
+        if name:
+            self.slaveActivated.emit(name)
 
 
-# ============================================================================ slave table
-class SlaveTable(QTableWidget):
-    """Slave list with drag & drop row reordering (rowMoved(src, dst))."""
+# ============================================================================ address tree
+class AddressTree(QTreeWidget):
+    """The address map as a tree; rows are dragged within a bus or onto / into another bus.
+    moved(name, parent bridge name or "" for the top bus, index or -1 for the end)."""
 
-    rowMoved = Signal(int, int)
+    moved = Signal(str, str, int)
 
     def __init__(self):
-        super().__init__(0, 7)
+        super().__init__()
+        self.setColumnCount(7)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.InternalMove)
         self.setDropIndicatorShown(True)
-        self.setDragDropOverwriteMode(False)
 
     def dropEvent(self, ev):
-        src = self.currentRow()
-        dst = self.rowAt(int(ev.position().y()))
-        if dst < 0:
-            dst = self.rowCount() - 1
+        src = self.currentItem()
         ev.setDropAction(Qt.DropAction.IgnoreAction)
         ev.accept()
-        if src >= 0 and dst != src:
-            self.rowMoved.emit(src, dst)
+        if src is None or not src.data(0, ROLE):
+            return
+        target = self.itemAt(ev.position().toPoint())
+        pos = self.dropIndicatorPosition()
+        P = QAbstractItemView.DropIndicatorPosition
+        if target is None or pos == P.OnViewport:
+            return self.moved.emit(src.data(0, ROLE), "", -1)
+        if target is src:
+            return
+        if not target.data(0, ROLE):                 # a bridge's own-window row: to the start of that bus
+            par = target.parent()
+            return self.moved.emit(src.data(0, ROLE), par.data(0, ROLE) if par else "", 0)
+        if pos == P.OnItem and target.data(0, Qt.ItemDataRole.UserRole + 1):       # onto a bridge: into it
+            return self.moved.emit(src.data(0, ROLE), target.data(0, ROLE), -1)
+        par = target.parent()
+        idx = target.data(0, Qt.ItemDataRole.UserRole + 2)
+        if pos == P.BelowItem or pos == P.OnItem:
+            idx += 1
+        self.moved.emit(src.data(0, ROLE), par.data(0, ROLE) if par else "", idx)
 
 
 # ============================================================================ page
@@ -191,15 +274,17 @@ class AddressMapPage(ToolPage):
     tool_id = "addrmap"
     title = "Address Map Editor"
     short_title = "Address Map Editor"
-    subtitle = "IP'leri adres haritasına yerleştir: base adres, pencere boyutu ve port sırası."
+    subtitle = "IP'leri adres haritasına yerleştir: base adres, pencere boyutu, port sırası ve Sub-bus Bridge'ler."
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
-                   "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
+                   "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
+                   "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.2.3"
+    version = "0.3.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self._loading = False
+        self._collapsed = set()
 
         bar = self.header       # the tool's commands sit in the top bar
         self.regs_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regs,
@@ -208,21 +293,22 @@ class AddressMapPage(ToolPage):
                 regmap_xlsx.available())
         bar.sep()
         bar.add("Interconnect Configurator", "interconnect", lambda: self.open_tool("interconnect"),
-                "Bu adres haritasıyla crossbar'ı yapılandır ve üret")
+                "Bu adres haritasıyla crossbar'ları yapılandır ve üret")
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
 
-        # ---- left: start address + validation
+        # ---- left: start address + default window
         left = ui.Card(margins=16, spacing=10)
         left.lay.addWidget(ui.label("BAŞLANGIÇ ADRESİ", "section"))
         self.start_ed = QLineEdit()
         self.start_ed.setProperty("mono", "true")
-        self.start_ed.setToolTip("Otomatik adresli slave'ler bu adresten itibaren liste sırasıyla yerleşir")
+        self.start_ed.setToolTip("Üst bus'taki otomatik adresli slave'ler bu adresten itibaren liste sırasıyla yerleşir")
         self.start_ed.editingFinished.connect(self._start_changed)
         left.lay.addWidget(self.start_ed)
-        left.lay.addWidget(ui.label("Otomatik adresli IP'ler bu adresten başlayarak liste sırasıyla, pencere "
-                                    "boyutlarına hizalı yerleşir. Adres hücresine yazılan değer sabitlenir (🔒); "
+        left.lay.addWidget(ui.label("Otomatik adresli slave'ler bu adresten başlayarak liste sırasıyla, pencere "
+                                    "boyutlarına hizalı yerleşir; bir Sub-bus Bridge'in içindekiler onun kendi "
+                                    "penceresinden sonra. Adres hücresine yazılan değer sabitlenir (🔒); "
                                     "kilide tıkla: otomatiğe dön.", "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label("VARSAYILAN PENCERE", "section"))
@@ -236,46 +322,55 @@ class AddressMapPage(ToolPage):
                                     "kendiliğinden büyür). Boyut sütununda elle seçilen boyut o slave'de kalır "
                                     "(🔒); listeden \"varsayılan\"ı seçince yeniden bu ayarı izler.",
                                     "muted", wrap=True))
+        left.lay.addWidget(ui.Divider())
+        left.lay.addWidget(ui.label(BRIDGE.upper(), "section"))
+        left.lay.addWidget(ui.label("Adres haritasında bir pencere kaplar; penceresinin başı köprünün kendisine "
+                                    "ayrılabilir, geri kalan adresler değiştirilmeden arkasındaki interconnect'e "
+                                    "iletilir. İçine IP, harici slave ve başka Sub-bus Bridge eklenir; satırlar "
+                                    "sürükle-bırak ya da sağ tık → Taşı ile bus'lar arasında taşınır (başka "
+                                    "bus'a taşınan sabit adres otomatiğe döner).", "muted", wrap=True))
         left.lay.addStretch(1)
         self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
         left.setMinimumWidth(300)
         split.addWidget(left)
 
-        # ---- right: memory strip + instance table
+        # ---- right: memory strip + address tree
         right = ui.Card(margins=16, spacing=10)
         self.map = MemoryMap()
-        self.map.slaveClicked.connect(self._select_row)
-        self.map.slaveActivated.connect(self.edit_slave)
+        self.map.slaveClicked.connect(self.select_instance)
+        self.map.slaveActivated.connect(lambda n: self.edit_slave(self.proj.get_instance(n)))
         right.lay.addWidget(self.map)
-        self.table = SlaveTable()
-        self.table.setHorizontalHeaderLabels(["Port", "Ad", "IP", "Adres", "Boyut", "Adresleme", ""])
-        self.table.verticalHeader().setVisible(False)
-        self.table.setShowGrid(False)
-        self.table.setAlternatingRowColors(True)
-        self.table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
-        self.table.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked |
-                                   QAbstractItemView.EditTrigger.EditKeyPressed)
-        self.table.itemChanged.connect(self._item_changed)
-        self.table.cellClicked.connect(self._cell_clicked)
-        self.table.itemSelectionChanged.connect(self._selection_changed)
-        self.table.rowMoved.connect(self._row_moved)
-        self.table.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.table.customContextMenuRequested.connect(self._menu)
-        right.lay.addWidget(self.table, 1)
+        self.tree = AddressTree()
+        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "Adres", "Boyut", "Adresleme", ""])
+        self.tree.setUniformRowHeights(True)
+        self.tree.setIndentation(18)
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
+        self.tree.setEditTriggers(QAbstractItemView.EditTrigger.DoubleClicked |
+                                  QAbstractItemView.EditTrigger.EditKeyPressed)
+        self.tree.itemChanged.connect(self._item_changed)
+        self.tree.itemClicked.connect(self._item_clicked)
+        self.tree.itemSelectionChanged.connect(self._selection_changed)
+        self.tree.itemCollapsed.connect(lambda it: self._collapsed.add(it.data(0, ROLE)))
+        self.tree.itemExpanded.connect(lambda it: self._collapsed.discard(it.data(0, ROLE)))
+        self.tree.moved.connect(self._moved)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self._menu)
+        right.lay.addWidget(self.tree, 1)
         sbar = QHBoxLayout()
         sbar.setSpacing(4)
         sbar.addWidget(ui.button("IP Kütüphanesinden slave ekle…", "plus", "ghost", self.add_ip,
-                                 "IP Library'den bir IP seç ve adres haritasına ekle (aynı IP birden çok kez "
+                                 "IP Library'den bir IP seç ve seçili bus'a ekle (aynı IP birden çok kez "
                                  "eklenebilir: <IP>_0, <IP>_1 …)"))
         sbar.addWidget(ui.button("Harici slave ekle…", "plus", "ghost", self.add_external,
                                  "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle"))
+        sbar.addWidget(ui.button(f"{BRIDGE} ekle…", "plus", "ghost", self.add_bridge,
+                                 "Arkasında kendi interconnect'i olan bir alt bus ekle"))
         sbar.addStretch(1)
         sbar.addWidget(ui.button("Adrese göre sırala", None, "ghost", self.sort_slaves,
-                                 "Listeyi (port numaralarını) adres sırasına diz"))
+                                 "Her bus'taki listeyi (port numaralarını) adres sırasına diz"))
         sbar.addWidget(ui.button("Tümü otomatik", None, "ghost", self.unlock_all, "Tüm adresleri otomatiğe çevir"))
-        sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), "Yukarı taşı"))
-        sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), "Aşağı taşı"))
+        sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), "Bus içinde yukarı taşı"))
+        sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), "Bus içinde aşağı taşı"))
         right.lay.addLayout(sbar)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
@@ -288,7 +383,7 @@ class AddressMapPage(ToolPage):
         m = menubar.addMenu("&Address Map")
         win = self.window()
         for text, slot in (("IP Kütüphanesinden slave ekle…", self.add_ip), ("Harici slave ekle…", self.add_external),
-                           (None, None),
+                           (f"{BRIDGE} ekle…", self.add_bridge), (None, None),
                            ("Adrese göre sırala", self.sort_slaves),
                            ("Tüm adresleri otomatiğe çevir", self.unlock_all), (None, None),
                            ("Register haritasını düzenle", self.edit_regs),
@@ -311,6 +406,30 @@ class AddressMapPage(ToolPage):
         self.ctx.mark_modified(self.tool_id)
         self._refresh(select)
 
+    def _guarded(self, edit, select=None):
+        """Run an edit; undo it when it makes a hand-sized Sub-bus Bridge (more) too small."""
+        keep = copy.deepcopy(self.proj.instances)
+        before = A._fill(self.proj)
+        result = edit()
+        if result is False:
+            return False
+        try:
+            A.readdress(self.proj)
+        except ValueError:
+            pass
+        err = A.check_fits(self.proj, before)
+        if err:
+            self.proj.instances[:] = keep
+            try:
+                A.readdress(self.proj)
+            except ValueError:
+                pass
+            self._refresh()
+            QMessageBox.warning(self, self.title, f"Yapılamadı: {err}.\nPencereyi büyüt ya da otomatiğe çevir.")
+            return False
+        self._changed(select() if callable(select) else select)
+        return result
+
     def on_project_modified(self):
         self._refresh()
 
@@ -318,141 +437,193 @@ class AddressMapPage(ToolPage):
         self._refresh(None)
 
     def select_instance(self, name):
-        names = [i.name for i in self.proj.instances]
-        if name in names:
-            self._select_row(names.index(name))
+        it = self._items.get(name)
+        if it is not None:
+            self.tree.setCurrentItem(it)
 
     # ================================================================ view
     def _refresh(self, select=None):
-        t = theme.manager().tokens
-        mono = theme.mono_font()
-        muted = QColor(t["muted"])
-        sel = self._sel_row() if select is None else select
+        sel = (select.name if isinstance(select, IPInstance) else select) if select is not None \
+            else (self._sel_inst().name if self._sel_inst() else None)
         self._loading = True
         self.start_ed.setText(hex32(A.start_of(self.proj)))
         self.window_cb.setCurrentIndex(max(0, self.window_cb.findData(A.default_window(self.proj))))
-        slaves = A.xbar_slaves(self.proj)
-        bad = A.overlapping(self.proj)
-        self.table.setRowCount(len(slaves))
-        for j, (inst, s) in enumerate(zip(self.proj.instances, slaves)):
+        self.tree.clear()
+        self._items = {}
+        self._fill_level(None, self.tree.invisibleRootItem())
+        for c in (C_PORT, C_IP, C_ADDR, C_LOCK):
+            self.tree.resizeColumnToContents(c)
+        self.tree.setColumnWidth(C_PORT, self.tree.columnWidth(C_PORT) + 24)
+        hdr = self.tree.header()
+        hdr.setStretchLastSection(False)
+        hdr.setSectionResizeMode(C_NAME, QHeaderView.ResizeMode.Stretch)
+        self.tree.setColumnWidth(C_SIZE, 140)
+        ui.actions_column(hdr, C_ACT)
+        if sel in self._items:
+            self.tree.setCurrentItem(self._items[sel])
+        self._loading = False
+        cur = self._sel_inst()
+        self.map.set_project(self.proj, cur.name if cur else None)
+        errs = A.validate(self.proj) if self.proj.instances else [
+            "Adres haritası boş: IP Kütüphanesinden slave ekle, Harici slave ekle ya da Sub-bus Bridge ekle."]
+        if not errs:
+            sl = A.xbar_slaves(self.proj)
+            lo = min(s.base for s in sl)
+            hi = max(s.base + s.window for s in sl) - 1
+            nb = len(self.proj.bridges())
+            self.issues.ok_text = (f"Hata yok · {len(self.proj.leaf_instances())} slave"
+                                   + (f" · {nb} {BRIDGE}" if nb else "") + f" · {hex32(lo)} – {hex32(hi)}")
+        self.issues.set_issues(errs)
+        self._sync_buttons()
+
+    def _fill_level(self, bridge, parent_item):
+        t = theme.manager().tokens
+        mono = theme.mono_font()
+        muted = QColor(t["muted"])
+        items = self.proj.level(bridge)
+        sl = A.xbar_slaves(self.proj, bridge)
+        bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
+        if bridge is not None and bridge.self_window:
+            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, hex32(bridge.base), size_text(bridge.self_window),
+                                   "", ""])
+            own.setData(0, ROLE, "")
+            own.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            own.setFont(C_ADDR, mono)
+            for c in range(C_ACT):
+                own.setForeground(c, muted)
+            own.setToolTip(C_NAME, f"{bridge.name} köprüsünün kendisine ayrılan alan (iletilmez): "
+                                   f"{hex32(bridge.base)} – {hex32(bridge.base + bridge.self_window - 1)}")
+            parent_item.addChild(own)
+        ro = (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled)
+        for j, (inst, s) in enumerate(zip(items, sl)):
             ip = self.proj.get_ip(inst.ip) if inst.ip else None
-            if inst.external:
+            if inst.bridge:
+                kind = BRIDGE
+            elif inst.external:
                 kind = "harici"
             elif ip is None:
                 kind = f"{inst.ip} (projede yok)"
             else:
                 kind = ip.name + (f" {ip.version}" if ip.version else "")
+            it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, ("🔒 " if inst.fixed else "") + hex32(s.base),
+                                  "", "sabit" if inst.fixed else "otomatik", ""])
+            it.setData(0, ROLE, inst.name)
+            it.setData(0, Qt.ItemDataRole.UserRole + 1, inst.bridge)
+            it.setData(0, Qt.ItemDataRole.UserRole + 2, j)
+            it.setFlags(ro | Qt.ItemFlag.ItemIsEditable | (Qt.ItemFlag.ItemIsDropEnabled if inst.bridge
+                                                           else Qt.ItemFlag.NoItemFlags))
+            for c in (C_PORT, C_ADDR):
+                it.setFont(c, mono)
             tip = (f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}\nMASK {hex32(s.mask)}\n"
                    f"kullanılan {s.span:#x} byte")
-            ro = Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled
-            cells = [
-                (f"SLAVE{j}", ro, True),
-                (inst.name, ro | Qt.ItemFlag.ItemIsEditable, False),
-                (kind, ro, False),
-                (("🔒 " if inst.fixed else "") + hex32(s.base), ro | Qt.ItemFlag.ItemIsEditable, True),
-                (size_text(s.window), ro, False),
-                ("sabit" if inst.fixed else "otomatik", ro, False),
-            ]
-            for col, (text, flags, is_mono) in enumerate(cells):
-                it = QTableWidgetItem(text)
-                it.setFlags(flags)
-                it.setToolTip(tip)
-                if is_mono:
-                    it.setFont(mono)
-                if col == C_NAME:
-                    it.setToolTip("Çift tık: örneğin adını değiştir (Debug Bridge ve interconnect bu adı kullanır)")
-                if col == C_IP:
-                    it.setForeground(muted if inst.external else QColor(t["danger"]) if ip is None
-                                     else QColor(t["text"]))
-                    if ip is not None:
-                        n = len(self.proj.instances_of(ip.name))
-                        it.setToolTip(f"{ip.name}: {len(ip.registers)} register"
-                                      + (f" · haritada {n} kez" if n > 1 else "")
-                                      + "\nSağ tık: register haritasını düzenle")
-                if col == C_LOCK:
-                    it.setForeground(QColor(t["accent"]) if inst.fixed else muted)
-                    it.setToolTip("Tıkla: " + ("otomatik adrese dön" if inst.fixed else "bu adresi sabitle"))
-                if col == C_ADDR and j in bad:
-                    it.setForeground(QColor(t["danger"]))
-                self.table.setItem(j, col, it)
-            self.table.setCellWidget(j, C_SIZE, self._size_combo(j, s))
-            blank = QTableWidgetItem("")
-            blank.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
-            self.table.setItem(j, C_ACT, blank)
-            ui.table_row_actions(self.table, j, C_ACT, lambda: self.edit_slave(self._sel_row()), self.delete_slave,
-                                 edit_tip="Ad, adres ve boyut",
-                                 delete_tip="Adres haritasından çıkar (IP tanımı projede kalır)")
-        self.table.resizeColumnsToContents()
-        hdr = self.table.horizontalHeader()
-        hdr.setSectionResizeMode(C_NAME, QHeaderView.ResizeMode.Stretch)
-        self.table.setColumnWidth(C_SIZE, max(self.table.columnWidth(C_SIZE), 110))
-        ui.actions_column(hdr, C_ACT)
-        if sel is not None and 0 <= sel < len(slaves):
-            self.table.selectRow(sel)
-        self._loading = False
+            for c in (C_PORT, C_ADDR, C_SIZE):
+                it.setToolTip(c, tip)
+            it.setToolTip(C_NAME, "Çift tık: adını değiştir (Debug Bridge ve interconnect bu adı kullanır)")
+            if inst.bridge:
+                f = it.font(C_NAME)
+                f.setBold(True)
+                it.setFont(C_NAME, f)
+                it.setForeground(C_IP, QColor(t["accent"]))
+                it.setToolTip(C_IP, f"{len(inst.children)} slave · interconnect {inst.xbar_module}\n"
+                                    "Sürükleyip üstüne bırakılan satır bu bus'a taşınır")
+            else:
+                it.setForeground(C_IP, muted if inst.external else QColor(t["danger"]) if ip is None
+                                 else QColor(t["text"]))
+                if ip is not None:
+                    n = len(self.proj.instances_of(ip.name))
+                    it.setToolTip(C_IP, f"{ip.name}: {len(ip.registers)} register"
+                                        + (f" · haritada {n} kez" if n > 1 else "")
+                                        + "\nSağ tık: register haritasını düzenle")
+            it.setForeground(C_LOCK, QColor(t["accent"]) if inst.fixed else muted)
+            it.setToolTip(C_LOCK, "Tıkla: " + ("otomatik adrese dön" if inst.fixed else "bu adresi sabitle"))
+            if j in bad:
+                it.setForeground(C_ADDR, QColor(t["danger"]))
+            parent_item.addChild(it)
+            self._items[inst.name] = it
+            self.tree.setItemWidget(it, C_SIZE, self._size_combo(inst, s))
+            ui.tree_row_actions(self.tree, it, C_ACT, lambda i=inst: self.edit_slave(i),
+                                lambda i=inst: self.delete_slave(i),
+                                edit_tip="Ad, adres ve boyut",
+                                delete_tip="Adres haritasından çıkar" + (
+                                    " (içindekilerle birlikte)" if inst.bridge else " (IP tanımı projede kalır)"))
+            if inst.bridge:
+                self._fill_level(inst, it)
+                it.setExpanded(inst.name not in self._collapsed)
 
-        self.map.set_slaves(slaves, self._sel_row())
-        errs = A.validate(self.proj) if slaves else ["Adres haritası boş: IP ekle ile IP Library'den bir IP seç "
-                                                     "ya da Harici slave ekle."]
-        if not errs:
-            lo = min(s.base for s in slaves)
-            hi = max(s.base + s.window for s in slaves) - 1
-            self.issues.ok_text = f"Hata yok · {len(slaves)} slave · {hex32(lo)} – {hex32(hi)}"
-        self.issues.set_issues(errs)
-        self._sync_buttons()
-
-    def _size_combo(self, j, s):
-        inst = self.proj.instances[j]
+    def _size_combo(self, inst, s):
         cb = QComboBox()
-        default = max(A.default_window(self.proj), A.need_window(s.span, 4))
-        cb.addItem(f"varsayılan · {size_text(default)}", 0)
-        for w in window_choices(A.need_window(s.span, 4)):
+        if inst.bridge:
+            need = A.content_end(self.proj, inst)
+            cb.addItem(f"otomatik · {size_text(A.auto_window(self.proj, inst))}", 0)
+            cb.setToolTip("Sub-bus Bridge penceresi: otomatik seçilirse kendi penceresi ve içindekiler büyüdükçe "
+                          "büyür; elle seçilen boyut (🔒) sabit kalır, sığmayan slave eklenemez.")
+        else:
+            need = A.need_window(s.span, 4)
+            cb.addItem(f"varsayılan · {size_text(A.auto_window(self.proj, inst))}", 0)
+            cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar). Elle seçilen boyut bu "
+                          "slave'de kalır (🔒); \"varsayılan\" Varsayılan pencere ayarını izler.")
+        for w in window_choices(A.need_window(need, 4)):
             cb.addItem(("🔒 " if inst.window == w else "") + size_text(w), w)
         cb.setCurrentIndex(max(0, cb.findData(inst.window if inst.window else 0)))
-        cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar). Elle seçilen boyut bu "
-                      "slave'de kalır (🔒); \"varsayılan\" Varsayılan pencere ayarını izler.")
-        cb.currentIndexChanged.connect(lambda _i, j=j, cb=cb: self._size_changed(j, cb.currentData()))
+        cb.currentIndexChanged.connect(lambda _i, inst=inst, cb=cb: self._size_changed(inst, cb.currentData()))
         return cb
 
-    def _sel_row(self):
-        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        return rows[0].row() if rows else None
+    def _inst(self, item):
+        name = item.data(0, ROLE) if item is not None else None
+        return self.proj.get_instance(name) if name else None
 
     def _sel_inst(self):
-        row = self._sel_row()
-        return self.proj.instances[row] if row is not None and row < len(self.proj.instances) else None
+        return self._inst(self.tree.currentItem()) if hasattr(self, "_items") else None
 
-    def _select_row(self, j):
-        self.table.selectRow(j)
+    def _target_bus(self):
+        """Where "add" puts a new entry: into the selected bridge, next to a selected entry inside a
+        bridge, else on the top bus."""
+        cur = self._sel_inst()
+        if cur is None:
+            it = self.tree.currentItem()
+            return self._inst(it.parent()) if it is not None and it.parent() is not None else None
+        return cur if cur.bridge else self.proj.parent_of(cur)
 
     def _selection_changed(self):
-        self.map.set_slaves(A.xbar_slaves(self.proj), self._sel_row())
+        cur = self._sel_inst()
+        self.map.set_project(self.proj, cur.name if cur else None)
         self._sync_buttons()
 
     def _sync_buttons(self):
         inst = self._sel_inst()
-        self.regs_btn.setEnabled(bool(inst and not inst.external and self.proj.get_ip(inst.ip)))
+        self.regs_btn.setEnabled(bool(inst and not inst.external and not inst.bridge and self.proj.get_ip(inst.ip)))
 
     def on_theme(self):
         self.issues.retint()
         self._refresh()
 
     def _menu(self, pos):
-        row = self.table.rowAt(pos.y())
+        it = self.tree.itemAt(pos)
+        inst = self._inst(it)
         m = QMenu(self)
-        if row >= 0:
-            self.table.selectRow(row)
-            inst = self.proj.instances[row]
-            m.addAction("Düzenle…", lambda: self.edit_slave(row))
-            if not inst.external:
+        if inst is not None:
+            self.tree.setCurrentItem(it)
+            m.addAction("Düzenle…", lambda: self.edit_slave(inst))
+            if not inst.external and not inst.bridge:
                 m.addAction("Register haritasını düzenle", self.edit_regs)
-            m.addAction("Otomatik adrese dön" if inst.fixed else "Adresi sabitle", lambda: self._cell_clicked(row, C_LOCK))
+            m.addAction("Otomatik adrese dön" if inst.fixed else "Adresi sabitle", lambda: self._toggle_lock(inst))
+            mv = m.addMenu("Taşı")
+            here = self.proj.parent_of(inst)
+            for b in [None] + self.proj.bridges():
+                if b is here or (inst.bridge and A.is_inside(self.proj, inst, b)):
+                    continue
+                label = "Üst bus" if b is None else "  " * (len(A.path_of(self.proj, b)) - 1) + b.name
+                mv.addAction(label, lambda b=b: self._move_to(inst, b, None))
+            mv.setEnabled(bool(mv.actions()))
             m.addSeparator()
-            m.addAction("Adres haritasından çıkar", self.delete_slave)
+            m.addAction("Adres haritasından çıkar", lambda: self.delete_slave(inst))
             m.addSeparator()
-        m.addAction("IP ekle…", self.add_ip)
-        m.addAction("Harici slave ekle…", self.add_external)
-        m.exec(self.table.viewport().mapToGlobal(pos))
+        target = self._target_bus()
+        where = f" ({target.name} içine)" if target else ""
+        m.addAction(f"IP ekle…{where}", self.add_ip)
+        m.addAction(f"Harici slave ekle…{where}", self.add_external)
+        m.addAction(f"{BRIDGE} ekle…{where}", self.add_bridge)
+        m.exec(self.tree.viewport().mapToGlobal(pos))
 
     # ================================================================ edits
     def _start_changed(self):
@@ -473,8 +644,10 @@ class AddressMapPage(ToolPage):
             return
         w = self.window_cb.currentData()
         if w and w != A.default_window(self.proj):
-            A.set_default_window(self.proj, w)
-            self._changed()
+            old = A.default_window(self.proj)
+            if self._guarded(lambda: A.set_default_window(self.proj, w)) is False:
+                A.set_default_window(self.proj, old)
+                return self._refresh()
             self.status(f"Varsayılan pencere {size_text(w)}; elle boyut seçilmiş slave'ler (🔒) değişmedi")
 
     def _rename(self, inst, name):
@@ -484,86 +657,145 @@ class AddressMapPage(ToolPage):
         if name != inst.name and self.proj.get_instance(name):
             QMessageBox.warning(self, self.title, f"Adres haritasında “{name}” adında bir slave zaten var.")
             return False
+        if inst.name in self._collapsed:
+            self._collapsed.discard(inst.name)
+            self._collapsed.add(name)
         inst.name = name
         return True
 
-    def _item_changed(self, item):
+    def _item_changed(self, item, col):
         if self._loading:
             return
-        j, col = item.row(), item.column()
-        inst = self.proj.instances[j]
+        inst = self._inst(item)
+        if inst is None:
+            return
         if col == C_NAME:
-            name = item.text().strip()
+            name = item.text(C_NAME).strip()
             if name and name != inst.name and self._rename(inst, name):
-                return self._changed(j)
-            return self._refresh(j)
+                return self._changed(inst)
+            return self._refresh(inst)
         if col == C_ADDR:
             w = A.window_of(self.proj, inst)
             try:
-                v = parse_int(item.text().replace("🔒", "").strip()) & 0xFFFFFFFF
+                v = parse_int(item.text(C_ADDR).replace("🔒", "").strip()) & 0xFFFFFFFF
             except ValueError:
                 self.status("Adres bir sayı olmalı (ör. 0x80000000)")
-                return self._refresh(j)
+                return self._refresh(inst)
             if v & (w - 1):
                 QMessageBox.warning(self, self.title, f"{hex32(v)}, {inst.name} için {size_text(w)} "
                                                       "sınırına hizalı değil.")
-                return self._refresh(j)
-            inst.base, inst.fixed = v, True          # a typed address is kept
-            self._changed(j)
+                return self._refresh(inst)
 
-    def _cell_clicked(self, row, col):
-        if col == C_LOCK and 0 <= row < len(self.proj.instances):
-            inst = self.proj.instances[row]
-            inst.fixed = not inst.fixed
-            self._changed(row)
-
-    def _size_changed(self, j, w):
-        if self._loading or not 0 <= j < len(self.proj.instances):
+            def set_base():
+                inst.base, inst.fixed = v, True          # a typed address is kept
+            self._guarded(set_base, inst)
             return
-        inst = self.proj.instances[j]
-        inst.window = w                       # 0: follow the default window again
-        w = A.window_of(self.proj, inst)
-        if inst.fixed and inst.base & (w - 1):
-            inst.base &= ~(w - 1)
-            self.status(f"{inst.name} adresi yeni boyuta hizalandı: {hex32(inst.base)}")
-        self._changed(j)
+        self._refresh(inst)
 
-    def _row_moved(self, src, dst):
-        sl = self.proj.instances
-        sl.insert(dst, sl.pop(src))
-        self._changed(dst)
+    def _item_clicked(self, item, col):
+        inst = self._inst(item)
+        if col == C_LOCK and inst is not None:
+            self._toggle_lock(inst)
+
+    def _toggle_lock(self, inst):
+        inst.fixed = not inst.fixed
+        self._changed(inst)
+
+    def _size_changed(self, inst, w):
+        if self._loading:
+            return
+
+        def apply():
+            inst.window = w                   # 0: follow the default window / grow with the contents
+            ww = A.window_of(self.proj, inst)
+            if inst.fixed and inst.base & (ww - 1):
+                inst.base &= ~(ww - 1)
+                self.status(f"{inst.name} adresi yeni boyuta hizalandı: {hex32(inst.base)}")
+        if self._guarded(apply, inst) is False:
+            self._refresh(inst)
+
+    def _move_to(self, inst, bridge, index):
+        try:
+            note = A.move(self.proj, inst, bridge, index)
+        except ValueError as exc:
+            self._refresh(inst)
+            QMessageBox.warning(self, self.title, f"Taşınamadı: {exc}")
+            return
+        self._changed(inst)
+        self.status(note or f"{inst.name} → {A.level_name(self.proj, bridge)}")
+
+    def _moved(self, name, parent_name, index):
+        inst = self.proj.get_instance(name)
+        bridge = self.proj.get_instance(parent_name) if parent_name else None
+        if inst is not None:
+            self._move_to(inst, bridge, None if index < 0 else index)
 
     def move(self, delta):
-        row = self._sel_row()
-        if row is not None and 0 <= row + delta < len(self.proj.instances):
-            self._row_moved(row, row + delta)
+        inst = self._sel_inst()
+        if inst is None:
+            return
+        level = self.proj.level(self.proj.parent_of(inst))
+        j = level.index(inst)
+        if 0 <= j + delta < len(level):
+            level.insert(j + delta, level.pop(j))
+            self._changed(inst)
 
     def sort_slaves(self):
-        self.proj.instances.sort(key=lambda i: i.base)
+        def sort(items):
+            items.sort(key=lambda i: i.base)
+            for i in items:
+                if i.bridge:
+                    sort(i.children)
+        sort(self.proj.instances)
         self._changed()
-        self.status("Liste adres sırasına dizildi")
+        self.status("Her bus'taki liste adres sırasına dizildi")
 
     def unlock_all(self):
-        for inst in self.proj.instances:
+        for inst in self.proj.all_instances():
             inst.fixed = False
         self._changed()
 
-    def edit_slave(self, row):
-        if row is None or not 0 <= row < len(self.proj.instances):
+    def edit_slave(self, inst=None):
+        inst = inst if isinstance(inst, IPInstance) else self._sel_inst()
+        if inst is None:
             return
-        inst = self.proj.instances[row]
-        s = A.xbar_slaves(self.proj)[row]
-        new = SlaveDialog.ask(self, s, f"SLAVE{row}: {inst.name}", 4, False)
+        parent = self.proj.parent_of(inst)
+        j = self.proj.level(parent).index(inst)
+        if inst.bridge:
+            new = BridgeDialog.ask(self, f"{BRIDGE}: {inst.name}", inst.name, inst.base, inst.self_window,
+                                   inst.window, inst.fixed, A.content_end(self.proj, inst))
+            if new is None:
+                return
+            name, base, own, window, fixed = new
+            if name != inst.name and not self._rename(inst, name):
+                return
+
+            def apply():
+                inst.self_window, inst.window, inst.fixed = own, window, fixed
+                if fixed:
+                    inst.base = base
+            self._guarded(apply, inst)
+            return
+        s = A.xbar_slaves(self.proj, parent)[j]
+        new = SlaveDialog.ask(self, s, f"SLAVE{j}: {inst.name}", 4, False)
         if new is None:
             return
         if new.name != inst.name and not self._rename(inst, new.name):
             return
-        if new.window != s.window:            # a size chosen here is kept for this slave
-            inst.window = new.window
-        inst.base, inst.fixed = new.base, new.fixed
-        if inst.external:
-            inst.span = new.span
-        self._changed(row)
+
+        def apply():
+            if new.window != s.window:            # a size chosen here is kept for this slave
+                inst.window = new.window
+            inst.base, inst.fixed = new.base, new.fixed
+            if inst.external:
+                inst.span = new.span
+        self._guarded(apply, inst)
+
+    def _add(self, inst):
+        """Append a new entry to the bus chosen by _target_bus (refused when it does not fit)."""
+        bus = self._target_bus()
+        self.proj.level(bus).append(inst)
+        return inst
 
     def add_ip(self):
         name = self.pick_ip("Adres haritasına IP ekle", "Projedeki ya da açık kütüphanelerdeki bir IP'yi seç. "
@@ -571,9 +803,9 @@ class AddressMapPage(ToolPage):
                                                         "adresini alır.")
         if not name:
             return
-        inst = A.add_instance(self.proj, name)
-        self._changed(len(self.proj.instances) - 1)
-        self.status(f"{inst.name} eklendi ({hex32(inst.base)})")
+        inst = IPInstance(A.unique_name(self.proj, name), name)
+        if self._guarded(lambda: self._add(inst), inst) is not False:
+            self.status(f"{inst.name} eklendi ({hex32(inst.base)})")
 
     def add_external(self):
         name = A.unique_name(self.proj, "EXT")                # EXT_0, EXT_1 …
@@ -587,26 +819,48 @@ class AddressMapPage(ToolPage):
                                                   "ve sadece harf/rakam/_ içermeli.")
             return
         window = 0 if new.window == A.default_window(self.proj) else new.window   # 0: follows the default
-        self.proj.instances.append(IPInstance(new.name, "", new.base, window, new.fixed, new.span))
-        self._changed(len(self.proj.instances) - 1)
+        inst = IPInstance(new.name, "", new.base, window, new.fixed, new.span)
+        self._guarded(lambda: self._add(inst), inst)
 
-    def delete_slave(self):
-        row = self._sel_row()
-        if row is None:
+    def add_bridge(self):
+        name = A.unique_name(self.proj, A.BRIDGE_STEM)
+        new = BridgeDialog.ask(self, f"{BRIDGE} ekle", name, 0, 0, 0, False, 0)
+        if new is None:
             return
-        inst = self.proj.instances[row]
-        text = (f"{inst.name} adres haritasından çıkarılacak." if inst.external else
-                f"{inst.name} adres haritasından çıkarılacak; {inst.ip} IP tanımı projede kalır.")
+        name, base, own, window, fixed = new
+        if self.proj.get_instance(name) or not X.IDENT.match(name):
+            QMessageBox.warning(self, self.title, f"“{name}” kullanılamaz: ad benzersiz olmalı, harfle başlamalı "
+                                                  "ve sadece harf/rakam/_ içermeli.")
+            return
+        inst = IPInstance(name, "", base, window, fixed, bridge=True, self_window=own,
+                          xbar={"module": "", "masters": []})
+        if self._guarded(lambda: self._add(inst), inst) is not False:
+            self.status(f"{inst.name} eklendi ({hex32(inst.base)}); içine IP eklemek için seçiliyken "
+                        "'IP Kütüphanesinden slave ekle…'")
+
+    def delete_slave(self, inst=None):
+        inst = inst if isinstance(inst, IPInstance) else self._sel_inst()
+        if inst is None:
+            return
+        if inst.bridge:
+            n = len([i for i, _ in self.proj.walk(inst.children)])
+            text = f"{inst.name} ({BRIDGE}) " + (f"ve içindeki {n} öğe " if n else "") + "adres haritasından çıkarılacak."
+        elif inst.external:
+            text = f"{inst.name} adres haritasından çıkarılacak."
+        else:
+            text = f"{inst.name} adres haritasından çıkarılacak; {inst.ip} IP tanımı projede kalır."
         if not ui.confirm(self, "Adres haritasından çıkar", text + " Sonraki slave'lerin port numarası bir azalır.",
                           ok="Çıkar"):
             return
-        del self.proj.instances[row]
-        n = len(self.proj.instances)
-        self._changed(min(row, n - 1) if n else None)
+        level = self.proj.level(self.proj.parent_of(inst))
+        j = level.index(inst)
+        level.remove(inst)
+        nxt = level[min(j, len(level) - 1)] if level else self.proj.parent_of(inst)
+        self._changed(nxt)
 
     def keyPressEvent(self, ev):
-        if self.table.hasFocus() and ev.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) \
-                and self.table.state() != QAbstractItemView.State.EditingState:
+        if self.tree.hasFocus() and ev.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace) \
+                and self.tree.state() != QAbstractItemView.State.EditingState:
             self.delete_slave()
         else:
             super().keyPressEvent(ev)
@@ -614,7 +868,7 @@ class AddressMapPage(ToolPage):
     # ================================================================ other tools / output
     def edit_regs(self):
         inst = self._sel_inst()
-        if inst and not inst.external and self.proj.get_ip(inst.ip):
+        if inst and not inst.external and not inst.bridge and self.proj.get_ip(inst.ip):
             self.edit_register_map(inst.ip)
 
     def export_xlsx(self):
@@ -628,7 +882,8 @@ class AddressMapPage(ToolPage):
         if not path:
             return
         try:
-            regmap_xlsx.export_xlsx(ips, path, f"{self.proj.name} adres haritası")
+            regmap_xlsx.export_xlsx(ips, path, f"{self.proj.name} adres haritası",
+                                    bus_of={i.name: A.level_name(self.proj, p) for i, p in self.proj.walk()})
         except (OSError, RuntimeError) as exc:
             return self.error("Aktarılamadı", exc)
         self.status(f"Excel'e aktarıldı: {path}")

@@ -279,7 +279,7 @@ class HomePage(QWidget):
             if w:
                 w.deleteLater()
         nregs = sum(len(ip.registers) for ip in p.ips)
-        for text in (f"{len(p.ips)} IP", f"{nregs} register", f"adres haritasında {len(p.instances)} slave"):
+        for text in (f"{len(p.ips)} IP", f"{nregs} register", f"adres haritasında {len(p.leaf_instances())} slave"):
             self.proj_stats.addWidget(ui.Pill(text))
         self.proj_stats.addStretch(1)
 
