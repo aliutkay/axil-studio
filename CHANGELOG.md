@@ -10,6 +10,28 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.7 — doğrulama alt çubukta, kaydetme pencereleri, arama
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.7 |
+| Register Map Editor | early-alpha 0.4.0 |
+| Slave Interface Wrapper | early-alpha 0.2.3 |
+| Address Map Editor | early-alpha 0.2.1 |
+| Interconnect Configurator | early-alpha 0.2.3 |
+| IP Library | early-alpha 0.2.0 |
+
+- Tüm araçlarda doğrulama ayrı panel yerine pencerenin alt çubuğunda (üzerine gelince tüm hatalar, tıklayınca liste).
+- Register Map Editor: *Örnek* düğmesi ve örnek yükleme kaldırıldı. Ayrı **IP** paneli (ad, sürüm, açıklama; açıklama
+  ayrı pencerede düzenlenir; *IP açıklaması* sekmesi kalktı). Register arama kutusu (bit alanlarında da arar). Register,
+  bit alanı ve yerleştirilmemiş listelerinin sonunda bırakma boşluğu; bit alanı listesine de bırakılabilir. Değer
+  açıklamaları yalnızca kendi sütunundan açılır.
+- **Kütüphaneye kaydet** her zaman kütüphane seçme penceresini açar (kütüphaneler, IP'ler, sürümler; sürüm düzenleme,
+  yeni kütüphane). **Projeye kaydet** projedeki tüm IP'leri gösteren pencereyle. IP Library'nin kütüphaneye kaydetmesi
+  de aynı pencereyi kullanır.
+- Address Map Editor: slave ekleme düğmeleri tablonun altındaki Düzenle / Sil / sıralama satırında.
+- Hub: IP Library araç kartı yerine Proje kartında **IP'leri yönet** düğmesi (Araçlar menüsünde de, Ctrl+6).
+
 ## early-alpha 0.1.6 — adres haritası ve register haritası düzenlemeleri
 
 | Bileşen | Sürüm |

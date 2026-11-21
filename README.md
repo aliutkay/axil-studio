@@ -13,7 +13,9 @@ görünüm, açık/koyu tema):
 | **UART-to-AXI Debug Bridge** | Hexbus üzerinden karttaki registerları okur/yazar, bit alanlarını çözer |
 | **IP Library** | Projedeki tüm IP'leri gösterir; IP kütüphaneleri oluşturur, kütüphanelerden projeye IP alır |
 
-Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araçlar aynı projeyi
+Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). IP Library, Proje kartındaki
+**IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
+yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca liste). Araçlar aynı projeyi
 (`.axproj.json`) paylaşır ve birbirini açar:
 
 - Register haritası nerede düzenlenirse düzenlensin (Wrapper, Address Map Editor, IP Library, Debug Bridge)
@@ -47,13 +49,19 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 
 ## Register Map Editor
 
-- Sol tarafta IP adı ve sürümü, register listesi; sağda 32 bitlik alan haritası (boş bite çift tık yeni alan
-  açar), bit alanları ve değer açıklamaları (alan satırına tıklayınca alt tablo olarak açılır), IP açıklaması.
+- Solda **IP** paneli (ad, sürüm, açıklama — açıklama *Düzenle…* ile ayrı pencerede yazılır) ve **Registerlar**
+  paneli (arama kutusu: register ya da bit alanı adı / açıklaması; bit alanında bulunanlar register satırında
+  gösterilir ve alan listesinde vurgulanır, Ctrl+K). Listelerin sonunda bırakma için boş alan vardır.
+- Sağda 32 bitlik alan haritası (boş bite çift tık yeni alan
+  açar), bit alanları ve değer açıklamaları (yalnızca *Değer açıklamaları* sütununa tıklayınca alt tablo olarak açılır).
 - Her alanın bir **veri tipi** vardır (`axil_studio/core/numfmt.py`): hex, unsigned, signed (2's complement), binary, octal,
   bool, ASCII, unsigned/signed fixed point (Q, kesir biti seçilir) ya da enum (değer anlamı). Reset ve değerler
   bu tipte gösterilir/girilir; Debug Bridge alanı varsayılan olarak bu tipte gösterir.
-- **Projeye kaydet** (Ctrl+Shift+S) register haritasını projedeki IP olarak saklar; **IP aç** IP Library'den
-  bir IP açar. `.regspec.json` dosyasına kaydedip açmak ve **Kütüphaneye kaydet** de mümkündür.
+- **Projeye kaydet** (Ctrl+Shift+S) projedeki tüm IP'leri gösteren bir pencere açar; ada göre yeni IP, güncelleme,
+  yeniden adlandırma ya da başka bir IP'nin yerine geçme açıkça yazılır; **IP aç** IP Library'den
+  bir IP açar. `.regspec.json` dosyasına kaydedip açmak da mümkündür. **Kütüphaneye kaydet** her zaman kütüphane seçme
+  penceresini açar: açık kütüphaneler, içlerindeki IP'ler ve sürümleri; sürüm orada değiştirilebilir, yeni kütüphane
+  oluşturulabilir ya da açılabilir (yeni IP / yeni sürüm / üzerine yazılacak bilgisi gösterilir).
 - **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
 - **Bit alanları** sekmesinin altında **yerleştirilmemiş bit alanları** bölümü ve **Port içe aktar…** düğmesi vardır
@@ -147,9 +155,10 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 
 - Tablodaki her satır bir slave portudur; sıra port numarasıdır (SLAVE0, SLAVE1 …). Satırlar sürükle-bırak ya da
   ↑/↓ ile sıralanır, **Adrese göre sırala** listeyi bir kez adres sırasına dizer.
-- **+ IP Kütüphanesinden slave ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, örnekler IP adı
+- Tablonun altındaki satırda **+ IP Kütüphanesinden slave ekle…**, **+ Harici slave ekle…**, Düzenle, Sil, sıralama
+  düğmeleri bulunur. **+ IP Kütüphanesinden slave ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, örnekler IP adı
   ve 0'dan başlayan numarayla adlandırılır (`GPIO_0`, `GPIO_1` …; IP yeniden adlandırılırsa örnekler de izler).
-  **+ Harici slave ekle…** yanındadır (`EXT_0` …). Ad hücresine çift tıklayarak örnek yeniden adlandırılır. **Sil**
+  harici slave'ler `EXT_0` … adını alır. Ad hücresine çift tıklayarak örnek yeniden adlandırılır. **Sil**
   örneği haritadan çıkarır; IP tanımı projede kalır.
 - **Adresler**: her örnek ya *otomatik* ya *sabit*tir. Otomatikler başlangıç adresinden itibaren liste sırasıyla
   ardışık ve boyutlarına hizalı adres alır; sabitlerin aralığını atlar. Adres hücresine yazılan değer sabitlenir

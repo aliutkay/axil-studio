@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.2.2"
+    version = "0.2.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -99,11 +99,8 @@ class InterconnectPage(ToolPage):
         mbar.addWidget(ui.button("Sil", None, "ghost", self.delete_master, "Seçili master'ı sil"))
         mbar.addStretch(1)
         left.lay.addLayout(mbar)
-        left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.label("DOĞRULAMA", "section"))
-        self.issues = ui.IssueList("Hata yok")
-        self.issues.setMaximumHeight(16777215)
-        left.lay.addWidget(self.issues, 1)
+        left.lay.addStretch(1)
+        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
         left.setMinimumWidth(320)
         split.addWidget(left)
 

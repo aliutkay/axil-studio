@@ -16,7 +16,7 @@ import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
-                               QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
+                               QLineEdit, QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
 
 from axil_studio.core import axilgen as G
 from axil_studio import ROOT, theme, ui
@@ -37,7 +37,7 @@ class IPLibraryPage(ToolPage):
     description = ("Projedeki IP'leri ve adres haritasındaki örneklerini listeler; birden fazla IP kütüphanesi "
                    "(.axlib.json) açılır, IP'ler projeye alınır ya da projeden kütüphaneye kaydedilir.")
     icon_name = "library"
-    version = "0.1.1"
+    version = "0.2.0"
 
     picked = Signal()          # picker mode: an IP was double-clicked
 
@@ -360,23 +360,9 @@ class IPLibraryPage(ToolPage):
 
     # ================================================================ library files
     def new_library(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Yeni IP kütüphanesi",
-                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), "ip_library.axlib.json"),
-                                              LIB_FILTER)
-        if not path:
-            return None
-        if not path.endswith(".json"):
-            path += ".axlib.json"
-        name, ok = QInputDialog.getText(self, "Yeni IP kütüphanesi", "Kütüphane adı:",
-                                        text=os.path.basename(path).split(".")[0])
-        if not ok or not name.strip():
-            return None
-        try:
-            lib = self.ctx.new_library(path, name.strip())
-        except OSError as exc:
-            self.error("Oluşturulamadı", exc)
-            return None
-        self.status(f"Kütüphane oluşturuldu: {path}")
+        lib = _new_library_file(self, self.ctx)
+        if lib:
+            self.status(f"Kütüphane oluşturuldu: {lib.path}")
         return lib
 
     def open_library(self):
@@ -498,26 +484,14 @@ class IPLibraryPage(ToolPage):
         if not self._sel or self._sel[0] != "proj":
             return
         ip = self._sel[1]
-        lib = self._selected_library()
-        if lib is None:
-            return
-        latest = lib.get(ip.name)
         default = ip.version or "1.0.0"
-        if latest and G.version_key(latest.version) >= G.version_key(default):
-            default = G.bump_version(latest.version)
-        version, ok = QInputDialog.getText(
-            self, "Kütüphaneye kaydet", f"{ip.name} sürümü"
-            + (f" (kütüphanedeki en yeni: {latest.version})" if latest else "") + ":", text=default)
-        version = version.strip()
-        if not ok or not version:
+        holder = next((lib for lib in self.ctx.libraries if lib.get(ip.name)), None)
+        if holder and G.version_key(holder.get(ip.name).version) >= G.version_key(default):
+            default = G.bump_version(holder.get(ip.name).version)
+        res = LibrarySaveDialog.ask(self, self.ctx, ip.name, default, ip.source)
+        if not res:
             return
-        if not G.VERSION_RE.match(version):
-            QMessageBox.warning(self, self.title, "Sürüm rakam ve nokta ile yazılmalı, ör. 1.0.0")
-            return
-        if lib.get(ip.name, version) and not ui.confirm(
-                self, self.title, f"{lib.name} kütüphanesinde {ip.name} {version} var. Üzerine yazılsın mı?",
-                ok="Üzerine yaz"):
-            return
+        lib, version = res
         stored = copy.deepcopy(ip)
         stored.version = version
         spec = dict(ip.regspec, ip_version=version) if ip.regspec else None
@@ -634,3 +608,257 @@ class IPPickerDialog(QDialog):
         finally:
             d.page.shutdown()
             d.deleteLater()
+
+
+# ============================================================================ save dialogs
+def _new_library_file(parent, ctx):
+    """Ask for a path and a name, create the library; returns it or None."""
+    path, _ = QFileDialog.getSaveFileName(parent, "Yeni IP kütüphanesi",
+                                          os.path.join(os.path.dirname(ctx.path or ROOT), "ip_library.axlib.json"),
+                                          LIB_FILTER)
+    if not path:
+        return None
+    if not path.endswith(".json"):
+        path += ".axlib.json"
+    name, ok = QInputDialog.getText(parent, "Yeni IP kütüphanesi", "Kütüphane adı:",
+                                    text=os.path.basename(path).split(".")[0])
+    if not ok or not name.strip():
+        return None
+    try:
+        return ctx.new_library(path, name.strip())
+    except OSError as exc:
+        QMessageBox.critical(parent, "Oluşturulamadı", str(exc))
+        return None
+
+
+class LibrarySaveDialog(QDialog):
+    """Where an IP goes in the libraries: every open library with its IPs and their versions,
+    the version to store, and what will happen (new IP / new version / overwrite)."""
+
+    def __init__(self, parent, ctx, ip_name, version, prefer=""):
+        super().__init__(parent)
+        self.ctx, self.ip_name = ctx, ip_name
+        self.setWindowTitle(f"Kütüphaneye kaydet: {ip_name}")
+        self.resize(760, 560)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(10)
+        lay.addWidget(ui.label(f"{ip_name} IP'sinin kaydedileceği kütüphaneyi seç. Kütüphanelerdeki IP'ler ve "
+                               "sürümleri listelenir; bu IP'nin kayıtları vurgulanır.", "muted", wrap=True))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["Kütüphane / IP", "Sürümler", "Güncelleme"])
+        self.tree.setUniformRowHeights(True)
+        h = self.tree.header()
+        h.setStretchLastSection(False)
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for c in (1, 2):
+            h.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        self.tree.currentItemChanged.connect(lambda *_: self._update())
+        lay.addWidget(self.tree, 1)
+        row = QHBoxLayout()
+        row.addWidget(ui.button("Yeni kütüphane…", "plus", "ghost", self._new_library))
+        row.addWidget(ui.button("Kütüphane aç…", "folder", "ghost", self._open_library))
+        row.addStretch(1)
+        row.addWidget(ui.label("Sürüm", "muted"))
+        self.version_ed = QLineEdit(version or "1.0.0")
+        self.version_ed.setProperty("mono", "true")
+        self.version_ed.setMaximumWidth(140)
+        self.version_ed.textChanged.connect(lambda *_: self._update())
+        row.addWidget(self.version_ed)
+        lay.addLayout(row)
+        self.info = ui.label("", None, wrap=True)
+        lay.addWidget(self.info)
+        box = QDialogButtonBox()
+        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+        self.result_value = None
+        # preselect: the library that already holds this IP, then `prefer`, then the first one
+        holder = next((lib for lib in ctx.libraries if lib.get(ip_name)), None) \
+            or next((lib for lib in ctx.libraries if lib.name == prefer), None)
+        self._fill(holder)
+
+    def _fill(self, select=None):
+        t = theme.manager().tokens
+        self.tree.clear()
+        target = None
+        for lib in self.ctx.libraries:
+            top = QTreeWidgetItem([lib.name, f"{len(lib.names())} IP", ""])
+            f = top.font(0)
+            f.setBold(True)
+            top.setFont(0, f)
+            top.setToolTip(0, lib.path or "")
+            top.setData(0, ROLE, lib)
+            for name in lib.names():
+                vs = lib.versions(name)
+                ch = QTreeWidgetItem([name, ", ".join(e.version for e in vs), vs[0].updated if vs else ""])
+                ch.setData(0, ROLE, lib)
+                if name == self.ip_name:
+                    for c in range(3):
+                        ch.setForeground(c, QColor(t["accent"]))
+                    bf = ch.font(0)
+                    bf.setBold(True)
+                    ch.setFont(0, bf)
+                else:
+                    ch.setForeground(0, QColor(t["muted"]))
+                top.addChild(ch)
+            self.tree.addTopLevelItem(top)
+            top.setExpanded(True)
+            if lib is select or (target is None and select is None):
+                target = top
+        if not self.ctx.libraries:
+            it = QTreeWidgetItem(["Açık kütüphane yok: Yeni kütüphane ya da Kütüphane aç", "", ""])
+            it.setForeground(0, QColor(t["muted"]))
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.tree.addTopLevelItem(it)
+        if target is not None:
+            self.tree.setCurrentItem(target)
+        self._update()
+
+    def library(self):
+        it = self.tree.currentItem()
+        return it.data(0, ROLE) if it else None
+
+    def _update(self):
+        lib, v = self.library(), self.version_ed.text().strip()
+        ok = lib is not None and bool(G.VERSION_RE.match(v))
+        t = theme.manager().tokens
+        if lib is None:
+            text, color = "Bir kütüphane seç ya da yeni bir kütüphane oluştur.", t["muted"]
+        elif not G.VERSION_RE.match(v):
+            text, color = "Sürüm rakam ve nokta ile yazılmalı, ör. 1.0.0", t["danger"]
+        else:
+            have = [e.version for e in lib.versions(self.ip_name)]
+            if v in have:
+                text, color = f"{lib.name}: {self.ip_name} {v} zaten var, üzerine yazılacak.", t["warning"]
+            elif have:
+                text, color = (f"{lib.name}: {self.ip_name} için yeni sürüm {v} eklenecek "
+                               f"(mevcut: {', '.join(have)})."), t["success"]
+            else:
+                text, color = f"{lib.name}: {self.ip_name} yeni IP olarak eklenecek ({v}).", t["success"]
+        self.info.setText(text)
+        self.info.setStyleSheet(f"color: {color};")
+        self.ok.setEnabled(ok)
+        self.ok.setText("Üzerine yaz" if ok and v in [e.version for e in lib.versions(self.ip_name)] else "Kaydet")
+
+    def _new_library(self):
+        lib = _new_library_file(self, self.ctx)
+        if lib:
+            self._fill(lib)
+
+    def _open_library(self):
+        path, _ = QFileDialog.getOpenFileName(self, "IP kütüphanesi aç", os.path.dirname(self.ctx.path or ROOT),
+                                              LIB_FILTER)
+        if not path:
+            return
+        try:
+            lib = self.ctx.open_library(path)
+        except Exception as exc:  # noqa: BLE001
+            return QMessageBox.critical(self, "Açılamadı", str(exc))
+        self._fill(lib)
+
+    def accept(self):
+        if self.library() is None or not G.VERSION_RE.match(self.version_ed.text().strip()):
+            return
+        self.result_value = (self.library(), self.version_ed.text().strip())
+        super().accept()
+
+    @classmethod
+    def ask(cls, parent, ctx, ip_name, version, prefer=""):
+        d = cls(parent, ctx, ip_name, version, prefer)
+        return d.result_value if d.exec() == QDialog.DialogCode.Accepted else None
+
+
+class ProjectSaveDialog(QDialog):
+    """Saving a register map into the project: every IP of the project is listed, the name decides
+    whether the map is new, updates an IP or replaces another one."""
+
+    def __init__(self, parent, ctx, name, current=None):
+        super().__init__(parent)
+        self.ctx, self.current = ctx, current       # current: the project IP being edited (or None)
+        self.setWindowTitle("Projeye kaydet")
+        self.resize(700, 500)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(10)
+        lay.addWidget(ui.label("Projedeki IP'ler. Register haritası aşağıdaki adla kaydedilir; listeden bir IP "
+                               "seçmek adını alır (o IP'nin haritası bununla değiştirilir).", "muted", wrap=True))
+        self.tree = QTreeWidget()
+        self.tree.setHeaderLabels(["IP", "Sürüm", "Register", "Adres haritasında", "Kaynak"])
+        self.tree.setRootIsDecorated(False)
+        self.tree.setUniformRowHeights(True)
+        h = self.tree.header()
+        h.setStretchLastSection(False)
+        h.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        for c in range(1, 5):
+            h.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        t = theme.manager().tokens
+        for ip in sorted(ctx.project.ips, key=lambda i: i.name.lower()):
+            n = len(ctx.project.instances_of(ip.name))
+            it = QTreeWidgetItem([ip.name, ip.version or "—", str(len(ip.registers)),
+                                  ", ".join(i.name for i in ctx.project.instances_of(ip.name)) if n else "yerleşmedi",
+                                  ip.source or "projede"])
+            it.setData(0, ROLE, ip.name)
+            if ip.name == current:
+                for c in range(5):
+                    it.setForeground(c, QColor(t["accent"]))
+                it.setToolTip(0, "Düzenlenen IP")
+            self.tree.addTopLevelItem(it)
+        if not ctx.project.ips:
+            it = QTreeWidgetItem(["Projede henüz IP yok", "", "", "", ""])
+            it.setForeground(0, QColor(t["muted"]))
+            it.setFlags(Qt.ItemFlag.ItemIsEnabled)
+            self.tree.addTopLevelItem(it)
+        self.tree.itemClicked.connect(lambda it, _c: it.data(0, ROLE) and self.name_ed.setText(it.data(0, ROLE)))
+        lay.addWidget(self.tree, 1)
+        row = QHBoxLayout()
+        row.addWidget(ui.label("Ad", "muted"))
+        self.name_ed = QLineEdit(name)
+        self.name_ed.textChanged.connect(lambda *_: self._update())
+        row.addWidget(self.name_ed, 1)
+        lay.addLayout(row)
+        self.info = ui.label("", None, wrap=True)
+        lay.addWidget(self.info)
+        box = QDialogButtonBox()
+        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+        self.result_value = None
+        self._update()
+
+    def _update(self):
+        t = theme.manager().tokens
+        name = self.name_ed.text().strip()
+        proj = self.ctx.project
+        other = proj.get_ip(name)
+        if not name:
+            text, color = "Ad boş olamaz.", t["danger"]
+        elif other is not None and name != self.current:
+            n = len(proj.instances_of(name))
+            text, color = (f"Projede “{name}” var: register haritası bununla değiştirilecek"
+                           + (f" (adres haritasında {n} örnek bu haritayı kullanır)." if n else "."), t["warning"])
+        elif self.current and proj.get_ip(self.current) and name != self.current:
+            text, color = f"“{self.current}” IP'si “{name}” olarak yeniden adlandırılacak; örnekleri de izler.", \
+                t["warning"]
+        elif other is not None:
+            text, color = f"Projedeki “{name}” güncellenecek.", t["success"]
+        else:
+            text, color = f"“{name}” projeye yeni IP olarak eklenecek.", t["success"]
+        self.info.setText(text)
+        self.info.setStyleSheet(f"color: {color};")
+        self.ok.setEnabled(bool(name))
+        self.ok.setText("Değiştir" if other is not None and name != self.current else "Kaydet")
+
+    def accept(self):
+        if self.name_ed.text().strip():
+            self.result_value = self.name_ed.text().strip()
+            super().accept()
+
+    @classmethod
+    def ask(cls, parent, ctx, name, current=None):
+        d = cls(parent, ctx, name, current)
+        return d.result_value if d.exec() == QDialog.DialogCode.Accepted else None

@@ -7,10 +7,10 @@ import sys
 from PySide6.QtCore import QCoreApplication, QObject, QSize, Qt
 from PySide6.QtGui import QAction, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout,
-                               QHBoxLayout, QLabel, QMainWindow, QMessageBox, QPushButton,
+                               QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QScrollArea, QVBoxLayout, QWidget)
 
-from axil_studio import APP_NAME, APP_VERSION, ORG_NAME, ROOT, icons, theme, ui, version_text
+from axil_studio import APP_NAME, ORG_NAME, ROOT, icons, theme, ui, version_text
 from axil_studio.project import PROJECT_FILTER, ProjectContext
 from axil_studio.tools import TOOLS, TOOLS_BY_ID
 
@@ -207,6 +207,11 @@ class HomePage(QWidget):
         btns.addWidget(ui.button("Yeni", "file", None, hub.actions.new))
         btns.addWidget(ui.button("Aç…", "folder", None, lambda: hub.actions.open()))
         btns.addWidget(ui.button("Örnek proje", "play", "ghost", lambda: hub.actions.open(EXAMPLE_PROJECT)))
+        btns.addSpacing(8)
+        self.lib_btn = ui.button("IP'leri yönet", "library", "primary", lambda: hub.open_tool_window("library"),
+                                 "IP Library: projedeki IP'ler ve adres haritasındaki örnekleri, IP kütüphaneleri "
+                                 "(Ctrl+6)")
+        btns.addWidget(self.lib_btn)
         row.addLayout(btns)
         self.proj.lay.addLayout(row)
         self.recent_box = QVBoxLayout()
@@ -219,7 +224,8 @@ class HomePage(QWidget):
         grid = QGridLayout()
         grid.setSpacing(16)
         self.cards = []
-        for i, tool in enumerate(TOOLS):
+        # IP Library is not a step of the flow: it opens from the project card ("IP'leri yönet")
+        for i, tool in enumerate(t for t in TOOLS if t.tool_id != "library"):
             card = ToolCard(tool, lambda _=False, t=tool: hub.open_tool_window(t.tool_id))
             grid.addWidget(card, i // 3, i % 3)
             grid.setColumnStretch(i % 3, 1)
@@ -234,7 +240,8 @@ class HomePage(QWidget):
             ("3", "Address Map Editor", "IP'leri adres haritasına yerleştir; aynı IP birden çok kez kullanılabilir."),
             ("4", "Interconnect Configurator", "Master'ları ve port stilini seç, axilxbar wrapper'ını üret."),
             ("5", "UART-to-AXI Debug Bridge", "Aynı adres haritasıyla donanımdaki registerlara eriş."),
-            ("·", "IP Library", "Projedeki tüm IP'leri gör; IP'leri kütüphanelere kaydet, kütüphanelerden projeye al."),
+            ("·", "IP'leri yönet (IP Library)", "Proje kartından: projedeki tüm IP'leri gör; IP'leri kütüphanelere "
+                                                "kaydet, kütüphanelerden projeye al."),
         ]
         for num, name, text in steps:
             r = QHBoxLayout()
@@ -386,6 +393,9 @@ class ToolWindow(QMainWindow):
         self.actions.build_menu(self.menuBar())
         self.page.build_menus(self.menuBar())
         build_view_menu(self, self.menuBar())
+        issues = getattr(self.page, "issues", None)
+        if issues is not None:            # validation lives in the bottom line, not in a panel
+            self.statusBar().addPermanentWidget(issues)
         self.statusBar().showMessage("Hazır")
         ctx.state_changed.connect(self._update_title)
         self._update_title()

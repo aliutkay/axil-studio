@@ -195,19 +195,13 @@ class AddressMapPage(ToolPage):
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
                    "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.2.0"
+    version = "0.2.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self._loading = False
 
         bar = ui.ActionBar()
-        bar.add("IP Kütüphanesinden slave ekle…", "plus", self.add_ip,
-                "IP Library'den bir IP seç ve adres haritasına ekle (aynı IP birden çok kez eklenebilir: "
-                "<IP>_0, <IP>_1 …)")
-        bar.add("Harici slave ekle…", "plus", self.add_external,
-                "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle")
-        bar.sep()
         self.regs_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regs,
                                 "Seçili IP'nin register haritasını Register Map Editor'da aç")
         bar.add("Excel'e aktar…", "file", self.export_xlsx, "Tüm adres haritası ve registerlar (.xlsx)",
@@ -244,11 +238,8 @@ class AddressMapPage(ToolPage):
                                     "kendiliğinden büyür). Boyut sütununda elle seçilen boyut o slave'de kalır "
                                     "(🔒); listeden \"varsayılan\"ı seçince yeniden bu ayarı izler.",
                                     "muted", wrap=True))
-        left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.label("DOĞRULAMA", "section"))
-        self.issues = ui.IssueList("Hata yok")
-        self.issues.setMaximumHeight(16777215)
-        left.lay.addWidget(self.issues, 1)
+        left.lay.addStretch(1)
+        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
         left.setMinimumWidth(300)
         split.addWidget(left)
 
@@ -276,6 +267,12 @@ class AddressMapPage(ToolPage):
         right.lay.addWidget(self.table, 1)
         sbar = QHBoxLayout()
         sbar.setSpacing(4)
+        sbar.addWidget(ui.button("IP Kütüphanesinden slave ekle…", "plus", "ghost", self.add_ip,
+                                 "IP Library'den bir IP seç ve adres haritasına ekle (aynı IP birden çok kez "
+                                 "eklenebilir: <IP>_0, <IP>_1 …)"))
+        sbar.addWidget(ui.button("Harici slave ekle…", "plus", "ghost", self.add_external,
+                                 "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle"))
+        sbar.addSpacing(12)
         sbar.addWidget(ui.button("Düzenle", None, "ghost", lambda: self.edit_slave(self._sel_row()),
                                  "Ad, adres ve boyut"))
         sbar.addWidget(ui.button("Sil", None, "ghost", self.delete_slave,

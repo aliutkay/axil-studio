@@ -51,7 +51,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.2"
+    version = "0.2.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -103,9 +103,7 @@ class WrapperPage(ToolPage):
         self.files = QListWidget()
         self.files.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         left.lay.addWidget(self.files, 1)
-        left.lay.addWidget(ui.label("DOĞRULAMA", "section"))
-        self.issues = ui.IssueList("Hata yok")
-        left.lay.addWidget(self.issues)
+        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
         left.setMinimumWidth(340)
         split.addWidget(left)
 

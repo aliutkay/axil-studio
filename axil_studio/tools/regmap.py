@@ -293,6 +293,56 @@ class BitMap(QWidget):
             self.unplacedDropped.emit(what[1], lsb)
 
 
+TAIL_SPACE = 56     # empty, inert row at the end of the lists: room to drop below the last entry
+
+
+def add_tail_space(tree, height=TAIL_SPACE):
+    """An empty row at the end of a list (no data, not selectable): however full the list is,
+    scrolling down leaves free room to drop fields."""
+    it = QTreeWidgetItem([""])
+    it.setFlags(Qt.ItemFlag.NoItemFlags)
+    it.setSizeHint(0, QSize(10, height))
+    tree.addTopLevelItem(it)
+    it.setFirstColumnSpanned(True)
+    return it
+
+
+def real_items(tree):
+    """Top-level items that stand for something (the tail space row has no data)."""
+    return [tree.topLevelItem(i) for i in range(tree.topLevelItemCount())
+            if tree.topLevelItem(i).data(0, ROLE) is not None]
+
+
+class FieldsTree(QTreeWidget):
+    """Bit fields of the selected register; unplaced fields dropped here go to its first free bits."""
+
+    unplacedDropped = Signal(list)
+
+    def __init__(self):
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.viewport().setAcceptDrops(True)
+
+    def dragEnterEvent(self, ev):
+        if ev.mimeData().hasFormat(UNPLACED_MIME):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dragMoveEvent(self, ev):
+        if ev.mimeData().hasFormat(UNPLACED_MIME):
+            ev.acceptProposedAction()
+        else:
+            ev.ignore()
+
+    def dropEvent(self, ev):
+        md = ev.mimeData()
+        if not md.hasFormat(UNPLACED_MIME):
+            return ev.ignore()
+        ev.acceptProposedAction()
+        self.unplacedDropped.emit([int(x) for x in bytes(md.data(UNPLACED_MIME)).decode().split(",") if x])
+
+
 class RegTree(QTreeWidget):
     """Register list that also takes unplaced bit fields: dropped on a register they go into it,
     dropped below the registers they make a new register."""
@@ -751,7 +801,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.3.0"
+    version = "0.4.0"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -773,7 +823,6 @@ class RegMapEditorPage(ToolPage):
         bar = ui.ActionBar()
         bar.add("Yeni IP", "file", self.new_spec, "Boş register haritası")
         bar.add("IP aç…", "library", self.choose_ip, "IP Library'den projedeki ya da bir kütüphanedeki IP'yi aç")
-        bar.add("Örnek", "play", self.load_example, "Örnek register haritasını yükle")
         bar.sep()
         bar.add("Dosyadan aç…", "folder", self.open_spec, ".regspec.json dosyası")
         bar.add("Dosyaya kaydet…", None, self.save_file, ".regspec.json olarak kaydet")
@@ -789,9 +838,13 @@ class RegMapEditorPage(ToolPage):
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
 
-        # ---- left: IP + registers
-        left = ui.Card(margins=16, spacing=10)
-        left.lay.addWidget(ui.label("IP", "section"))
+        # ---- left: IP card + registers card
+        left = QWidget()
+        left_lay = QVBoxLayout(left)
+        left_lay.setContentsMargins(0, 0, 0, 0)
+        left_lay.setSpacing(14)
+        ipcard = ui.Card(margins=16, spacing=10)
+        ipcard.lay.addWidget(ui.label("IP", "section"))
         form = QFormLayout()
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
@@ -803,8 +856,15 @@ class RegMapEditorPage(ToolPage):
         self.version_ed.setToolTip("IP sürümü: üretilen dosyalara ve IP kütüphanesine yazılır (ör. 1.0.0, 2.1.0-beta)")
         form.addRow("Ad", self.name_ed)
         form.addRow("Sürüm", self.version_ed)
-        left.lay.addLayout(form)
-        left.lay.addWidget(ui.Divider())
+        drow = QHBoxLayout()
+        drow.setSpacing(6)
+        self.desc_lbl = ui.label("", "muted")
+        self.desc_lbl.setMinimumWidth(60)
+        drow.addWidget(self.desc_lbl, 1)
+        drow.addWidget(small_button("Düzenle…", self.edit_desc, "IP açıklamasını düzenle"))
+        form.addRow("Açıklama", drow)
+        ipcard.lay.addLayout(form)
+        left_lay.addWidget(ipcard)
 
         regs_box = QWidget()
         rl = QVBoxLayout(regs_box)
@@ -815,6 +875,13 @@ class RegMapEditorPage(ToolPage):
         rhead.addStretch(1)
         rhead.addWidget(small_button("Register", self.add_reg, "Yeni register (Ctrl+R)", None, "plus"))
         rl.addLayout(rhead)
+        self.search_ed = QLineEdit()
+        self.search_ed.setPlaceholderText("Ara: register ya da bit alanı adı / açıklaması")
+        self.search_ed.setClearButtonEnabled(True)
+        self.search_ed.setToolTip("Bit alanında bulunanlar register satırında gösterilir ve alan listesinde "
+                                  "vurgulanır (Ctrl+K)")
+        self.search_ed.textChanged.connect(lambda *_: self._refresh_regs())
+        rl.addWidget(self.search_ed)
         self.reg_tree = RegTree()
         self.reg_tree.setHeaderLabels(["Ad", "Offset", "Erişim", "Strobe"])
         self.reg_tree.setRootIsDecorated(False)
@@ -825,7 +892,7 @@ class RegMapEditorPage(ToolPage):
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for c in (1, 2, 3):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
-        self.reg_tree.currentItemChanged.connect(lambda *_: self._refresh_fields())
+        self.reg_tree.currentItemChanged.connect(lambda *_: self._reg_changed())
         self.reg_tree.itemDoubleClicked.connect(lambda *_: self.edit_reg())
         self.reg_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.reg_tree.customContextMenuRequested.connect(self._reg_menu)
@@ -840,12 +907,13 @@ class RegMapEditorPage(ToolPage):
         rbar.addWidget(small_button("↓", lambda: self.move_reg(1), "Aşağı taşı (offset'leri değiştirir)"))
         rbar.addWidget(small_button("Sırala", self.repack, "Offset'leri 0x00'dan itibaren 4'er artır"))
         rl.addLayout(rbar)
-        left.lay.addWidget(regs_box, 1)
+        regcard = ui.Card(margins=16, spacing=10)
+        regcard.lay.addWidget(regs_box, 1)
+        left_lay.addWidget(regcard, 1)
         left.setMinimumWidth(360)
         split.addWidget(left)
 
         # ---- right: tabs
-        self.tabs = ui.DetachableTabs(self.title)
         ftab = QWidget()
         fl = QVBoxLayout(ftab)
         fl.setContentsMargins(16, 14, 16, 14)
@@ -870,7 +938,8 @@ class RegMapEditorPage(ToolPage):
         self.bitmap.widths_of = lambda idx: [self.spec.unplaced[i].width for i in idx if i < len(self.spec.unplaced)]
         fl.addWidget(self.bitmap)
 
-        self.fields = QTreeWidget()
+        self.fields = FieldsTree()
+        self.fields.unplacedDropped.connect(lambda idx: self._place(idx, self._sel_reg()))
         self.fields.setHeaderLabels(["Bit alanı", "Bitler", "Tip", "Veri tipi", "Reset", "Değer açıklamaları", "Port",
                                      "Açıklama"])
         self.fields.setAlternatingRowColors(False)
@@ -941,33 +1010,20 @@ class RegMapEditorPage(ToolPage):
         fsplit.addWidget(unp_box)
         fsplit.setSizes([380, 220])
         fl.addWidget(fsplit, 1)
-        self.tabs.addTab(ftab, "Bit alanları")
-
-        dtab = QWidget()
-        dl = QVBoxLayout(dtab)
-        dl.setContentsMargins(16, 14, 16, 14)
-        dl.addWidget(ui.label("İlk satır, üretilen HDL ve C dosyalarında başlık açıklaması olarak kullanılır.",
-                              "muted", wrap=True))
-        self.desc_ed = QPlainTextEdit()
-        self.desc_ed.setPlaceholderText("IP'nin işlevi, kullanım sırası, dikkat edilmesi gerekenler…")
-        dl.addWidget(self.desc_ed, 1)
-        self.tabs.addTab(dtab, "IP açıklaması")
-
         right = ui.Card(margins=0)
-        right.lay.addWidget(self.tabs)
+        right.lay.addWidget(ftab)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
         split.setSizes([370, 870])
         self.body.addWidget(split, 1)
 
         # ---- validation strip
-        self.issues = ui.IssueList(compact=True)
-        self.body.addWidget(self.issues)
+        self.issues = ui.IssueList()     # shown in the window's status bar
 
         self.name_ed.textEdited.connect(self._form_changed)
         self.version_ed.textEdited.connect(self._form_changed)
-        self.desc_ed.textChanged.connect(self._desc_changed)
         QShortcut(QKeySequence("Ctrl+R"), self, self.add_reg)
+        QShortcut(QKeySequence("Ctrl+K"), self, lambda: (self.search_ed.setFocus(), self.search_ed.selectAll()))
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: self.add_field())
         for key in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
             QShortcut(QKeySequence(key), self.reg_tree, self.del_reg, context=Qt.ShortcutContext.WidgetShortcut)
@@ -995,7 +1051,6 @@ class RegMapEditorPage(ToolPage):
             return a
         act("Yeni IP", self.new_spec)
         act("IP aç (IP Library)…", self.choose_ip, "Ctrl+Shift+O")
-        act("Örnek register haritası", self.load_example)
         m.addSeparator()
         act("Projeye kaydet", self.save_to_project, "Ctrl+Shift+S")
         act("Dosyadan aç…", self.open_spec)
@@ -1044,9 +1099,12 @@ class RegMapEditorPage(ToolPage):
 
     def _load_spec(self):
         self._loading = True
+        self.search_ed.blockSignals(True)       # another register map: start without a filter
+        self.search_ed.clear()
+        self.search_ed.blockSignals(False)
         self.name_ed.setText(self.spec.module)
         self.version_ed.setText(self.spec.version)
-        self.desc_ed.setPlainText(self.spec.desc)
+        self._show_desc()
         self._loading = False
         self._show_origin()
         self._refresh_regs()
@@ -1061,13 +1119,35 @@ class RegMapEditorPage(ToolPage):
         self._refresh_fields(self._selected_field_name())
         self._mark()
 
-    def _desc_changed(self):
-        if self._loading:
-            return
-        text = self.desc_ed.toPlainText().strip()
-        if text != self.spec.desc:
-            self.spec.desc = text
-            self._mark()
+    def _show_desc(self):
+        first = single_line(self.spec.desc)
+        self.desc_lbl.setText(first or "—")
+        self.desc_lbl.setToolTip(self.spec.desc or "Açıklama yok")
+
+    def edit_desc(self):
+        """IP description in its own window: the first line goes into the HDL / C headers."""
+        d = QDialog(self)
+        d.setWindowTitle(f"IP açıklaması: {self.spec.module}")
+        d.resize(620, 420)
+        lay = QVBoxLayout(d)
+        lay.addWidget(ui.label("İlk satır, üretilen HDL ve C dosyalarında başlık açıklaması olarak kullanılır.",
+                               "muted", wrap=True))
+        ed = QPlainTextEdit(self.spec.desc)
+        ed.setPlaceholderText("IP'nin işlevi, kullanım sırası, dikkat edilmesi gerekenler…")
+        lay.addWidget(ed, 1)
+        box = QDialogButtonBox()
+        box.addButton("Tamam", QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        box.accepted.connect(d.accept)
+        box.rejected.connect(d.reject)
+        lay.addWidget(box)
+        ed.setFocus()
+        if d.exec() == QDialog.DialogCode.Accepted:
+            text = ed.toPlainText().strip()
+            if text != self.spec.desc:
+                self.spec.desc = text
+                self._show_desc()
+                self._mark()
 
     def _validate(self):
         errs = self.spec.validate()
@@ -1094,27 +1174,52 @@ class RegMapEditorPage(ToolPage):
         name = it.data(0, ROLE) if it else None
         return next((r for r in self.spec.registers if r.name == name), None)
 
+    def _search(self):
+        return self.search_ed.text().strip().lower() if hasattr(self, "search_ed") else ""
+
+    def _field_hit(self, f, q):
+        return bool(q) and (q in f.name.lower() or q in f.desc.lower())
+
     def _refresh_regs(self, select=None):
         cur = self._sel_reg()
         keep = select or (cur.name if cur else None)
         mono = theme.mono_font()
+        q = self._search()
+        accent = theme.manager().color("accent")
         self.reg_tree.blockSignals(True)
         self.reg_tree.clear()
         target = None
         for r in self.spec.regs:
+            hits = [f.name for f in sorted(r.fields, key=lambda f: -f.lsb) if self._field_hit(f, q)]
+            if q and not hits and q not in r.name.lower() and q not in r.desc.lower():
+                continue                       # filtered out by the search
             strobe = "/".join(s for s, on in (("wr", r.wr_strobe), ("rd", r.rd_strobe)) if on)
-            it = QTreeWidgetItem([r.name, f"0x{r.offset:02X}", r.access, strobe])
+            label = r.name + (f"   · {', '.join(hits)}" if hits else "")
+            it = QTreeWidgetItem([label, f"0x{r.offset:02X}", r.access, strobe])
             it.setData(0, ROLE, r.name)
             it.setFont(1, mono)
-            it.setToolTip(0, single_line(r.desc))
+            it.setToolTip(0, single_line(r.desc) + (f"\nAramada bulunan bit alanları: {', '.join(hits)}" if hits else ""))
+            if hits:
+                it.setForeground(0, accent)
             self.reg_tree.addTopLevelItem(it)
             if r.name == keep:
                 target = it
-        if target is None and self.reg_tree.topLevelItemCount():
-            target = self.reg_tree.topLevelItem(0)
+        regs = real_items(self.reg_tree)
+        if target is None and regs:
+            target = regs[0]
+        add_tail_space(self.reg_tree)
         self.reg_tree.setCurrentItem(target)
         self.reg_tree.blockSignals(False)
+        self._reg_changed()
+
+    def _reg_changed(self):
+        """Another register: show its fields; while searching, select the first field found."""
         self._refresh_fields()
+        r, q = self._sel_reg(), self._search()
+        if r and q and not self._selected_field_name():
+            hit = next((f.name for f in sorted(r.fields, key=lambda f: -f.lsb) if self._field_hit(f, q)), None)
+            if hit:
+                self._select_field(hit)
 
     def _reg_menu(self, pos):
         m = QMenu(self)
@@ -1211,11 +1316,7 @@ class RegMapEditorPage(ToolPage):
         return r, next((f for f in (r.fields if r else []) if f.name == name), None)
 
     def _find_field_item(self, name):
-        for i in range(self.fields.topLevelItemCount()):
-            it = self.fields.topLevelItem(i)
-            if self._key(it)[1] == name:
-                return it
-        return None
+        return next((it for it in real_items(self.fields) if self._key(it)[1] == name), None)
 
     def _select_field(self, name):
         it = self._find_field_item(name)
@@ -1230,8 +1331,7 @@ class RegMapEditorPage(ToolPage):
         self.bitmap.set_register(self._sel_reg(), self._selected_field_name())
 
     def _expanded_names(self):
-        return {self._key(self.fields.topLevelItem(i))[1] for i in range(self.fields.topLevelItemCount())
-                if self.fields.topLevelItem(i).isExpanded()}
+        return {self._key(it)[1] for it in real_items(self.fields) if it.isExpanded()}
 
     def _refresh_fields(self, select=None, expanded=None):
         r = self._sel_reg()
@@ -1269,6 +1369,10 @@ class RegMapEditorPage(ToolPage):
             it.setForeground(C_TYPE, QColor(t["muted"]))
             it.setForeground(C_VALUES, QColor(t["muted"] if not f.values else t["accent"]))
             it.setToolTip(C_KIND, G.KIND_HELP.get(f.kind, ""))
+            it.setToolTip(C_VALUES, "Tıkla: değer açıklamalarını aç / kapat")
+            if self._field_hit(f, self._search()):           # found by the register search
+                for c in (C_NAME, C_DESC):
+                    it.setBackground(c, theme.manager().color("selection"))
             it.setToolTip(C_DESC, f.desc)
             if f.kind in ("RW", "CONST"):
                 it.setToolTip(C_RESET, "\n".join(f"{a}: {b}" for a, b in N.all_views(f.reset, f.width)))
@@ -1279,11 +1383,11 @@ class RegMapEditorPage(ToolPage):
         for c in range(C_DESC):
             self.fields.resizeColumnToContents(c)
             self.fields.setColumnWidth(c, self.fields.columnWidth(c) + 12)
-        for i in range(self.fields.topLevelItemCount()):
-            it = self.fields.topLevelItem(i)
+        for it in real_items(self.fields):
             f = next(x for x in r.fields if x.name == self._key(it)[1])
             self._add_value_rows(it, f)
             it.setExpanded(f.name in expanded)
+        add_tail_space(self.fields)
         if target is not None:
             self.fields.setCurrentItem(target)
         self.fields.blockSignals(False)
@@ -1307,15 +1411,15 @@ class RegMapEditorPage(ToolPage):
         self.fields.setItemWidget(ch, 0, holder)
 
     def _item_clicked(self, item, col):
-        if self._key(item) and self._key(item)[0] == "field":
+        """Value descriptions open only from their own column ("N tanım ▾" / "ekle ▸")."""
+        if col == C_VALUES and self._key(item) and self._key(item)[0] == "field":
             item.setExpanded(not item.isExpanded())
 
     def _item_double_clicked(self, item, col=0):
         k = self._key(item)
         if not k:
             return
-        if k[0] == "field":
-            item.setExpanded(not item.isExpanded())   # undo the toggle of the first click
+        if k[0] == "field" and col != C_VALUES:
             self.edit_field()
 
     def _delete_current(self):
@@ -1442,6 +1546,7 @@ class RegMapEditorPage(ToolPage):
             self.unplaced.addTopLevelItem(it)
             if i in select:
                 it.setSelected(True)
+        add_tail_space(self.unplaced)
         n = len(self.spec.unplaced)
         self.unp_title.setText(f"YERLEŞTİRİLMEMİŞ BİT ALANLARI ({n})" if n else "YERLEŞTİRİLMEMİŞ BİT ALANLARI")
 
@@ -1698,6 +1803,8 @@ class RegMapEditorPage(ToolPage):
                 QMessageBox.warning(self, self.title, f"“{name}” projede bir IP tanımı değil.")
                 return False
         if reg:
+            if self._search():
+                self.search_ed.clear()          # the register asked for must not be filtered out
             self._refresh_regs(reg)
             if field:
                 self._select_field(field)
@@ -1733,13 +1840,6 @@ class RegMapEditorPage(ToolPage):
             self.spec, self.origin = G.ModuleSpec(), None
             self._set_clean()
             self._load_spec()
-
-    def load_example(self):
-        if self._confirm_discard():
-            self.spec, self.origin = G.example_spec(), None
-            self._set_clean()
-            self._load_spec()
-            self.status("Örnek register haritası yüklendi")
 
     def open_spec(self):
         if not self._confirm_discard():
@@ -1783,25 +1883,23 @@ class RegMapEditorPage(ToolPage):
 
     def save_to_project(self):
         """Store the register map as a project IP definition (instances in the address map follow it)."""
+        from axil_studio.tools.ip_library import ProjectSaveDialog
         errs = self._validate()
-        name = self.spec.module
-        if not name:
-            QMessageBox.warning(self, self.title, "IP adı boş olamaz.")
-            return False
-        if errs and not ui.confirm(self, self.title, f"Register haritasında {len(errs)} hata var (alttaki liste). "
+        if errs and not ui.confirm(self, self.title, f"Register haritasında {len(errs)} hata var (alt çubuk). "
                                                      "Yine de projeye kaydedilsin mi? HDL ancak hatalar "
                                                      "düzeltildikten sonra üretilebilir.", ok="Kaydet"):
             return False
         old = self.origin[1] if self.origin and self.origin[0] == "project" else None
         if old and not self.ctx.project.get_ip(old):
             old = None
-        other = self.ctx.project.get_ip(name)
-        if other is not None and name != old:
-            n = len(self.ctx.project.instances_of(name))
-            if not ui.confirm(self, self.title, f"Projede “{name}” adlı başka bir IP var"
-                                                + (f" (adres haritasında {n} kez)" if n else "")
-                                                + ". Register haritası bununla değiştirilsin mi?", ok="Değiştir"):
-                return False
+        name = ProjectSaveDialog.ask(self, self.ctx, self.spec.module or "my_ip_axil", old)
+        if not name:
+            return False
+        if name != self.spec.module:             # the name chosen in the dialog is the IP's name
+            self.spec.module = name
+            self._loading = True
+            self.name_ed.setText(name)
+            self._loading = False
         prev = self.ctx.project.get_ip(old or name)
         ip = G.to_ipblock(copy.deepcopy(self.spec), 0, with_spec=True)
         ip.source = prev.source if prev else (self.source_lib if self.origin and self.origin[0] == "other" else "")
@@ -1819,29 +1917,22 @@ class RegMapEditorPage(ToolPage):
         return self.save_to_project()
 
     def store_in_library(self):
-        libs = self.ctx.libraries
-        if not libs:
-            QMessageBox.information(self, self.title, "Açık IP kütüphanesi yok. IP Library'den yeni bir kütüphane "
-                                                      "oluştur ya da var olanı aç.")
-            self.open_tool("library")
-            return
+        from axil_studio.tools.ip_library import LibrarySaveDialog
         if self._validate() and not ui.confirm(self, self.title, "Register haritasında hata var. Yine de "
                                                                  "kütüphaneye kaydedilsin mi?", ok="Kaydet"):
             return
-        if len(libs) == 1:
-            lib = libs[0]
-        else:
-            name, ok = QInputDialog.getItem(self, "Kütüphane seç", "Kütüphane:", [x.name for x in libs], 0, False)
-            if not ok:
-                return
-            lib = next(x for x in libs if x.name == name)
-        v = self.spec.version
-        latest = lib.get(self.spec.module)
-        if lib.get(self.spec.module, v):
-            if not ui.confirm(self, self.title, f"{lib.name} kütüphanesinde {self.spec.module} {v} zaten var. "
-                                                f"Üzerine yazılsın mı? (Yeni sürüm için Sürüm alanını değiştir, "
-                                                f"ör. {G.bump_version(latest.version)})", ok="Üzerine yaz"):
-                return
+        prev = self.ctx.project.get_ip(self.origin[1]) if self.origin and self.origin[0] == "project" else None
+        res = LibrarySaveDialog.ask(self, self.ctx, self.spec.module, self.spec.version,
+                                    prev.source if prev else self.source_lib)
+        if not res:
+            return
+        lib, v = res
+        if v != self.spec.version:               # the version chosen there is the IP's version
+            self.spec.version = v
+            self._loading = True
+            self.version_ed.setText(v)
+            self._loading = False
+            self._mark()
         replaced = self.ctx.store_in_library(lib, G.to_ipblock(copy.deepcopy(self.spec), 0), self.spec.to_dict())
         self.status(f"{self.spec.module} {v} {lib.name} kütüphanesine {'güncellendi' if replaced else 'kaydedildi'}")
 

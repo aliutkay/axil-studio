@@ -2,8 +2,8 @@
 
 import concurrent.futures
 
-from PySide6.QtCore import QObject, Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QListWidget, QListWidgetItem,
+from PySide6.QtCore import QObject, QPoint, Qt, Signal
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QToolButton,
                                QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
 from axil_studio import icons, theme
@@ -151,32 +151,49 @@ class Divider(QFrame):
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Fixed)
 
 
-class IssueList(QListWidget):
-    """Validation results: green check when empty, one row per problem otherwise."""
+class IssueList(QToolButton):
+    """Validation result in the window's status bar (bottom line): a green check and a summary
+    when there is nothing to fix, otherwise a red alert with the number of problems and the first
+    one. Hover shows every problem, a click lists them. ToolWindow puts a page's `issues` there."""
 
-    def __init__(self, ok_text="Sorun yok", compact=False):
+    MAX_CHARS = 140
+
+    def __init__(self, ok_text="Hata yok", compact=False):
         super().__init__()
         self.ok_text = ok_text
-        self.compact = compact  # height follows the number of rows (up to 4)
-        self.setSelectionMode(QListWidget.SelectionMode.NoSelection)
-        self.setWordWrap(True)
-        self.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        self.setMaximumHeight(120)
         self._issues = []
+        self.setAutoRaise(True)
+        self.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonTextBesideIcon)
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clicked.connect(self._show_list)
+        self.set_issues([])
 
     def set_issues(self, issues):
         self._issues = list(issues)
-        self.clear()
+        t = theme.manager().tokens
         if not self._issues:
-            it = QListWidgetItem(icons.icon("check", "success", 16), self.ok_text)
-            it.setForeground(theme.manager().color("success"))
-            self.addItem(it)
+            text, color, icon = self.ok_text, t["success"], icons.icon("check", "success", 16)
+            self.setToolTip(self.ok_text)
+        else:
+            n = len(self._issues)
+            text = (f"{n} hata: " if n > 1 else "") + self._issues[0]
+            color, icon = t["danger"], icons.icon("alert", "danger", 16)
+            self.setToolTip("\n".join(f"• {m}" for m in self._issues) + "\n\nTıkla: listeyi aç")
+        if len(text) > self.MAX_CHARS:
+            text = text[:self.MAX_CHARS - 1] + "…"
+        self.setText(text)
+        self.setIcon(icon)
+        self.setStyleSheet(f"QToolButton {{ color: {color}; border: none; padding: 0 6px; }}")
+
+    def _show_list(self):
+        if not self._issues:
+            return
+        from PySide6.QtWidgets import QMenu
+        m = QMenu(self)
         for msg in self._issues:
-            it = QListWidgetItem(icons.icon("alert", "danger", 16), msg)
-            self.addItem(it)
-        if self.compact:
-            rows = min(self.count(), 4)
-            self.setFixedHeight(rows * max(self.sizeHintForRow(0), 22) + 2 * self.frameWidth() + 8)
+            a = m.addAction(icons.icon("alert", "danger", 16), msg)
+            a.setEnabled(False)
+        m.exec(self.mapToGlobal(QPoint(0, -m.sizeHint().height())))     # just above the status bar
 
     def retint(self):
         self.set_issues(self._issues)

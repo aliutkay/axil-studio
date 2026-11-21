@@ -20,7 +20,7 @@ from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QColor, QFont, QKeySequence
 from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComboBox, QFileDialog, QHBoxLayout,
                                QHeaderView, QInputDialog, QLineEdit, QMenu, QMessageBox, QPlainTextEdit,
-                               QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QTabWidget, QToolButton,
+                               QSpinBox, QSplitter, QTableWidget, QTableWidgetItem, QToolButton,
                                QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from axil_studio.core import axilgen as G
