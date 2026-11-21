@@ -306,7 +306,7 @@ class AddressMapPage(ToolPage):
                    "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
                    "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.3.4"
+    version = "0.3.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -718,12 +718,19 @@ class AddressMapPage(ToolPage):
                 return self._refresh()
             self.status(f"Varsayılan pencere {size_text(w)}; boyutu kilitli slave'ler değişmedi")
 
-    def _rename(self, inst, name):
+    def _name_ok(self, inst, name):
         if not X.IDENT.match(name):
             QMessageBox.warning(self, self.title, "Ad harfle başlamalı, sadece harf/rakam/_ içermeli.")
             return False
         if name != inst.name and self.proj.get_instance(name):
             QMessageBox.warning(self, self.title, f"Adres haritasında “{name}” adında bir slave zaten var.")
+            return False
+        return True
+
+    def _rename(self, inst, name):
+        if name == inst.name:
+            return True
+        if not self._name_ok(inst, name):
             return False
         if inst.name in self._collapsed:
             self._collapsed.discard(inst.name)
@@ -755,7 +762,7 @@ class AddressMapPage(ToolPage):
                 return self._refresh(inst)
 
             def set_base():
-                inst.base, inst.fixed = v, True          # a typed address is kept
+                A.set_base(self.proj, inst, v)           # a typed address is kept; a bridge's contents move along
             self._guarded(set_base, inst)
             return
         self._refresh(inst)
@@ -764,8 +771,7 @@ class AddressMapPage(ToolPage):
         pass
 
     def _toggle_lock(self, inst):
-        inst.fixed = not inst.fixed
-        self._changed(inst)
+        self._guarded(lambda: setattr(inst, "fixed", not inst.fixed), inst)
 
     def _size_changed(self, inst, w):
         if self._loading:
@@ -775,7 +781,7 @@ class AddressMapPage(ToolPage):
             inst.window = w                   # 0: follow the default window / grow with the contents
             ww = A.window_of(self.proj, inst)
             if inst.fixed and inst.base & (ww - 1):
-                inst.base &= ~(ww - 1)
+                A.set_base(self.proj, inst, inst.base & ~(ww - 1))
                 self.status(f"{inst.name} adresi yeni boyuta hizalandı: {hex32(inst.base)}")
         if self._guarded(apply, inst) is False:
             self._refresh(inst)
@@ -803,8 +809,7 @@ class AddressMapPage(ToolPage):
         level = self.proj.level(self.proj.parent_of(inst))
         j = level.index(inst)
         if 0 <= j + delta < len(level):
-            level.insert(j + delta, level.pop(j))
-            self._changed(inst)
+            self._guarded(lambda: level.insert(j + delta, level.pop(j)), inst)
 
     def sort_slaves(self):
         def sort(items):
@@ -812,14 +817,12 @@ class AddressMapPage(ToolPage):
             for i in items:
                 if i.bridge:
                     sort(i.children)
-        sort(self.proj.instances)
-        self._changed()
-        self.status("Her bus'taki liste adres sırasına dizildi")
+        if self._guarded(lambda: sort(self.proj.instances)) is not False:
+            self.status("Her bus'taki liste adres sırasına dizildi")
 
     def _toggle_size_lock(self, inst):
         if inst.window:
-            inst.window = 0
-            self._changed(inst)
+            self._guarded(lambda: setattr(inst, "window", 0), inst)
         else:
             w = A.window_of(self.proj, inst)
             self._guarded(lambda: setattr(inst, "window", w), inst)
@@ -833,25 +836,34 @@ class AddressMapPage(ToolPage):
     def toggle_all_addr_locks(self):
         insts = self.proj.all_instances()
         lock = not (insts and all(i.fixed for i in insts))
-        for inst in insts:
-            inst.fixed = lock
-        self._changed()
+
+        def apply():
+            for inst in insts:
+                inst.fixed = lock
+        if self._guarded(apply) is False:
+            return
         self.status("Tüm adresler kilitlendi (sabit)" if lock else "Tüm adres kilitleri açıldı (otomatik)")
 
     def toggle_all_size_locks(self):
         insts = self.proj.all_instances()
         lock = not (insts and all(i.window for i in insts))
         sizes = {id(i): A.window_of(self.proj, i) for i in insts}
-        for inst in insts:
-            inst.window = sizes[id(inst)] if lock else 0
-        self._changed()
+
+        def apply():
+            for inst in insts:
+                inst.window = sizes[id(inst)] if lock else 0
+        if self._guarded(apply) is False:
+            return
         self.status("Tüm pencere boyutları kilitlendi" if lock else
                     "Tüm boyut kilitleri açıldı (varsayılan pencere / içerikle büyür)")
 
     def unlock_all(self):
-        for inst in self.proj.all_instances():
-            inst.fixed = False
-        self._changed()
+        insts = self.proj.all_instances()
+
+        def apply():
+            for inst in insts:
+                inst.fixed = False
+        self._guarded(apply)
 
     def edit_slave(self, inst=None):
         inst = inst if isinstance(inst, IPInstance) else self._sel_inst()
@@ -865,29 +877,32 @@ class AddressMapPage(ToolPage):
             if new is None:
                 return
             name, base, own, window, fixed = new
-            if name != inst.name and not self._rename(inst, name):
+            if name != inst.name and not self._name_ok(inst, name):
                 return
 
             def apply():
-                inst.self_window, inst.window, inst.fixed = own, window, fixed
+                self._rename(inst, name)
+                inst.self_window, inst.window = own, window
                 if fixed:
-                    inst.base = base
-            self._guarded(apply, inst)
+                    A.set_base(self.proj, inst, base)    # its contents move along
+                inst.fixed = fixed
+            self._guarded(apply, lambda: name)
             return
         s = A.xbar_slaves(self.proj, parent)[j]
         new = SlaveDialog.ask(self, s, f"SLAVE{j}: {inst.name}", 4, False)
         if new is None:
             return
-        if new.name != inst.name and not self._rename(inst, new.name):
+        if new.name != inst.name and not self._name_ok(inst, new.name):
             return
 
         def apply():
+            self._rename(inst, new.name)
             if new.window != s.window:            # a size chosen here is kept for this slave
                 inst.window = new.window
             inst.base, inst.fixed = new.base, new.fixed
             if inst.external:
                 inst.span = new.span
-        self._guarded(apply, inst)
+        self._guarded(apply, lambda: new.name)
 
     def _add(self, inst):
         """Append a new entry to the bus chosen by _target_bus (refused when it does not fit)."""
@@ -950,10 +965,11 @@ class AddressMapPage(ToolPage):
         if not ui.confirm(self, "Adres haritasından çıkar", text + " Sonraki slave'lerin port numarası bir azalır.",
                           ok="Çıkar"):
             return
-        level = self.proj.level(self.proj.parent_of(inst))
+        parent = self.proj.parent_of(inst)
+        level = self.proj.level(parent)
         j = level.index(inst)
         level.remove(inst)
-        nxt = level[min(j, len(level) - 1)] if level else self.proj.parent_of(inst)
+        nxt = level[min(j, len(level) - 1)] if level else parent
         self._changed(nxt)
 
     def keyPressEvent(self, ev):

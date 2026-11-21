@@ -42,7 +42,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.3"
+    version = "0.3.4"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -444,8 +444,9 @@ class InterconnectPage(ToolPage):
             sp = self.spec(b)
             where = "" if b is None else f"{sp.module}: "
             if not sp.slaves:
-                errs.append(f"{where}slave yok ({b.name} içine Address Map Editor'da IP ekle)")
-                continue
+                if b is None:
+                    errs.append("Üst bus'ta slave yok")
+                continue            # an empty Sub-bus Bridge is reported by the address map below
             errs += [where + e for e in sp.validate()]
         for e in A.validate(self.proj):
             if e not in errs:

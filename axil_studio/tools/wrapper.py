@@ -51,7 +51,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.4"
+    version = "0.2.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -461,9 +461,12 @@ class WrapperPage(ToolPage):
             return
         out = []
         for info in infos:
-            for name, text in G.hdl_designer_files(info).items():
-                with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
-                    fh.write(text)
+            try:
+                for name, text in G.hdl_designer_files(info).items():
+                    with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
+                        fh.write(text)
+            except (OSError, axilpack.ParseError) as exc:
+                return self.error("Yazılamadı", exc)
             groups = ", ".join(axilpack.PACKED_NAME[g] + "_REQ/RSP" for g in axilpack.axi_groups(info))
             out.append(f"{info['name']}_pk.v (+ _pk_inst.v)  →  {groups}")
         QMessageBox.information(self, "HDL Designer wrapper'ı üretildi",

@@ -173,8 +173,33 @@ def levels(project):
 def readdress(project):
     """Give automatic entries consecutive aligned bases in list order at every level (fixed ones
     stay; the fixed ones inside a bridge move with the bridge). Returns True when a base changed;
-    raises ValueError when the map does not fit in 32 bits."""
-    return _place(project, project.instances, start_of(project), 0, 0)
+    raises ValueError when the map does not fit in 32 bits (the map is then left as it was)."""
+    keep = _bases(project)
+    try:
+        return _place(project, project.instances, start_of(project), 0, 0)
+    except ValueError:
+        _restore(project, keep)
+        raise
+
+
+def _bases(project):
+    """(base, fixed) of every entry, to put the map back after a refused edit."""
+    return [(i, i.base, i.fixed) for i, _ in project.walk()]
+
+
+def _restore(project, keep):
+    for inst, base, fixed in keep:
+        inst.base, inst.fixed = base, fixed
+
+
+def set_base(project, inst, base, fixed=True):
+    """Give an entry a base typed by hand. A bridge's contents move with it: its fixed children
+    keep their place inside its window (automatic ones are placed again by readdress)."""
+    delta = (base & 0xFFFFFFFF) - inst.base
+    if inst.bridge and delta:
+        for c, _ in project.walk(inst.children):
+            c.base = (c.base + delta) & 0xFFFFFFFF
+    inst.base, inst.fixed = base & 0xFFFFFFFF, fixed
 
 
 def _place(project, items, start, new_ref, old_ref):
@@ -241,6 +266,8 @@ def fit_errors(project):
 
 def validate(project):
     """Error strings of the address map (empty when it is usable)."""
+    if not project.instances:
+        return ["Adres haritası boş: üst bus'a en az bir slave ekle"]
     errs = []
     seen = set()
     for bridge in levels(project):
@@ -272,6 +299,8 @@ def validate(project):
                 if not ((s.base ^ o.base) & s.mask & o.mask):
                     errs.append(f"{tag} ile {where}SLAVE{k} ({o.name}) adres aralıkları çakışıyor")
         if bridge is not None:
+            if not items:
+                errs.append(f"{bridge.name}: {BRIDGE_LABEL} boş; arkasındaki interconnect'e en az bir slave ekle")
             if not X.IDENT.match(bridge.xbar_module):
                 errs.append(f"{bridge.name}: interconnect modül adı geçerli değil")
             if not 1 <= 1 + len(bridge.xbar_masters) <= 16:
@@ -279,9 +308,37 @@ def validate(project):
             if len(items) > 64:
                 errs.append(f"{bridge.name}: interconnect'te en fazla 64 slave olabilir")
     errs += fit_errors(project)
-    modules = [xbar_module(project, b) for b in levels(project)]
-    for m in sorted({m for m in modules if modules.count(m) > 1}):
-        errs.append(f"“{m}” modül adı birden çok interconnect'te kullanılıyor")
+    errs += module_clashes(project)
+    return errs
+
+
+def module_clashes(project):
+    """Verilog module names that would be defined twice in the design: the interconnects
+    (and their _pk wrappers), the IPs (and theirs) and the ZipCPU modules they need."""
+    from .axilgen import RESERVED_MODULES
+    errs = []
+    style = (project.interconnect or {}).get("style") or "packed"
+    owners = {}                                   # lower-case name -> [who defines it]
+    for b in levels(project):
+        m = xbar_module(project, b)
+        what = "üst interconnect" if b is None else f"{b.name} interconnect'i"
+        names = [m] + ([f"{m}_pk"] if style == "packed" else [])
+        for n in names:
+            owners.setdefault(n.lower(), []).append((n, what))
+    for ip in project.ips:
+        for n in (ip.name, f"{ip.name}_pk"):
+            owners.setdefault(n.lower(), []).append((n, f"{ip.name} IP'si"))
+    told = set()
+    for key, who in sorted(owners.items()):
+        if key.endswith("_pk") and key[:-3] in told:
+            continue                              # follows from the clash of the module it wraps
+        if key in RESERVED_MODULES or len(who) > 1:
+            told.add(key)
+        if key in RESERVED_MODULES:
+            errs.append(f"“{who[0][0]}” modül adı ({who[0][1]}) ZipCPU {key}.v ile çakışıyor")
+        elif len(who) > 1:
+            errs.append(f"“{who[0][0]}” modül adı birden çok yerde tanımlanıyor: "
+                        + ", ".join(sorted({w for _, w in who})))
     return errs
 
 
@@ -328,6 +385,7 @@ def move(project, inst, parent, index=None):
     if inst.bridge and is_inside(project, inst, parent):
         raise ValueError(f"{inst.name} kendi içine taşınamaz")
     before = _fill(project)
+    keep = _bases(project)
     old_parent = project.parent_of(inst)
     src = project.level(old_parent)
     pos = src.index(inst)
@@ -338,7 +396,7 @@ def move(project, inst, parent, index=None):
     elif old_parent is parent and index > pos:
         index -= 1                              # `index` counted the entry itself
     dst.insert(min(index, len(dst)), inst)
-    note, was_fixed = "", inst.fixed
+    note = ""
     if old_parent is not parent and inst.fixed:
         inst.fixed = False
         note = f"{inst.name} başka bir bus'a taşındı: adresi otomatiğe döndü"
@@ -347,7 +405,6 @@ def move(project, inst, parent, index=None):
     if new:
         dst.remove(inst)
         src.insert(pos, inst)
-        inst.fixed = was_fixed
-        _settle(project)
+        _restore(project, keep)           # every address (and lock) exactly as before the move
         raise ValueError(new[0])
     return note

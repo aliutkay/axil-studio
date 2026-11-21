@@ -32,7 +32,7 @@ import re
 from dataclasses import dataclass, field
 from typing import List
 
-from .model import EnumValue, single_line
+from .model import EnumValue, single_line, write_json
 
 SPEC_FORMAT = "axil-regspec"
 KINDS = ("RW", "RO", "PULSE", "W1C", "CONST")
@@ -67,6 +67,9 @@ ror select severity signal shared sla sll sra srl subtype then to transport type
 units until use variable wait when while with xnor xor
 """.split())
 
+
+# ZipCPU modules the generated HDL needs: an IP or interconnect must not take their names
+RESERVED_MODULES = {"axilxbar", "addrdecode", "skidbuffer", "easyaxil"}
 
 VERSION_RE = re.compile(r"^\d+(\.\d+){0,3}([-+][0-9A-Za-z.]+)?$")
 
@@ -230,8 +233,7 @@ class ModuleSpec:
                           [FieldSpec.from_dict(f) for f in d.get("unplaced", [])])
 
     def save(self, path):
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, indent=2)
+        write_json(path, self.to_dict(), ensure_ascii=True)
 
     @staticmethod
     def load(path):
@@ -275,6 +277,9 @@ class ModuleSpec:
                 errs.append(f"{what} '{name}': '__' içeremez ve '_' ile bitemez (VHDL uyumu)")
 
         check_name(self.module, "Modül adı")
+        if (self.module or "").lower() in RESERVED_MODULES or (self.module or "").lower().removesuffix("_pk") \
+                in RESERVED_MODULES:
+            errs.append(f"Modül adı '{self.module}': ZipCPU {self.module.lower().removesuffix('_pk')}.v ile çakışır")
         if not VERSION_RE.match(self.version or ""):
             errs.append(f"Sürüm '{self.version}': rakam ve nokta ile yazılmalı, ör. 1.0.0 (sonuna -beta gibi ek olabilir)")
         if not self.registers:
@@ -1099,14 +1104,18 @@ def main():
     ap.add_argument("--pack", metavar="VFILE", help="write <module>_pk.v (packed REQ/RSP AXI ports) for a Verilog module")
     ap.add_argument("--module", help="module name for --pack when the file has several")
     ap.add_argument("--unpacked", action="store_true", help="--xbar: same as --xbar-style signals")
-    ap.add_argument("--xbar-style", choices=("packed", "signals"), default="packed",
+    ap.add_argument("--xbar-style", choices=("packed", "signals"), default=None,
                     help="--xbar: signals = <name>.v with separate AXI ports only; "
-                         "packed = also <name>_pk.v (HDL Designer, REQ/RSP per port)")
+                         "packed = also <name>_pk.v (HDL Designer, REQ/RSP per port); "
+                         "default: the project's setting")
     ap.add_argument("--signals", action="store_true", help="IP: do not write the HDL Designer wrapper <module>_pk.v")
-    ap.add_argument("--xbar", metavar="AXPROJ", help="generate an axilxbar wrapper for the IPs of a debug project")
-    ap.add_argument("--nm", type=int, default=1, help="master ports for --xbar (hexbus, master1, ...); "
-                                                      "slave ports come from the project's address map")
-    ap.add_argument("--xbar-name", default="axil_xbar", help="module name for --xbar")
+    ap.add_argument("--xbar", metavar="AXPROJ",
+                    help="generate the axilxbar wrappers of a project (.axproj.json: every interconnect, the top one "
+                         "and the one behind each Sub-bus Bridge, with the project's module names and masters, "
+                         "exactly as the Interconnect Configurator does) or of one .xbar.json")
+    ap.add_argument("--nm", type=int, default=None, help="--xbar: override the top interconnect's masters with "
+                                                         "this many (hexbus, master1, ...)")
+    ap.add_argument("--xbar-name", default=None, help="--xbar: override the top interconnect's module name")
     a = ap.parse_args()
     if a.pack:
         from . import axilpack
@@ -1118,20 +1127,37 @@ def main():
         print(out)
         return
     if a.xbar:
-        from . import xbargen
+        from . import addrmap, xbargen
         from .model import Project
+        style = "signals" if a.unpacked else a.xbar_style
         if a.xbar.endswith(".xbar.json"):
             xs = xbargen.XbarSpec.load(a.xbar)
+            xs.style = style or xs.style
+            specs, errs = [xs], xs.validate()
         else:
-            xs = xbargen.XbarSpec(a.xbar_name, [xbargen.XbarMaster("hexbus")],
-                                  xbargen.slaves_from_project(Project.load(a.xbar)))
-            xs.masters += [xbargen.XbarMaster(f"master{i}") for i in range(1, a.nm)]
-            xs.style = "signals" if a.unpacked else a.xbar_style
-        errs = xs.validate()
+            proj = Project.load(a.xbar)
+            ic = dict(proj.interconnect or {})
+            if a.xbar_name:
+                ic["module"] = a.xbar_name
+            if a.nm:
+                ic["masters"] = [{"name": "hexbus"}] + [{"name": f"master{i}"} for i in range(1, a.nm)]
+            if style:
+                ic["style"] = style
+            proj.interconnect = ic
+            try:
+                addrmap.readdress(proj)
+            except ValueError as exc:
+                raise SystemExit(f"error: {exc}")
+            specs = [addrmap.xbar_spec(proj, b) for b in addrmap.levels(proj)]
+            errs = list(addrmap.validate(proj))
+            for b, xs in zip(addrmap.levels(proj), specs):
+                where = "" if b is None else f"{xs.module}: "
+                errs += [where + e for e in (xs.validate() if xs.slaves else ["slave yok"]) if e not in errs]
         if errs:
             raise SystemExit("\n".join("error: " + e for e in errs))
-        for p in xbargen.write_xbar(xs, a.outdir):
-            print(p)
+        for xs in specs:
+            for p in xbargen.write_xbar(xs, a.outdir):
+                print(p)
         return
     if not a.spec:
         ap.error("a .regspec.json file is required")

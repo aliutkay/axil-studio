@@ -10,6 +10,41 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.16 — hata düzeltmeleri (kod incelemesi)
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.16 |
+| Register Map Editor | early-alpha 0.5.3 |
+| Slave Interface Wrapper | early-alpha 0.2.5 |
+| Address Map Editor | early-alpha 0.3.5 |
+| Interconnect Configurator | early-alpha 0.3.4 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.5 |
+| IP Library | early-alpha 0.2.1 |
+
+- Address Map Editor: sığmadığı için reddedilen bir taşıma artık her adresi ve kilidi olduğu gibi bırakır (önceden
+  kilitli bir slave yeni, yanlış bir adreste kilitli kalabiliyordu).
+- Address Map Editor: bir Sub-bus Bridge'e elle adres yazınca (tabloda ya da düzenleme penceresinde) ve boyutu
+  değişip adresi hizalanınca içindekiler de onunla taşınır; kilitli çocuklar köprü penceresinin dışında kalmaz.
+- Address Map Editor: düzenleme penceresinde ad ve boyut birlikte değişip sığmazsa ad değişikliği de geri alınır.
+- Address Map Editor: adres/boyut kilidini açma, tüm kilitleri aç/kapat, yukarı/aşağı taşıma ve adrese göre
+  sıralama da elle boyutlanmış bir Sub-bus Bridge'i taşıracaksa reddedilir (diğer düzenlemeler gibi).
+- Address Map Editor: bir bridge'in son öğesi silinince seçim bridge'e geçer.
+- Adres haritası: 32 bite sığmayan bir yeniden adresleme haritayı yarım güncellenmiş bırakmaz; boş bir Sub-bus
+  Bridge ve boş adres haritası Address Map Editor'da da hata olarak gösterilir.
+- Modül adı çakışmaları hata olarak gösterilir: aynı adı alan interconnect'ler, IP'ler ve `_pk` wrapper'ları;
+  ZipCPU modül adları (`axilxbar`, `addrdecode`, `skidbuffer`, `easyaxil`) IP ya da interconnect adı olamaz.
+- Komut satırı `axilgen --xbar <proje>` artık arayüzle aynı dosyaları üretir: her interconnect (Sub-bus Bridge'lerin
+  arkasındakiler dahil), projedeki modül adları, master'lar ve port stiliyle; önce adres haritasını denetler.
+- Proje, IP kütüphanesi, register spesifikasyonu ve .xbar.json dosyaları tek adımda yazılır (yarıda kalan bir yazma
+  dosyayı bozmaz). Farklı kaydet başarısız olursa proje eski dosyasında kalır; kütüphaneye yazılamazsa kütüphane
+  değişmez ve hata gösterilir (Register Map Editor).
+- Slave Interface Wrapper: hazır IP için HDL Designer wrapper'ı yazılamazsa hata gösterilir.
+- UART-to-AXI Debug Bridge: seri port koparsa (ör. USB çıkarıldı) bağlantı kapalı görünür ve canlı izleme durur;
+  sonraki erişimler zaman aşımı yerine "bağlantı koptu" der.
+- Port içe aktarma: genişlik ifadeleri `eval` olmadan hesaplanır; `2**64**64` gibi aşırı büyük ifadeler uygulamayı
+  dondurmaz, çözülemedi olarak işaretlenir.
+
 ## early-alpha 0.1.15 — diyagram gösterim seviyeleri, kilit hizası
 
 | Bileşen | Sürüm |

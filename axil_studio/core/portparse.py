@@ -11,6 +11,7 @@ Widths may use parameters / generics declared in the same text, simple arithmeti
 $clog2; a width that cannot be worked out is reported (Port.error) and can be typed in.
 """
 
+import ast
 import math
 import re
 from dataclasses import dataclass
@@ -70,10 +71,40 @@ def evaluate(expr, params, depth=0):
     if not re.fullmatch(r"[\d\s+\-*/%()<>,a-z]*", e):
         return None
     try:
-        v = eval(e, {"__builtins__": {}}, {"clog2": _clog2, "abs": abs, "max": max, "min": min})  # noqa: S307
-    except Exception:  # noqa: BLE001 - not a usable expression
+        v = _calc(ast.parse(e, mode="eval").body)
+    except Exception:  # noqa: BLE001 - not a usable expression (or one too large to be a width)
         return None
-    return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else None
+    return int(v) if isinstance(v, int) and not isinstance(v, bool) else None
+
+
+_LIMIT = 1 << 64            # no port width / index comes near this; larger results are refused
+_FUNCS = {"clog2": lambda x: _clog2(x), "abs": abs, "max": max, "min": min}
+_BINOPS = {ast.Add: lambda a, b: a + b, ast.Sub: lambda a, b: a - b, ast.Mult: lambda a, b: a * b,
+           ast.FloorDiv: lambda a, b: a // b, ast.Mod: lambda a, b: a % b,
+           ast.Pow: lambda a, b: a ** b, ast.LShift: lambda a, b: a << b, ast.RShift: lambda a, b: a >> b}
+
+
+def _calc(node):
+    """Integer arithmetic of a width expression, without eval: numbers, + - * // % ** << >>,
+    unary +/- and clog2/abs/max/min; any value beyond 64 bits is refused (no runaway powers)."""
+    if isinstance(node, ast.Constant) and isinstance(node.value, int) and not isinstance(node.value, bool):
+        v = node.value
+    elif isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)):
+        v = _calc(node.operand)
+        v = -v if isinstance(node.op, ast.USub) else v
+    elif isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
+        a, b = _calc(node.left), _calc(node.right)
+        if isinstance(node.op, (ast.Pow, ast.LShift)) and not 0 <= b <= 64:
+            raise ValueError("exponent out of range")
+        v = _BINOPS[type(node.op)](a, b)
+    elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS \
+            and not node.keywords:
+        v = _FUNCS[node.func.id](*[_calc(x) for x in node.args])
+    else:
+        raise ValueError("not an integer expression")
+    if not -_LIMIT <= v <= _LIMIT:
+        raise ValueError("value out of range")
+    return v
 
 
 def _range_width(hi, lo, params):

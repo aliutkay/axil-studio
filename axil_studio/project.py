@@ -71,11 +71,16 @@ class ProjectContext(QObject):
     def save(self, path=None):
         from axil_studio import APP_NAME, version_text
         self.project.generator = f"{APP_NAME} {version_text()}"
+        old_path, old_libs = self.project.path, list(self.project.libraries)
         if path:      # library paths are relative to the project file: re-base them on the new place
             libs = [self._abs(p) for p in self.project.libraries]
             self.project.path = path
             self.project.libraries = [self._rel(p) for p in libs]
-        self.project.save(path)
+        try:
+            self.project.save(path)
+        except Exception:
+            self.project.path, self.project.libraries = old_path, old_libs    # still the old file
+            raise
         self.dirty = False
         self._push_recent(self.project.path)
         self.state_changed.emit()
@@ -216,8 +221,13 @@ class ProjectContext(QObject):
         """Put a project IP (and its register spec when known) into a library."""
         stored = copy.deepcopy(ip)
         stored.base, stored.regspec, stored.ref = 0, None, ""
+        keep = list(lib.entries)
         replaced = lib.put(LibEntry(stored, regspec if regspec is not None else copy.deepcopy(ip.regspec)))
-        self.save_library(lib)
+        try:
+            self.save_library(lib)
+        except Exception:
+            lib.entries = keep          # the library stays as it is on disk
+            raise
         return replaced
 
     # ------------------------------------------------------------ recent files

@@ -844,7 +844,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.5.2"
+    version = "0.5.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -2079,12 +2079,18 @@ class RegMapEditorPage(ToolPage):
     def _save_library(self, lib, version):
         if not self._errors_ok("kütüphaneye"):
             return False
-        if version != self.spec.version:          # the version chosen there is the IP's version
+        spec = copy.deepcopy(self.spec)
+        spec.version = version                    # the version chosen there is the IP's version
+        try:
+            replaced = self.ctx.store_in_library(lib, G.to_ipblock(copy.deepcopy(spec), 0), spec.to_dict())
+        except OSError as exc:
+            self.error("Kütüphaneye kaydedilemedi", exc)
+            return False
+        if version != self.spec.version:
             self.spec.version = version
             self._loading = True
             self.version_ed.setText(version)
             self._loading = False
-        replaced = self.ctx.store_in_library(lib, G.to_ipblock(copy.deepcopy(self.spec), 0), self.spec.to_dict())
         self.origin, self.source_lib = ("library", lib.name), lib.name
         self._set_clean()
         self._show_origin()

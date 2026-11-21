@@ -56,7 +56,7 @@ class DebugBridgePage(ToolPage):
     description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
                    "SIMULATOR portu kullanılabilir.")
     icon_name = "debug"
-    version = "0.0.4"
+    version = "0.0.5"
 
     _log = Signal(str, str)
 
@@ -1575,6 +1575,8 @@ class DebugBridgePage(ToolPage):
         if direction == "IDLE":
             return
         self.log.appendPlainText(f"{time.strftime('%H:%M:%S')}  {direction:<4} {text}")
+        if direction == "ERR" and self.link.ser is not None and not self.link.connected:
+            self._update_controls()             # the port went away: show it as disconnected
 
     def on_theme(self):
         self.refresh_btn.setIcon(icons.icon("refresh", "text", 16))

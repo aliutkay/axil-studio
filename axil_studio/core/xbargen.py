@@ -28,7 +28,7 @@ from dataclasses import asdict, dataclass, field
 from typing import List
 
 from . import axilpack as PK
-from .model import hex32, parse_int
+from .model import hex32, parse_int, write_json
 
 # (suffix, direction at the wrapper's MASTER<i> ports, width key)
 AXIL_SIGNALS = (
@@ -132,8 +132,7 @@ class XbarSpec:
                         else "packed")
 
     def save(self, path):
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(self.to_dict(), fh, indent=2)
+        write_json(path, self.to_dict(), ensure_ascii=True)
 
     @staticmethod
     def load(path):

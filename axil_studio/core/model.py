@@ -1,6 +1,8 @@
 """Project, IP, register and bit-field data model with JSON persistence."""
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional
 
@@ -8,6 +10,28 @@ ACCESS_TYPES = ("RW", "RO", "WO")
 PROJECT_FORMAT = "axil-uart-project"
 PROJECT_VERSION = 2
 CONFIG_FORMAT = "axil-uart-config"
+
+
+def write_json(path, data, ensure_ascii=False):
+    """Write a JSON file in one step: into a temporary file next to it, then renamed over it, so
+    a failed or interrupted write never leaves a half-written file behind."""
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=".~", suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, indent=2, ensure_ascii=ensure_ascii)
+        if os.path.exists(path):
+            try:
+                os.chmod(tmp, os.stat(path).st_mode & 0o7777)
+            except OSError:
+                pass
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def parse_int(text):
@@ -336,8 +360,7 @@ class Project:
             data["debug"] = self.debug
         if self.libraries:
             data["libraries"] = list(self.libraries)
-        with open(self.path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+        write_json(self.path, data)
 
     @staticmethod
     def load(path):
@@ -390,8 +413,7 @@ def save_config(path, writes, description=""):
     data = {"format": CONFIG_FORMAT, "version": 1, "description": description,
             "writes": [{"ip": ip, "register": reg, "value": hex32(val)}
                        for ip, reg, val in writes]}
-    with open(path, "w", encoding="utf-8") as fh:
-        json.dump(data, fh, indent=2)
+    write_json(path, data, ensure_ascii=True)
 
 
 def load_config(path):

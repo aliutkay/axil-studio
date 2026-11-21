@@ -65,7 +65,8 @@ class HexbusLink:
     # ------------------------------------------------------------ connection
     @property
     def connected(self):
-        return self.ser is not None
+        """False once the port is closed or the reader stopped (port removed ...)."""
+        return self.ser is not None and self._running
 
     def open(self, port, baud):
         self.close()
@@ -108,8 +109,8 @@ class HexbusLink:
             try:
                 data = self.ser.read(256)
             except Exception as exc:  # port removed, etc.
+                self._running = False           # `connected` is False before anyone hears about it
                 self.log_cb("ERR", f"Serial read failed: {exc}")
-                self._running = False
                 break
             for b in data:
                 self._feed(chr(b & 0x7F))
@@ -158,6 +159,8 @@ class HexbusLink:
     def _transact(self, text, count):
         if self.ser is None:
             raise HexbusError("Not connected")
+        if not self._running:
+            raise HexbusError("Connection lost (serial port read failed); reconnect")
         with self._lock:
             while not self._rx.empty():
                 self._rx.get_nowait()

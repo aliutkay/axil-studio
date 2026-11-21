@@ -15,7 +15,7 @@ import os
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .model import IPBlock
+from .model import IPBlock, write_json
 
 LIBRARY_FORMAT = "axil-ip-library"
 
@@ -102,8 +102,7 @@ class IPLibrary:
                 "entries": [e.to_dict() for e in self.entries]}
         if generator:
             data["generator"] = generator
-        with open(self.path, "w", encoding="utf-8") as fh:
-            json.dump(data, fh, indent=2, ensure_ascii=False)
+        write_json(self.path, data)
 
     @staticmethod
     def load(path):

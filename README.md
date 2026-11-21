@@ -260,11 +260,20 @@ Haritada olmayan adrese axilxbar kendisi DECERR döner. Port sayısı adres hari
 da çıkarmak için Address Map Editor'da değiştirip yeniden üret. Generic'i HDL tarafında değiştirirsen projedeki
 adres haritasını da güncelle.
 
+Komut satırı arayüzün **Üret…** düğmesiyle aynı dosyaları üretir (arayüz olmadan doğrulamak için): projedeki
+her interconnect (üst bus ve her Sub-bus Bridge'in arkasındaki), projedeki modül adları, master'lar ve port stiliyle;
+önce adres haritası ve interconnect'ler denetlenir, hata varsa hiçbir dosya yazılmaz. `--xbar-name`, `--nm` ve
+`--xbar-style` yalnızca verildiklerinde projedeki ayarın yerine geçer (`--xbar-name`, `--nm`: üst interconnect).
+
 ```
-python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 --xbar-name axil_xbar -o out   # 2 master
-python -m axil_studio.core.axilgen --xbar out/axil_xbar.xbar.json -o out        # kayıtlı ayarlarla yeniden üret
+python -m axil_studio.core.axilgen --xbar bench.axproj.json -o out             # tüm interconnect'ler, proje ayarlarıyla
+python -m axil_studio.core.axilgen --xbar bench.axproj.json --nm 2 -o out      # üst interconnect'te 2 master
+python -m axil_studio.core.axilgen --xbar out/axil_xbar.xbar.json -o out        # tek interconnect, kayıtlı ayarlarla
 python -m axil_studio.core.axilgen --xbar bench.axproj.json --xbar-style signals -o out   # _pk.v olmadan
 ```
+
+Modül adları tüm tasarımda tek olmalı: interconnect'ler, IP'ler ve `_pk` wrapper'ları aynı adı alamaz, ZipCPU
+modüllerinin adları (`axilxbar`, `addrdecode`, `skidbuffer`, `easyaxil`) kullanılamaz.
 
 HDL projesine `<ad>.v` (ve kullanılıyorsa `<ad>_pk.v`) ile `hdl/axilxbar.v`, `hdl/addrdecode.v`,
 `hdl/skidbuffer.v` eklenir (wb2axip, Apache 2.0).
