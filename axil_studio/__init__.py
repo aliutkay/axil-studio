@@ -15,7 +15,7 @@ import os
 
 APP_NAME = "AXIL Studio"
 RELEASE_STAGE = "early-alpha"     # early-alpha → alpha → beta → release
-APP_VERSION = "0.1.16"
+APP_VERSION = "0.1.17"
 ORG_NAME = "AXIL"
 
 

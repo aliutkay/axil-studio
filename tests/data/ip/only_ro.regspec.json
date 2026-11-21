@@ -1,0 +1,25 @@
+{
+  "format": "axil-regspec",
+  "version": 1,
+  "module": "only_ro",
+  "desc": "",
+  "packed": true,
+  "ip_version": "1.0.0",
+  "registers": [
+    {
+      "name": "STAT",
+      "offset": "0x00",
+      "desc": "",
+      "fields": [
+        {
+          "name": "V",
+          "lsb": 0,
+          "width": 32,
+          "kind": "RO",
+          "reset": "0x0",
+          "desc": ""
+        }
+      ]
+    }
+  ]
+}

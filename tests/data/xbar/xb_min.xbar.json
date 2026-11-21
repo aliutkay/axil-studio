@@ -1,0 +1,21 @@
+{
+  "format": "axil-xbar",
+  "version": 1,
+  "module": "xb_min",
+  "style": "signals",
+  "masters": [
+    {
+      "name": "cpu"
+    }
+  ],
+  "slaves": [
+    {
+      "name": "only",
+      "base": "0x00000000",
+      "mask": "0xFFFFF000",
+      "span": "0x10",
+      "external": false,
+      "fixed": false
+    }
+  ]
+}

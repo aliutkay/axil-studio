@@ -1,0 +1,233 @@
+{
+  "format": "axil-regspec",
+  "version": 1,
+  "module": "example_nopk",
+  "desc": "Example IP register wrapper",
+  "packed": false,
+  "ip_version": "1.0.0",
+  "registers": [
+    {
+      "name": "ID",
+      "offset": "0x00",
+      "desc": "IP identification",
+      "fields": [
+        {
+          "name": "VERSION",
+          "lsb": 0,
+          "width": 16,
+          "kind": "CONST",
+          "reset": "0x102",
+          "desc": "Version 1.2"
+        },
+        {
+          "name": "MAGIC",
+          "lsb": 16,
+          "width": 16,
+          "kind": "CONST",
+          "reset": "0xA5A5",
+          "desc": "Constant pattern"
+        }
+      ]
+    },
+    {
+      "name": "CTRL",
+      "offset": "0x04",
+      "desc": "Control",
+      "fields": [
+        {
+          "name": "ENABLE",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RW",
+          "reset": "0x0",
+          "desc": "IP enable",
+          "values": [
+            {
+              "value": "0x0",
+              "read": "IP disabled",
+              "write": "Disable the IP (outputs idle)"
+            },
+            {
+              "value": "0x1",
+              "read": "IP enabled",
+              "write": "Enable the IP"
+            }
+          ]
+        },
+        {
+          "name": "MODE",
+          "lsb": 1,
+          "width": 3,
+          "kind": "RW",
+          "reset": "0x2",
+          "desc": "Operating mode\nOther codes are reserved.",
+          "values": [
+            {
+              "value": "0x0",
+              "read": "Idle",
+              "write": "Stop"
+            },
+            {
+              "value": "0x1",
+              "read": "Single shot",
+              "write": "Run one transfer per START"
+            },
+            {
+              "value": "0x2",
+              "read": "Continuous",
+              "write": "Run continuously"
+            },
+            {
+              "value": "0x3",
+              "read": "Loopback",
+              "write": "Internal loopback test"
+            }
+          ]
+        },
+        {
+          "name": "START",
+          "lsb": 8,
+          "width": 1,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "desc": "Start a transfer",
+          "values": [
+            {
+              "value": "0x1",
+              "write": "Starts one transfer (ignored while BUSY=1)"
+            }
+          ]
+        },
+        {
+          "name": "SOFT_RESET",
+          "lsb": 9,
+          "width": 1,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "desc": "Reset the IP"
+        },
+        {
+          "name": "DIVIDER",
+          "lsb": 16,
+          "width": 16,
+          "kind": "RW",
+          "reset": "0x1B2",
+          "desc": "Clock divider"
+        }
+      ],
+      "wr_strobe": true
+    },
+    {
+      "name": "STATUS",
+      "offset": "0x08",
+      "desc": "Status",
+      "fields": [
+        {
+          "name": "BUSY",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RO",
+          "reset": "0x0",
+          "desc": "IP busy",
+          "values": [
+            {
+              "value": "0x0",
+              "read": "Idle, a new START is accepted"
+            },
+            {
+              "value": "0x1",
+              "read": "Transfer in progress"
+            }
+          ]
+        },
+        {
+          "name": "LEVEL",
+          "lsb": 4,
+          "width": 8,
+          "kind": "RO",
+          "reset": "0x0",
+          "desc": "FIFO level"
+        },
+        {
+          "name": "EXT_PIN",
+          "lsb": 16,
+          "width": 2,
+          "kind": "RO",
+          "reset": "0x0",
+          "desc": "Asynchronous inputs",
+          "sync": true
+        }
+      ]
+    },
+    {
+      "name": "IRQ",
+      "offset": "0x0C",
+      "desc": "Event flags",
+      "fields": [
+        {
+          "name": "DONE",
+          "lsb": 0,
+          "width": 1,
+          "kind": "W1C",
+          "reset": "0x0",
+          "desc": "Transfer finished",
+          "irq": true,
+          "values": [
+            {
+              "value": "0x0",
+              "read": "No transfer finished since last clear",
+              "write": "No effect"
+            },
+            {
+              "value": "0x1",
+              "read": "A transfer finished",
+              "write": "Clear the flag"
+            }
+          ]
+        },
+        {
+          "name": "ERROR",
+          "lsb": 1,
+          "width": 1,
+          "kind": "W1C",
+          "reset": "0x0",
+          "desc": "Transfer error",
+          "irq": true
+        },
+        {
+          "name": "OVERRUN",
+          "lsb": 4,
+          "width": 4,
+          "kind": "W1C",
+          "reset": "0x0",
+          "desc": "Overrun per channel"
+        }
+      ]
+    },
+    {
+      "name": "DATA",
+      "offset": "0x14",
+      "desc": "Data FIFO",
+      "fields": [
+        {
+          "name": "RXDATA",
+          "lsb": 0,
+          "width": 16,
+          "kind": "RO",
+          "reset": "0x0",
+          "desc": "Head of RX FIFO (read pops)"
+        },
+        {
+          "name": "TXDATA",
+          "lsb": 16,
+          "width": 16,
+          "kind": "RW",
+          "reset": "0x0",
+          "desc": "TX data (write pushes)"
+        }
+      ],
+      "wr_strobe": true,
+      "rd_strobe": true
+    }
+  ]
+}

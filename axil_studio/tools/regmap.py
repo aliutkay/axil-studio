@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from axil_studio.core import axilgen as G
 from axil_studio.core import numfmt as N
 from axil_studio.core import portparse as PP
+from axil_studio.core import specs
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import KIND_SHORT, FieldDialog, RegDialog, ValueDialog
 from axil_studio.tools.base import ToolPage
@@ -844,11 +845,12 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.5.3"
+    version = "0.5.4"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self.spec = G.ModuleSpec()
+        self._spec_win = None           # read-only Spec window (show_spec)
         # where "Kaydet" writes: ("project", ip name) | ("library", library name) | ("file", path);
         # ("other", label) / None: not saved anywhere yet, "Kaydet" asks
         self.origin = None
@@ -874,6 +876,8 @@ class RegMapEditorPage(ToolPage):
         bar.add("Adres haritasına ekle", "addrmap", self.add_to_address_map,
                 "IP'yi projeye kaydet ve Address Map Editor'da adres haritasına yerleştir")
         bar.add("Wrapper'da aç", "wrapper", self.open_in_wrapper, "HDL'i Slave Interface Wrapper'da üret")
+        bar.add("Spec", "file", self.show_spec, "Bu register haritasından HDL'in üretileceği spesifikasyonu "
+                                                "(regspec) salt okunur göster; düzenledikçe güncellenir")
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -1202,7 +1206,38 @@ class RegMapEditorPage(ToolPage):
         if n_unp:
             self.issues.ok_text += f" · {n_unp} yerleştirilmemiş bit alanı (HDL'e girmez)"
         self.issues.set_issues(errs)
+        self._refresh_spec_window()
         return errs
+
+    # ================================================================ spec view
+    def spec_data(self):
+        """The generation input of the register map being edited (core/specs.py): the regspec
+        (no address) and the address the outputs would use (its first place in the address map)."""
+        base = 0
+        if self.origin and self.origin[0] == "project":
+            base = specs.ip_base(self.ctx.project, self.origin[1])
+        return specs.ip_view(self.spec, base)
+
+    def show_spec(self):
+        if self._spec_win is None:
+            w = self._spec_win = QWidget(self, Qt.WindowType.Window)
+            w.setWindowTitle(f"{self.title}: Spec")
+            lay = QVBoxLayout(w)
+            lay.setContentsMargins(0, 0, 0, 0)
+            w.view = ui.SpecView("Salt okunur: Slave Interface Wrapper bu register spesifikasyonundan (regspec, adres "
+                                 "içermez) HDL üretir; base, dosyaların kullandığı adrestir. Düzenledikçe güncellenir; "
+                                 "komut satırında: axilgen --dump-spec.")
+            lay.addWidget(w.view)
+            w.resize(640, 720)
+        self._spec_win.show()
+        self._spec_win.raise_()
+        self._spec_win.activateWindow()
+        self._refresh_spec_window()
+
+    def _refresh_spec_window(self):
+        w = self._spec_win
+        if w is not None and w.isVisible():
+            w.view.set_data(self.spec_data())
 
     def _name_taken(self, names, name, old=None):
         if name != old and name in names:
@@ -1906,6 +1941,7 @@ class RegMapEditorPage(ToolPage):
                 if fld:
                     self._select_field(fld)
         self._show_origin()
+        self._refresh_spec_window()             # the base follows the address map
 
     # ================================================================ opening
     def can_close(self):

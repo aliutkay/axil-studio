@@ -1,6 +1,7 @@
 """Building blocks shared by the hub and the tools."""
 
 import concurrent.futures
+import json
 
 from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QIcon
@@ -444,6 +445,56 @@ def confirm(parent, title, text, ok="Sil", cancel="Vazgeç"):
     R = QMessageBox.ButtonRole
     return _box(parent, title, text, QMessageBox.Icon.Question,
                 [("ok", ok, R.AcceptRole), ("cancel", cancel, R.RejectRole)], "ok") == "ok"
+
+
+class SpecView(QWidget):
+    """Read-only view of the spec a generator gets (JSON, see core/specs.py): exactly what the
+    HDL is made from, nothing can be edited here. Copy to the clipboard; save via `save_cb`."""
+
+    def __init__(self, note, save_cb=None, save_text="Kaydet…", save_tip=None, parent=None):
+        super().__init__(parent)
+        from PySide6.QtWidgets import QPlainTextEdit
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(12, 12, 12, 12)
+        lay.setSpacing(8)
+        self.top = QHBoxLayout()
+        self.note = label(note, "muted", wrap=True)
+        self.top.addWidget(self.note, 1)
+        self.copy_btn = button("Kopyala", "copy", "ghost", self.copy, "JSON'u panoya kopyala")
+        self.top.addWidget(self.copy_btn)
+        self.save_btn = None
+        if save_cb:
+            self.save_btn = button(save_text, "save", "ghost", lambda *_: save_cb(), save_tip)
+            self.top.addWidget(self.save_btn)
+        lay.addLayout(self.top)
+        self.text = QPlainTextEdit()
+        self.text.setReadOnly(True)
+        self.text.setProperty("mono", "true")
+        self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
+        self.text.setObjectName("SpecText")
+        lay.addWidget(self.text, 1)
+        self.data = None
+
+    @staticmethod
+    def dumps(data):
+        return json.dumps(data, indent=2, ensure_ascii=False)
+
+    def set_data(self, data):
+        """Show `data` (a dict, or a message string when there is no spec)."""
+        self.data = data
+        text = data if isinstance(data, str) else self.dumps(data)
+        if text == self.text.toPlainText():
+            return
+        bar = self.text.verticalScrollBar().value()
+        self.text.setPlainText(text)
+        self.text.verticalScrollBar().setValue(bar)
+        self.copy_btn.setEnabled(not isinstance(data, str))
+        if self.save_btn is not None:
+            self.save_btn.setEnabled(not isinstance(data, str))
+
+    def copy(self):
+        from PySide6.QtWidgets import QApplication
+        QApplication.clipboard().setText(self.text.toPlainText())
 
 
 class DetachableTabs(QTabWidget):

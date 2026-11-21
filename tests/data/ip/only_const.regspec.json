@@ -1,0 +1,25 @@
+{
+  "format": "axil-regspec",
+  "version": 1,
+  "module": "only_const",
+  "desc": "",
+  "packed": true,
+  "ip_version": "1.0.0",
+  "registers": [
+    {
+      "name": "ID",
+      "offset": "0x00",
+      "desc": "",
+      "fields": [
+        {
+          "name": "ID",
+          "lsb": 0,
+          "width": 32,
+          "kind": "CONST",
+          "reset": "0x1234",
+          "desc": ""
+        }
+      ]
+    }
+  ]
+}

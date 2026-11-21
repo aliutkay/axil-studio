@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormL
                                QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from axil_studio.core import addrmap as A
+from axil_studio.core import specs
 from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import size_text
@@ -42,7 +43,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.4"
+    version = "0.3.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -231,6 +232,16 @@ class InterconnectPage(ToolPage):
         self.preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         pv.addWidget(self.preview)
         self.tabs.addTab(pv_tab, "Verilog önizleme")
+        self.spec_view = ui.SpecView(
+            "Üretimin girdisi, salt okunur: her interconnect için bir crossbar spesifikasyonu (adresler, maskeler, "
+            "master'lar, port stili). Aynı girdi her zaman aynı wrapper'ı verir; komut satırında: axilgen --dump-spec.",
+            self.save_spec, "Kaydet (.xbar.json)…", "Gösterilen spesifikasyonu dosyaya yaz")
+        self.spec_scope = QComboBox()
+        self.spec_scope.addItem("Seçili interconnect", "level")
+        self.spec_scope.addItem("Tüm interconnect'ler", "all")
+        self.spec_scope.currentIndexChanged.connect(lambda *_: self._refresh_preview())
+        self.spec_view.top.insertWidget(1, self.spec_scope)
+        self.tabs.addTab(self.spec_view, "Spec")
         self.tabs.currentChanged.connect(lambda *_: self._refresh_preview())
 
         split.addWidget(right)
@@ -538,7 +549,33 @@ class InterconnectPage(ToolPage):
         out.append((("", "core"), "axilxbar.v  —  ZipCPU, yalnızca parametreleriyle (değiştirilmez)"))
         return out
 
+    def spec_data(self, scope=None):
+        """What the Spec tab shows (core/specs.py): the selected interconnect's spec, or all of them."""
+        if (scope or self.spec_scope.currentData()) == "all":
+            return {"interconnects": [specs.xbar_view(self.spec(b)) for b in A.levels(self.proj)]}
+        return specs.xbar_view(self.spec())
+
+    def save_spec(self):
+        allv = self.spec_scope.currentData() == "all"
+        name = f"{self.proj.name}_interconnects.json" if allv else f"{self.spec().module}.xbar.json"
+        path, _ = QFileDialog.getSaveFileName(self, "Crossbar spesifikasyonu",
+                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), name),
+                                              "JSON (*.json)" if allv else XBAR_FILTER)
+        if not path:
+            return
+        try:
+            if allv:
+                from axil_studio.core.model import write_json
+                write_json(path, self.spec_data("all"))
+            else:
+                self.spec().save(path)
+        except OSError as exc:
+            return self.error("Kaydedilemedi", exc)
+        self.status(f"Kaydedildi: {path}")
+
     def _refresh_preview(self):
+        if self.tabs.is_shown(self.spec_view):
+            self.spec_view.set_data(self.spec_data())
         if not self.tabs.is_shown(self.pv_tab):
             return
         files = self._files()

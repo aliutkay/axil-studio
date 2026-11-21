@@ -423,6 +423,12 @@ def gen_xbar_markdown(spec: XbarSpec):
     return "\n".join(L)
 
 
+def output_names(spec: XbarSpec):
+    """Names of the files write_xbar() writes, in order."""
+    m = spec.module
+    return [f"{m}.v"] + ([f"{m}_pk.v"] if spec.packed else []) + [f"{m}.md", f"{m}.xbar.json"]
+
+
 def write_xbar(spec: XbarSpec, outdir):
     """<module>.v, <module>_pk.v (packed style), <module>.md and <module>.xbar.json."""
     os.makedirs(outdir, exist_ok=True)

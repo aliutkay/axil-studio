@@ -1,0 +1,51 @@
+{
+  "format": "axil-xbar",
+  "version": 1,
+  "module": "xb_3x4",
+  "style": "packed",
+  "masters": [
+    {
+      "name": "hexbus"
+    },
+    {
+      "name": "cpu"
+    },
+    {
+      "name": "dma"
+    }
+  ],
+  "slaves": [
+    {
+      "name": "uart",
+      "base": "0x40000000",
+      "mask": "0xFFFFF000",
+      "span": "0x20",
+      "external": false,
+      "fixed": false
+    },
+    {
+      "name": "gpio",
+      "base": "0x40001000",
+      "mask": "0xFFFFF000",
+      "span": "0x20",
+      "external": false,
+      "fixed": false
+    },
+    {
+      "name": "ram",
+      "base": "0x80000000",
+      "mask": "0xFFFF0000",
+      "span": "0x0",
+      "external": true,
+      "fixed": true
+    },
+    {
+      "name": "SBB_0",
+      "base": "0x40100000",
+      "mask": "0xFFF00000",
+      "span": "0x3000",
+      "external": false,
+      "fixed": false
+    }
+  ]
+}

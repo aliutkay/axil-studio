@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, Q
 from axil_studio.core import axilgen as G
 from axil_studio.core import axilpack
 from axil_studio.core import regmap_xlsx
+from axil_studio.core import specs
 from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import SPEC_FILTER, fill_regmap_tree, regmap_tree
@@ -36,11 +37,7 @@ def verilog_label(spec, name):
 
 def output_files(spec):
     """Names of the files generate_all() writes for `spec`."""
-    m = spec.module
-    names = list(G.verilog_files(spec)) + [f"{m}_regs.h", f"{m}_regs.md", f"{m}.regspec.json", f"{m}.axproj.json"]
-    if regmap_xlsx.available():
-        names.append(f"{m}_regmap.xlsx")
-    return names
+    return G.output_texts_names(spec)
 
 
 class WrapperPage(ToolPage):
@@ -51,7 +48,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.5"
+    version = "0.2.6"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -140,6 +137,12 @@ class WrapperPage(ToolPage):
             tl.addWidget(ed)
             self.tabs.addTab(tab, title)
             self.previews[key] = (tab, ed)
+        self.spec_view = ui.SpecView(
+            "Üretimin girdisi, salt okunur: register spesifikasyonu (regspec; adres içermez) ve üretim girdileri "
+            "(base: IP'nin adres haritasındaki ilk yeri; C header ve testbench bunu kullanır). Aynı girdi her zaman "
+            "aynı dosyaları verir; komut satırında: axilgen --dump-spec.",
+            self.save_regspec, "Kaydet (.regspec.json)…", "Register spesifikasyonunu dosyaya yaz (adres içermez)")
+        self.tabs.addTab(self.spec_view, "Spec")
         self.tabs.currentChanged.connect(lambda *_: self._refresh_preview())
         split.addWidget(right)
         split.setStretchFactor(1, 1)
@@ -311,7 +314,28 @@ class WrapperPage(ToolPage):
             self.vfile_cb.setCurrentIndex(max(0, i))
         self.vfile_cb.blockSignals(False)
 
+    def spec_data(self):
+        """What the Spec tab shows: the generation input (core/specs.py), or None without an IP."""
+        return None if self.spec is None else specs.ip_view(self.spec, self._project_base())
+
+    def save_regspec(self):
+        if self.spec is None:
+            return
+        path, _ = QFileDialog.getSaveFileName(self, "Register spesifikasyonu",
+                                              os.path.join(self.outdir or ROOT, f"{self.spec.module}.regspec.json"),
+                                              SPEC_FILTER)
+        if not path:
+            return
+        try:
+            self.spec.save(path)
+        except OSError as exc:
+            return self.error("Kaydedilemedi", exc)
+        self.status(f"Kaydedildi: {path}")
+
     def _refresh_preview(self):
+        if self.tabs.is_shown(self.spec_view):
+            data = self.spec_data()
+            self.spec_view.set_data(data if data is not None else "IP seçilmedi.")
         for key, (tab, ed) in self.previews.items():
             if not self.tabs.is_shown(tab):
                 continue
@@ -327,7 +351,7 @@ class WrapperPage(ToolPage):
                         name = self.vfile_cb.currentData() or f"{spec.module}.v"
                         text = G.output_texts(spec, name, base)
                     elif key == "header":
-                        text = G.gen_header(spec, base or 0)
+                        text = G.gen_header(spec, base)
                     else:
                         text = G.gen_markdown(spec)
                 except G.SpecError as exc:
@@ -353,13 +377,11 @@ class WrapperPage(ToolPage):
         return True
 
     def _project_base(self):
-        """Base of the IP's first address-map instance; None when it is not placed (or not in the
-        project): the outputs then use their defaults (C header 0, automatic address)."""
+        """Generation address: the IP's first address-map instance; 0 when it is not placed (or not
+        a project IP)."""
         if self.origin and self.origin[0] == "project":
-            insts = self.ctx.project.instances_of(self.origin[1])
-            if insts:
-                return insts[0].base
-        return None
+            return specs.ip_base(self.ctx.project, self.origin[1])
+        return 0
 
     def generate(self):
         if not self._ready():
@@ -399,7 +421,7 @@ class WrapperPage(ToolPage):
                                               "Excel (*.xlsx)")
         if not path:
             return
-        base = self._project_base() or 0
+        base = self._project_base()
         try:
             G.export_xlsx(self.spec, path, base)
         except (OSError, RuntimeError) as exc:

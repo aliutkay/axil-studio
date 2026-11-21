@@ -9,7 +9,11 @@ A register specification (registers made of typed bit fields) is turned into:
   <module>_inst.v     Verilog instantiation template (and <module>_pk_inst.v)
   <module>_regs.h     C header with offsets, masks and shifts
   <module>_regs.md    register map documentation
-  <module>.axproj.json  project for AXIL Studio
+  <module>.regspec.json the register spec the files were made from (regenerate: axilgen <it>)
+  <module>_regmap.xlsx  register map workbook (when openpyxl is installed)
+
+Generation only depends on the spec and the base address given (see core/specs.py): no project
+or address map is read here.
 
 Field kinds
   RW     control bits written by the bus, driven to the IP     -> output o_<reg>_<field>
@@ -1011,7 +1015,15 @@ def _rw_bits(reg, state):
 
 
 # ============================================================================
-def output_texts(spec: ModuleSpec, only=None, base=None):
+def output_texts_names(spec: ModuleSpec):
+    """Names of every file generate_all() writes, in order."""
+    from . import regmap_xlsx
+    m = spec.module
+    names = verilog_files(spec) + [f"{m}_regs.h", f"{m}_regs.md", f"{m}.regspec.json"]
+    return names + ([f"{m}_regmap.xlsx"] if regmap_xlsx.available() else [])
+
+
+def output_texts(spec: ModuleSpec, only=None, base=0):
     """{file name: text} of the generated text files, in output order; `only`: just that file.
     Verilog: the IP, the HDL Designer block (spec.packed), instantiation templates, testbench.
     `base`: the IP's address in the address map (C header default; testbench bus address)."""
@@ -1024,8 +1036,8 @@ def output_texts(spec: ModuleSpec, only=None, base=None):
     if spec.packed:
         files[f"{m}_pk_inst.v"] = \
             lambda: hdl_designer_files(axilpack.parse_module(gen_verilog(spec), m))[f"{m}_pk_inst.v"]
-    files[f"{m}_tb.v"] = lambda: gen_testbench(spec, base=0x40000000 if base is None else base)
-    files[f"{m}_regs.h"] = lambda: gen_header(spec, base or 0)
+    files[f"{m}_tb.v"] = lambda: gen_testbench(spec, base=base)
+    files[f"{m}_regs.h"] = lambda: gen_header(spec, base)
     files[f"{m}_regs.md"] = lambda: gen_markdown(spec)
     if only is not None:
         return files[only]()
@@ -1039,21 +1051,14 @@ def verilog_files(spec: ModuleSpec):
     return names + ([f"{m}_pk_inst.v"] if spec.packed else []) + [f"{m}_tb.v"]
 
 
-def generate_all(spec: ModuleSpec, outdir, base=None):
-    """Write every output file; returns the list of paths. `base`: the IP's address (C header,
-    testbench, Excel, the small .axproj.json); without it the IP takes the first automatic address
-    of the address map, and every output uses that address."""
-    import os
-    from . import addrmap
-    from .model import IPInstance, Project
+def generate_all(spec: ModuleSpec, outdir, base=0):
+    """Write every output file (output_texts_names); returns the list of paths. `base`: the IP's
+    address (C header default, testbench bus address, Excel); the register spec itself has none."""
+    errs = spec.validate()
+    if errs:
+        raise SpecError("\n".join(errs))
     os.makedirs(outdir, exist_ok=True)
     m = spec.module
-    proj_path = os.path.join(outdir, f"{m}.axproj.json")
-    proj = Project(m, [to_ipblock(spec, 0, with_spec=True)], proj_path)
-    if base is None:
-        base = addrmap.add_instance(proj, m).base
-    else:
-        proj.instances.append(IPInstance(m, m, base, 0, True))
     paths = []
     for name, text in output_texts(spec, base=base).items():
         p = os.path.join(outdir, name)
@@ -1063,8 +1068,6 @@ def generate_all(spec: ModuleSpec, outdir, base=None):
     spec_path = os.path.join(outdir, f"{m}.regspec.json")
     spec.save(spec_path)
     paths.append(spec_path)
-    proj.save(proj_path)
-    paths.append(proj_path)
     from . import regmap_xlsx
     if regmap_xlsx.available():
         paths.append(export_xlsx(spec, os.path.join(outdir, f"{m}_regmap.xlsx"), base))
@@ -1099,8 +1102,11 @@ def main():
     ap.add_argument("-o", "--outdir", default="axilgen_out")
     ap.add_argument("--project", help="also add/replace the IP in this .axproj.json")
     ap.add_argument("--base", type=lambda t: int(t, 0), default=None,
-                    help="the IP's bus address (C header, testbench, Excel, project); default: next free "
-                         "address of the address map")
+                    help="the IP's bus address (C header default, testbench, Excel); default 0. The register "
+                         "spec holds no address: in a project it is the IP's place in the address map")
+    ap.add_argument("--dump-spec", metavar="FILE",
+                    help="print the spec(s) generation would use, as JSON, and write nothing: a .regspec.json "
+                         "(with --base), an .xbar.json or a project .axproj.json (every IP and interconnect)")
     ap.add_argument("--pack", metavar="VFILE", help="write <module>_pk.v (packed REQ/RSP AXI ports) for a Verilog module")
     ap.add_argument("--module", help="module name for --pack when the file has several")
     ap.add_argument("--unpacked", action="store_true", help="--xbar: same as --xbar-style signals")
@@ -1117,6 +1123,18 @@ def main():
                                                          "this many (hexbus, master1, ...)")
     ap.add_argument("--xbar-name", default=None, help="--xbar: override the top interconnect's module name")
     a = ap.parse_args()
+    if a.dump_spec:
+        from . import specs, xbargen
+        from .model import Project
+        f = a.dump_spec
+        if f.endswith(".xbar.json"):
+            view = specs.xbar_view(xbargen.XbarSpec.load(f))
+        elif f.endswith(".regspec.json"):
+            view = specs.ip_view(ModuleSpec.load(f), a.base or 0)
+        else:
+            view = specs.project_view(Project.load(f))
+        print(json.dumps(view, indent=2, ensure_ascii=False))
+        return
     if a.pack:
         from . import axilpack
         name, text = axilpack.pack_file(a.pack, a.module)
@@ -1167,7 +1185,7 @@ def main():
     errs = spec.validate()
     if errs:
         raise SystemExit("\n".join("error: " + e for e in errs))
-    for p in generate_all(spec, a.outdir, a.base):
+    for p in generate_all(spec, a.outdir, a.base or 0):
         print(p)
     if a.project:
         add_to_project(spec, a.project, replace=True, base=a.base)

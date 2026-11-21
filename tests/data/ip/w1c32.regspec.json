@@ -1,0 +1,41 @@
+{
+  "format": "axil-regspec",
+  "version": 1,
+  "module": "w1c32",
+  "desc": "",
+  "packed": true,
+  "ip_version": "1.0.0",
+  "registers": [
+    {
+      "name": "EV",
+      "offset": "0x00",
+      "desc": "",
+      "fields": [
+        {
+          "name": "E",
+          "lsb": 0,
+          "width": 32,
+          "kind": "W1C",
+          "reset": "0x0",
+          "desc": "",
+          "irq": true
+        }
+      ]
+    },
+    {
+      "name": "P",
+      "offset": "0x04",
+      "desc": "",
+      "fields": [
+        {
+          "name": "GO",
+          "lsb": 0,
+          "width": 32,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "desc": ""
+        }
+      ]
+    }
+  ]
+}

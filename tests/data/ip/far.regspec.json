@@ -1,0 +1,40 @@
+{
+  "format": "axil-regspec",
+  "version": 1,
+  "module": "far",
+  "desc": "",
+  "packed": true,
+  "ip_version": "1.0.0",
+  "registers": [
+    {
+      "name": "A",
+      "offset": "0x00",
+      "desc": "",
+      "fields": [
+        {
+          "name": "A",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RW",
+          "reset": "0x1",
+          "desc": ""
+        }
+      ]
+    },
+    {
+      "name": "B",
+      "offset": "0x3C",
+      "desc": "",
+      "fields": [
+        {
+          "name": "B",
+          "lsb": 0,
+          "width": 8,
+          "kind": "RW",
+          "reset": "0x5",
+          "desc": ""
+        }
+      ]
+    }
+  ]
+}

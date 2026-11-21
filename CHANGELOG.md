@@ -10,6 +10,34 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.17 — iki parçalı yapı: Spec görünümleri, testler
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.17 |
+| Register Map Editor | early-alpha 0.5.4 |
+| Slave Interface Wrapper | early-alpha 0.2.6 |
+| Address Map Editor | early-alpha 0.3.5 |
+| Interconnect Configurator | early-alpha 0.3.5 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.5 |
+| IP Library | early-alpha 0.2.1 |
+
+- Üretim iki ayrı parça: **girdi → spec** (araçlar, komut satırı) ve **spec → HDL** (üreticiler). Sınır
+  `core/specs.py`'de: üretimin tam girdisi.
+- **Spec** görünümleri (salt okunur): Slave Interface Wrapper'da ve Interconnect Configurator'da *Spec* sekmesi
+  (seçili interconnect ya da hepsi), Register Map Editor'da üst bardaki *Spec* (ayrı pencere, düzenledikçe
+  güncellenir). Kopyala ve Kaydet. Register spesifikasyonu adres içermez; IP'nin adresi ayrı bir üretim girdisi
+  (`base`) olarak yanında gösterilir.
+- Komut satırı: `axilgen --dump-spec <proje | .regspec.json | .xbar.json>` aynı girdiyi JSON olarak yazar, dosya
+  üretmez.
+- Üretici yalnızca spec'i görür: `generate_all()` artık adres haritası hesaplamaz ve çıktı klasörüne `.axproj.json`
+  yazmaz; `base` verilmezse 0'dır (komut satırında `--base`, varsayılan 0). Üretilen HDL değişmedi.
+- Testler (`tests/`, pytest): Parça 1 için adres haritası kuralları, projeden spec'lere, araç işlemlerinden spec'lere,
+  araç ile komut satırının aynı spec'i ve aynı dosyaları vermesi; Parça 2 için altın dosyalar (`tests/golden`),
+  üretilen testbench'lerin iverilog'da geçmesi, wrapper derlemesi ve üç seviyeli Sub-bus Bridge zincirinde adres
+  yönlendirme simülasyonu.
+- GitHub Actions: testler her push ve pull request'te çalışır (`.github/workflows/tests.yml`).
+
 ## early-alpha 0.1.16 — hata düzeltmeleri (kod incelemesi)
 
 | Bileşen | Sürüm |

@@ -44,6 +44,7 @@ PATHS = {
     "arrow": '<path d="M5 12h14M13 6l6 6-6 6"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
     # save as: disk with a small pen
+    "copy": '<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2"/>',
     "saveas": '<path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M7 3v5h7M7 21v-6h4"/>'
               '<path d="M14.5 21l.8-3.2 5.4-5.4a1.6 1.6 0 0 1 2.3 2.3l-5.4 5.4z"/>',
     # padlock closed / open
