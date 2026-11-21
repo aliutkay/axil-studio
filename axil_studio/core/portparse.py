@@ -16,6 +16,7 @@ import math
 import re
 from dataclasses import dataclass
 from typing import Optional
+from axil_studio.i18n import tr
 
 DIRECTIONS = ("in", "out", "inout")
 FIELD_WIDTH = 32
@@ -95,15 +96,15 @@ def _calc(node):
     elif isinstance(node, ast.BinOp) and type(node.op) in _BINOPS:
         a, b = _calc(node.left), _calc(node.right)
         if isinstance(node.op, (ast.Pow, ast.LShift)) and not 0 <= b <= 64:
-            raise ValueError("exponent out of range")
+            raise ValueError(tr("exponent out of range"))
         v = _BINOPS[type(node.op)](a, b)
     elif isinstance(node, ast.Call) and isinstance(node.func, ast.Name) and node.func.id in _FUNCS \
             and not node.keywords:
         v = _FUNCS[node.func.id](*[_calc(x) for x in node.args])
     else:
-        raise ValueError("not an integer expression")
+        raise ValueError(tr("not an integer expression"))
     if not -_LIMIT <= v <= _LIMIT:
-        raise ValueError("value out of range")
+        raise ValueError(tr("value out of range"))
     return v
 
 
@@ -214,12 +215,12 @@ def _verilog(text):
             width = fixed
         for k, dim in enumerate(packed):
             if ":" not in dim:
-                width, err = None, f"genişlik çözülemedi: [{dim.strip()}]"
+                width, err = None, tr("cannot resolve width: [{0}]").format(dim.strip())
                 break
             hi, lo = dim.split(":", 1)
             w, low = _range_width(hi, lo, params)
             if w is None:
-                width, err = None, f"genişlik çözülemedi: [{dim.strip()}]"
+                width, err = None, tr("cannot resolve width: [{0}]").format(dim.strip())
                 break
             width = w if k == 0 and not fixed else width * w
             lsb = low if len(packed) == 1 else 0
@@ -240,18 +241,18 @@ def _vhdl_type_width(typ, params):
     m = re.fullmatch(r"[\w.]+\s*\(\s*(.+?)\s+(downto|to)\s+(.+?)\s*\)", t, re.I | re.S)
     if m:
         w, lo = _range_width(m.group(1), m.group(3), params)
-        return (w, lo, "") if w is not None else (None, 0, f"genişlik çözülemedi: {t}")
+        return (w, lo, "") if w is not None else (None, 0, tr("cannot resolve width: {0}").format(t))
     m = re.fullmatch(r"(integer|natural|positive)\s+range\s+(.+?)\s+(to|downto)\s+(.+)", t, re.I | re.S)
     if m:
         a, b = evaluate(m.group(2), params), evaluate(m.group(4), params)
         if a is None or b is None:
-            return None, 0, f"aralık çözülemedi: {t}"
+            return None, 0, tr("cannot resolve range: {0}").format(t)
         lo, hi = min(a, b), max(a, b)
         bits = max(1, max(abs(lo), abs(hi)).bit_length()) + (1 if lo < 0 else 0)
         return bits, 0, ""
     if tl in ("integer", "natural", "positive"):
         return 32, 0, ""
-    return None, 0, f"bilinmeyen tip: {t}"
+    return None, 0, tr("unknown type: {0}").format(t)
 
 
 def _vhdl(text):

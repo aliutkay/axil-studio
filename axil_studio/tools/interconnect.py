@@ -28,9 +28,10 @@ from axil_studio.dialogs import size_text
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.xbar_diagram import DETAILS, BlockDiagram, SystemDiagram
 from axil_studio.core.model import hex32
+from axil_studio.i18n import tr
 
-XBAR_FILTER = "Interconnect ayarları (*.xbar.json);;JSON (*.json);;Tüm dosyalar (*)"
-STYLE_SHORT = {"packed": "Ayrık + HDL Designer (_pk)", "signals": "Yalnızca ayrık portlar"}
+XBAR_FILTER = tr("Interconnect settings (*.xbar.json);;JSON (*.json);;All files (*)")
+STYLE_SHORT = {"packed": tr("Separate + HDL Designer (_pk)"), "signals": tr("Separate ports only")}
 
 
 # ============================================================================ page
@@ -38,35 +39,32 @@ class InterconnectPage(ToolPage):
     tool_id = "interconnect"
     title = "Interconnect Configurator"
     short_title = "Interconnect Configurator"
-    subtitle = ("Adres haritasındaki bus'larla axilxbar crossbar'larını yapılandır ve wrapper'larını üret "
-                "(her Sub-bus Bridge'in arkasında bir interconnect).")
-    description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
-                   "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
+    subtitle = (tr("Configure the axilxbar crossbars of the address map's buses and generate their wrappers (one interconnect behind every Sub-bus Bridge)."))
+    description = (tr("Sets every interconnect's module name and masters, takes its slave ports from the address map, draws the block diagram of the whole system and generates wrappers with named ports for ZipCPU axilxbar."))
     icon_name = "interconnect"
-    version = "0.3.6"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self.level_name = ""             # "" = the top interconnect, else a Sub-bus Bridge's name
         self._loading = False
 
-        self.gen_btn = self.header.add_right(ui.button("Üret…", "play", "primary", self.generate,
-                                                 "Tüm interconnect'lerin axilxbar wrapper'larını ve dokümanlarını üret"))
+        self.gen_btn = self.header.add_right(ui.button(tr("Generate…"), "play", "primary", self.generate,
+                                                 tr("Generate the axilxbar wrappers and documents of every interconnect")))
         bar = self.header       # the tool's commands sit in the top bar
-        bar.add("Adres haritasını düzenle…", "addrmap", lambda: self.edit_address_map(),
-                "Slave'ler, Sub-bus Bridge'ler, adresleri ve sıraları Address Map Editor'da düzenlenir")
+        bar.add(tr("Edit address map…"), "addrmap", lambda: self.edit_address_map(),
+                tr("Slaves, Sub-bus Bridges, their addresses and order are edited in the Address Map Editor"))
         bar.sep()
-        bar.add("İçe aktar (.xbar.json)…", "folder", self.import_xbar,
-                ".xbar.json dosyasından seçili interconnect'in ayarlarını al (ayarlar projede saklanır)")
-        bar.add("Dışa aktar (.xbar.json)…", "save", self.export_xbar,
-                "Seçili interconnect'in ayarlarını ve slave portlarını .xbar.json olarak yaz (komut satırı için)")
+        bar.add(tr("Import (.xbar.json)…"), "folder", self.import_xbar,
+                tr("Take the selected interconnect's settings from an .xbar.json file (settings are kept in the project)"))
+        bar.add(tr("Export (.xbar.json)…"), "save", self.export_xbar,
+                tr("Write the selected interconnect's settings and slave ports as .xbar.json (for the command line)"))
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
 
         # ---- left: interconnects, the selected one's settings and masters
         left = ui.Card(margins=16, spacing=10)
-        left.lay.addWidget(ui.label("INTERCONNECT'LER", "section"))
+        left.lay.addWidget(ui.label(tr("INTERCONNECTS"), "section"))
         self.level_tree = QTreeWidget()
         self.level_tree.setHeaderHidden(True)
         self.level_tree.setColumnCount(2)
@@ -76,7 +74,7 @@ class InterconnectPage(ToolPage):
         self.level_tree.header().setStretchLastSection(False)
         self.level_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.level_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.level_tree.setToolTip("Üst bus'ın ve her Sub-bus Bridge'in arkasındaki interconnect")
+        self.level_tree.setToolTip(tr("The interconnect of the top bus and of every Sub-bus Bridge"))
         self.level_tree.currentItemChanged.connect(self._level_picked)
         left.lay.addWidget(self.level_tree)
         left.lay.addWidget(ui.Divider())
@@ -91,13 +89,13 @@ class InterconnectPage(ToolPage):
             if key in STYLE_SHORT:
                 self.style_cb.addItem(STYLE_SHORT[key], key)
                 self.style_cb.setItemData(self.style_cb.count() - 1, text, Qt.ItemDataRole.ToolTipRole)
-        self.style_cb.setToolTip("Tüm interconnect'ler için")
-        form.addRow("Modül adı", self.module_ed)
+        self.style_cb.setToolTip(tr("For every interconnect"))
+        form.addRow(tr("Module name"), self.module_ed)
         form.addRow("Wrapper", self.style_cb)
         left.lay.addLayout(form)
-        left.lay.addWidget(ui.label("MASTER'LAR", "section"))
+        left.lay.addWidget(ui.label(tr("MASTERS"), "section"))
         self.master_tbl = QTableWidget(0, 3)
-        self.master_tbl.setHorizontalHeaderLabels(["Port", "Ad", ""])
+        self.master_tbl.setHorizontalHeaderLabels(["Port", tr("Name"), ""])
         self.master_tbl.verticalHeader().setVisible(False)
         self.master_tbl.setShowGrid(False)
         self.master_tbl.setAlternatingRowColors(True)
@@ -110,19 +108,19 @@ class InterconnectPage(ToolPage):
         mh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         ui.actions_column(mh, 2)
         self.master_tbl.setMaximumHeight(160)
-        self.master_tbl.setToolTip("Ada çift tıklayarak değiştir")
+        self.master_tbl.setToolTip(tr("Double-click the name to change it"))
         self.master_tbl.itemChanged.connect(self._master_changed)
         self.master_tbl.itemSelectionChanged.connect(self._update_diagram)
         left.lay.addWidget(self.master_tbl)
         mbar = QHBoxLayout()
         mbar.setSpacing(4)
-        mbar.addWidget(ui.button("Master", "plus", "ghost", self.add_master, "Bu interconnect'e yeni master"))
+        mbar.addWidget(ui.button("Master", "plus", "ghost", self.add_master, tr("New master on this interconnect")))
         mbar.addStretch(1)
         left.lay.addLayout(mbar)
-        self.master_note = ui.label("", "muted", wrap=True)
+        self.master_note = ui.note("")
         left.lay.addWidget(self.master_note)
         left.lay.addStretch(1)
-        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
+        self.issues = ui.IssueList(tr("No errors"))     # shown in the window's status bar
         left.setMinimumWidth(320)
         split.addWidget(left)
 
@@ -136,12 +134,12 @@ class InterconnectPage(ToolPage):
         st.setContentsMargins(16, 12, 16, 12)
         st.setSpacing(8)
         srow = QHBoxLayout()
-        self.slave_note = ui.label("", "muted", wrap=True)
+        self.slave_note = ui.note("")
         srow.addWidget(self.slave_note, 1)
         srow.addWidget(ui.button("Address Map Editor", "addrmap", "ghost", lambda: self.edit_address_map()))
         st.addLayout(srow)
         self.slave_tbl = QTableWidget(0, 5)
-        self.slave_tbl.setHorizontalHeaderLabels(["Port", "Ad", "Tür / IP", "Adres", "Boyut"])
+        self.slave_tbl.setHorizontalHeaderLabels(["Port", tr("Name"), tr("Type / IP"), tr("Address"), tr("Size")])
         self.slave_tbl.verticalHeader().setVisible(False)
         self.slave_tbl.setShowGrid(False)
         self.slave_tbl.setAlternatingRowColors(True)
@@ -151,7 +149,7 @@ class InterconnectPage(ToolPage):
         self.slave_tbl.cellDoubleClicked.connect(lambda r, _c: self._open_slave(r))
         self.slave_tbl.itemSelectionChanged.connect(self._update_diagram)
         st.addWidget(self.slave_tbl, 1)
-        self.tabs.addTab(sl_tab, "Slave portları")
+        self.tabs.addTab(sl_tab, tr("Slave ports"))
 
         dia_tab = self.dia_tab = QWidget()
         dt = QVBoxLayout(dia_tab)
@@ -160,36 +158,31 @@ class InterconnectPage(ToolPage):
         drow = QHBoxLayout()
         drow.setSpacing(4)
         self.view_cb = QComboBox()
-        self.view_cb.addItem("Tüm sistem", "system")
-        self.view_cb.addItem("Seçili interconnect (pinlerle)", "level")
-        self.view_cb.setToolTip("Tüm sistem: bütün bus'lar ve Sub-bus Bridge'ler; seçili interconnect: tek crossbar, "
-                                "üretilen HDL'deki pinlerle")
+        self.view_cb.addItem(tr("Whole system"), "system")
+        self.view_cb.addItem(tr("Selected interconnect (with pins)"), "level")
+        self.view_cb.setToolTip(tr("Whole system: every bus and Sub-bus Bridge; selected interconnect: one crossbar with the pins of the generated HDL"))
         self.view_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.view_cb)
         self.sig_cb = QComboBox()
         for key, text in DETAILS.items():
             self.sig_cb.addItem(text, key)
-        self.sig_cb.setToolTip("Bağlantıların ayrıntısı: Master / slave (bağlantı başına tek ok) · AXI Lite "
-                               "basitleştirilmiş (AW / W / B / AR / R kanalları, ayrık sinyaller yöne göre "
-                               "gruplu) · AXI Lite detaylı (tüm pinler) · HDL Designer (paketli REQ / RSP). "
-                               "Üretilen dosyaları değiştirmez; dışa aktarma bu gösterimle yapılır.")
+        self.sig_cb.setToolTip(tr("Connection detail: Master / slave (one arrow per connection) · AXI Lite simplified (AW / W / B / AR / R channels) · AXI Lite detailed (every pin) · HDL Designer (packed REQ / RSP). Does not change the generated files; exports use this view."))
         self.sig_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.sig_cb)
         drow.addSpacing(8)
-        drow.addWidget(ui.button("−", None, "ghost", lambda: self._dia().zoom_by(1 / 1.2), "Uzaklaş"))
+        drow.addWidget(ui.button("−", None, "ghost", lambda: self._dia().zoom_by(1 / 1.2), tr("Zoom out")))
         self.zoom_lbl = ui.label("100%", "muted")
         self.zoom_lbl.setMinimumWidth(44)
         self.zoom_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         drow.addWidget(self.zoom_lbl)
-        drow.addWidget(ui.button("+", None, "ghost", lambda: self._dia().zoom_by(1.2), "Yakınlaş"))
-        drow.addWidget(ui.button("Sığdır", None, "ghost", lambda: self._dia().set_zoom(None), "Genişliğe sığdır"))
-        drow.addWidget(ui.button("100%", None, "ghost", lambda: self._dia().set_zoom(1.0), "Gerçek boyut"))
+        drow.addWidget(ui.button("+", None, "ghost", lambda: self._dia().zoom_by(1.2), tr("Zoom in")))
+        drow.addWidget(ui.button(tr("Fit"), None, "ghost", lambda: self._dia().set_zoom(None), tr("Fit to width")))
+        drow.addWidget(ui.button("100%", None, "ghost", lambda: self._dia().set_zoom(1.0), tr("Actual size")))
         drow.addStretch(1)
         drow.addWidget(ui.button("PDF…", "file", "ghost", lambda: self.export_diagram("pdf"),
-                                 "Gösterilen diyagramı PDF olarak kaydet (beyaz zeminde)"))
+                                 tr("Save the diagram as PDF (on white)")))
         drow.addWidget(ui.button("draw.io…", "file", "ghost", lambda: self.export_diagram("drawio"),
-                                 "Gösterilen diyagramı draw.io (diagrams.net) dosyası olarak kaydet: her blok, "
-                                 "yazı ve bağlantı düzenlenebilir"))
+                                 tr("Save the diagram as a draw.io (diagrams.net) file: every block, text and connection can be edited")))
         dt.addLayout(drow)
         self.diagram = BlockDiagram()
         self.diagram.slaveClicked.connect(lambda j: self.slave_tbl.selectRow(j))
@@ -211,17 +204,16 @@ class InterconnectPage(ToolPage):
             d.scroll = scroll
             self.dia_stack.addWidget(scroll)
         dt.addWidget(self.dia_stack, 1)
-        self.tabs.addTab(dia_tab, "Blok diyagramı")
+        self.tabs.addTab(dia_tab, tr("Block diagram"))
 
         pv_tab = self.pv_tab = QWidget()
         pv = QVBoxLayout(pv_tab)
         pv.setContentsMargins(12, 12, 12, 12)
         frow = QHBoxLayout()
-        frow.addWidget(ui.label("Dosya", "muted"))
+        frow.addWidget(ui.label(tr("File"), "muted"))
         self.vfile_cb = QComboBox()
         self.vfile_cb.setMinimumWidth(420)
-        self.vfile_cb.setToolTip("Önizlenecek dosya: her interconnect'in wrapper'ları ya da yalnızca parametreleriyle "
-                                 "kullanılan ZipCPU axilxbar.v")
+        self.vfile_cb.setToolTip(tr("File to preview: the wrappers of each interconnect, or ZipCPU axilxbar.v (used through its parameters only)"))
         self.vfile_cb.currentIndexChanged.connect(lambda *_: self._refresh_preview())
         frow.addWidget(self.vfile_cb)
         frow.addStretch(1)
@@ -231,15 +223,13 @@ class InterconnectPage(ToolPage):
         self.preview.setProperty("mono", "true")
         self.preview.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         pv.addWidget(self.preview)
-        self.tabs.addTab(pv_tab, "Verilog önizleme")
+        self.tabs.addTab(pv_tab, tr("Verilog preview"))
         self.spec_view = ui.SpecView(
-            "HDL spec (salt okunur): wrapper Verilog'u yalnızca bundan üretilir. Sadece kodu etkileyen veri var: "
-            "master ve slave sayısı, slave adresleri ve maskeleri, HDL Designer wrapper'ı, axilxbar parametreleri; "
-            "port adları yok. Komut satırında: python -m axil_studio.core.hdlspec <dosya> -o out",
-            self.save_spec, "Kaydet (.hdlspec.json)…", "Gösterilen HDL spec'i dosyaya yaz")
+            tr("HDL spec (read-only): the wrapper Verilog is made from this alone. Only data that changes the code: master and slave counts, slave addresses and masks, HDL Designer wrapper, axilxbar parameters; no port names. Command line: python -m axil_studio.core.hdlspec <file> -o out"),
+            self.save_spec, tr("Save (.hdlspec.json)…"), tr("Write the shown HDL spec to a file"))
         self.spec_scope = QComboBox()
-        self.spec_scope.addItem("Seçili interconnect", "level")
-        self.spec_scope.addItem("Tüm interconnect'ler", "all")
+        self.spec_scope.addItem(tr("Selected interconnect"), "level")
+        self.spec_scope.addItem(tr("All interconnects"), "all")
         self.spec_scope.currentIndexChanged.connect(lambda *_: self._refresh_preview())
         self.spec_view.top.insertWidget(1, self.spec_scope)
         self.tabs.addTab(self.spec_view, "Spec")
@@ -258,13 +248,13 @@ class InterconnectPage(ToolPage):
     def build_menus(self, menubar):
         m = menubar.addMenu("&Interconnect")
         win = self.window()
-        for text, slot in (("Adres haritasını düzenle (Address Map Editor)…", lambda: self.edit_address_map()),
-                           ("Master ekle", self.add_master), (None, None),
-                           ("Slave portları", lambda: self.tabs.show_page(self.sl_tab)),
-                           ("Blok diyagramı", lambda: self.tabs.show_page(self.dia_tab)),
-                           ("Verilog önizleme", lambda: self.tabs.show_page(self.pv_tab)), (None, None),
-                           ("İçe aktar (.xbar.json)…", self.import_xbar), ("Dışa aktar (.xbar.json)…", self.export_xbar),
-                           (None, None), ("Üret…", self.generate)):
+        for text, slot in ((tr("Edit address map (Address Map Editor)…"), lambda: self.edit_address_map()),
+                           (tr("Add master"), self.add_master), (None, None),
+                           (tr("Slave ports"), lambda: self.tabs.show_page(self.sl_tab)),
+                           (tr("Block diagram"), lambda: self.tabs.show_page(self.dia_tab)),
+                           (tr("Verilog preview"), lambda: self.tabs.show_page(self.pv_tab)), (None, None),
+                           (tr("Import (.xbar.json)…"), self.import_xbar), (tr("Export (.xbar.json)…"), self.export_xbar),
+                           (None, None), (tr("Generate…"), self.generate)):
             if text is None:
                 m.addSeparator()
                 continue
@@ -352,13 +342,12 @@ class InterconnectPage(ToolPage):
 
         def add(parent_item, bridge):
             sp = self.spec(bridge)
-            label = sp.module + ("  (üst)" if bridge is None else "")
+            label = sp.module + (tr("  (top)") if bridge is None else "")
             it = QTreeWidgetItem([label, f"{sp.nm}M · {sp.ns}S"])
             it.setData(0, Qt.ItemDataRole.UserRole, bridge.name if bridge else "")
             it.setFont(1, mono)
-            it.setToolTip(0, "Üst bus'ın interconnect'i" if bridge is None else
-                          f"{bridge.name} ({A.BRIDGE_LABEL}) arkasındaki interconnect · "
-                          f"{hex32(bridge.base)} – {hex32(bridge.base + A.window_of(self.proj, bridge) - 1)}")
+            it.setToolTip(0, tr("The top bus's interconnect") if bridge is None else
+                          tr("Interconnect behind {0} ({1}) · {2} – {3}").format(bridge.name, A.BRIDGE_LABEL, hex32(bridge.base), hex32(bridge.base + A.window_of(self.proj, bridge) - 1)))
             (parent_item.addChild if parent_item else self.level_tree.addTopLevelItem)(it)
             if (bridge.name if bridge else "") == self.level_name:
                 self.level_tree.setCurrentItem(it)
@@ -375,7 +364,7 @@ class InterconnectPage(ToolPage):
         spec = self.spec()
         self._loading = True
         self._fill_levels()
-        self.level_title.setText("CROSSBAR · " + ("ÜST BUS" if b is None else b.name))
+        self.level_title.setText(tr("CROSSBAR · ") + (tr("TOP BUS") if b is None else b.name))
         self.module_ed.setText(spec.module)
         self.module_ed.setPlaceholderText(f"axil_xbar_{b.name}" if b else "axil_xbar")
         self.style_cb.setCurrentIndex(max(0, self.style_cb.findData(self.style)))
@@ -393,32 +382,31 @@ class InterconnectPage(ToolPage):
             if i < fixed:
                 name.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 name.setForeground(QColor(t["accent"]))
-                name.setToolTip(f"{A.BRIDGE_LABEL} {b.name}: üst bus'tan gelen istekler (sabit)")
+                name.setToolTip(tr("{0} {1}: requests from the upper bus (fixed)").format(A.BRIDGE_LABEL, b.name))
                 self.master_tbl.setItem(i, 1, name)
                 self.master_tbl.removeCellWidget(i, 2)
             else:
                 self.master_tbl.setItem(i, 1, name)
                 ui.table_row_actions(self.master_tbl, i, 2, lambda *_, i=i: self.rename_master(i),
                                      lambda *_, i=i: self.delete_master(i),
-                                     edit_tip="Master'ın adını değiştir", delete_tip="Master'ı sil")
-        self.master_note.setText("" if b is None else
-                                 f"MASTER0 her zaman {b.name}'dir (üst bus'tan gelen istekler). Eklenen master'lar "
-                                 "(ör. yerel DMA) yalnızca bu interconnect'in slave'lerine erişir.")
+                                     edit_tip=tr("Rename master"), delete_tip=tr("Delete master"))
+        self.master_note.label.setText("" if b is None else tr("MASTER0 is {0} (requests from the upper bus).").format(b.name))
+        self.master_note.help.set_text("" if b is None else tr("MASTER0 is always {0} (requests from the upper bus). Added masters (e.g. a local DMA) reach only this interconnect's slaves.").format(b.name))
         self.master_note.setVisible(b is not None)
         if b is None:
-            self.slave_note.setText("Üst bus'ın slave portları adres haritasından gelir (port j = haritadaki j. satır). "
-                                    "Ad, adres, boyut ve sıra Address Map Editor'da değiştirilir; satıra çift tıkla "
-                                    "(Sub-bus Bridge satırı: arkasındaki interconnect'e geç).")
+            short = tr("Slave ports come from the address map (port j = row j).")
+            more = tr("The top bus's slave ports come from the address map (port j = row j). Name, address, size and order are changed in the Address Map Editor; double-click a row (a Sub-bus Bridge row opens the interconnect behind it).")
         else:
-            self.slave_note.setText(f"{b.name} arkasındaki interconnect: slave'ler {b.name} penceresinin içindedir "
-                                    f"({hex32(b.base + b.self_window)} – "
-                                    f"{hex32(b.base + A.window_of(self.proj, b) - 1)}); adresler globaldir.")
+            short = tr("Slaves inside the {0} window; addresses are global.").format(b.name)
+            more = tr("Interconnect behind {0}: its slaves are inside the {1} window ({2} – {3}); addresses are global.").format(b.name, b.name, hex32(b.base + b.self_window), hex32(b.base + A.window_of(self.proj, b) - 1))
+        self.slave_note.label.setText(short)
+        self.slave_note.help.set_text(more)
         sel = self._sel_slave()
         bad = A.overlapping(self.proj, b) | (A.outside(self.proj, b) if b is not None else set())
         insts = self.proj.level(b)
         self.slave_tbl.setRowCount(spec.ns)
         for j, (inst, s) in enumerate(zip(insts, spec.slaves)):
-            kind = A.BRIDGE_LABEL if inst.bridge else "harici" if inst.external else inst.ip
+            kind = A.BRIDGE_LABEL if inst.bridge else tr("external") if inst.external else inst.ip
             cells = [(f"SLAVE{j}", True), (s.name, False), (kind, False), (hex32(s.base), True),
                      (size_text(s.window), False)]
             for col, (text, is_mono) in enumerate(cells):
@@ -426,8 +414,8 @@ class InterconnectPage(ToolPage):
                 if is_mono:
                     it.setFont(mono)
                 it.setToolTip(f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}\nMASK {hex32(s.mask)}\n"
-                              + ("Çift tık: arkasındaki interconnect'e geç" if inst.bridge
-                                 else "Çift tık: Address Map Editor'da düzenle"))
+                              + (tr("Double-click: go to the interconnect behind it") if inst.bridge
+                                 else tr("Double-click: edit in the Address Map Editor")))
                 if col == 2 and inst.bridge:
                     it.setForeground(QColor(t["accent"]))
                 if col == 3 and j in bad:
@@ -442,7 +430,7 @@ class InterconnectPage(ToolPage):
         errs = self.all_errors()
         if not errs:
             n = len(A.levels(self.proj))
-            self.issues.ok_text = (f"Hata yok · {n} interconnect · seçili: {spec.nm} master, {spec.ns} slave")
+            self.issues.ok_text = (tr("No errors · {0} interconnects · selected: {1} masters, {2} slaves").format(n, spec.nm, spec.ns))
         self.issues.set_issues(errs)
         self.gen_btn.setEnabled(not errs)
         self._update_diagram()
@@ -450,14 +438,14 @@ class InterconnectPage(ToolPage):
     def all_errors(self):
         """Errors of every interconnect and of the address map."""
         if not self.proj.instances:
-            return ["Adres haritası boş: Address Map Editor'da IP ekle."]
+            return [tr("Address map is empty: add IPs in the Address Map Editor.")]
         errs = []
         for b in A.levels(self.proj):
             sp = self.spec(b)
             where = "" if b is None else f"{sp.module}: "
             if not sp.slaves:
                 if b is None:
-                    errs.append("Üst bus'ta slave yok")
+                    errs.append(tr("No slaves on the top bus"))
                 continue            # an empty Sub-bus Bridge is reported by the address map below
             errs += [where + e for e in sp.validate()]
         for e in A.validate(self.proj):
@@ -525,7 +513,7 @@ class InterconnectPage(ToolPage):
             {"simple": "", "axi": "_axi", "axi_full": "_axi_detay", "packed": "_hdld"}[self.sig_cb.currentData()]
         stem = re.sub(r"[^\w.-]+", "_", stem)
         ext, flt = (".pdf", "PDF (*.pdf)") if fmt == "pdf" else (".drawio", "draw.io (*.drawio)")
-        path, _ = QFileDialog.getSaveFileName(self, "Blok diyagramını kaydet",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Save block diagram"),
                                               os.path.join(os.path.dirname(self.ctx.path or ROOT), stem + ext), flt)
         if not path:
             return
@@ -537,17 +525,17 @@ class InterconnectPage(ToolPage):
             else:
                 d.export_drawio(path, stem)
         except (OSError, RuntimeError) as exc:
-            return self.error("Kaydedilemedi", exc)
-        self.status(f"Blok diyagramı kaydedildi ({self.sig_cb.currentText()}): {path}")
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Block diagram saved ({0}): {1}").format(self.sig_cb.currentText(), path))
 
     def _files(self):
         out = []
         for b in A.levels(self.proj):
             sp = self.spec(b)
-            out.append(((b.name if b else "", "main"), f"{sp.module}.v  —  ayrık AXI portlu wrapper"))
+            out.append(((b.name if b else "", "main"), tr("{0}.v  —  wrapper with separate AXI ports").format(sp.module)))
             if sp.packed:
-                out.append(((b.name if b else "", "pk"), f"{sp.module}_pk.v  —  HDL Designer wrapper'ı (REQ/RSP)"))
-        out.append((("", "core"), "axilxbar.v  —  ZipCPU, yalnızca parametreleriyle (değiştirilmez)"))
+                out.append(((b.name if b else "", "pk"), tr("{0}_pk.v  —  HDL Designer wrapper (REQ/RSP)").format(sp.module)))
+        out.append((("", "core"), tr("axilxbar.v  —  ZipCPU, used through its parameters only (not changed)")))
         return out
 
     def spec_data(self, scope=None):
@@ -561,12 +549,12 @@ class InterconnectPage(ToolPage):
         start = os.path.dirname(self.ctx.path or ROOT)
         try:
             if self.spec_scope.currentData() == "all":
-                d = QFileDialog.getExistingDirectory(self, "HDL spec'lerin klasörü", start)
+                d = QFileDialog.getExistingDirectory(self, tr("Folder for the HDL specs"), start)
                 if not d:
                     return
                 for x in self.spec_data("all")["interconnects"]:
                     H.save(x, os.path.join(d, H.file_name(x)))
-                self.status(f"{len(A.levels(self.proj))} HDL spec kaydedildi: {d}")
+                self.status(tr("{0} HDL specs saved: {1}").format(len(A.levels(self.proj)), d))
                 return
             x = self.spec_data("level")
             path, _ = QFileDialog.getSaveFileName(self, "HDL spec", os.path.join(start, H.file_name(x)),
@@ -575,8 +563,8 @@ class InterconnectPage(ToolPage):
                 return
             H.save(x, path)
         except OSError as exc:
-            return self.error("Kaydedilemedi", exc)
-        self.status(f"Kaydedildi: {path}")
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Saved: {0}").format(path))
 
     def _refresh_preview(self):
         if self.tabs.is_shown(self.spec_view):
@@ -596,15 +584,15 @@ class InterconnectPage(ToolPage):
         lvl, which = files[i][0]
         bridge = self.proj.get_instance(lvl) if lvl else None
         spec = self.spec(bridge)
-        errs = spec.validate() if spec.slaves else ["Bu interconnect'te slave yok"]
+        errs = spec.validate() if spec.slaves else [tr("This interconnect has no slaves")]
         if which == "core":
             try:
                 with open(os.path.join(ROOT, "hdl", "axilxbar.v"), encoding="utf-8") as fh:
                     text = fh.read()
             except OSError as exc:
-                text = f"// hdl/axilxbar.v okunamadı: {exc}"
+                text = tr("// cannot read hdl/axilxbar.v: {0}").format(exc)
         elif errs:
-            text = "// Ayarlarda hata var, Verilog üretilemiyor:\n// " + "\n// ".join(errs)
+            text = tr("// The settings have errors, no Verilog can be generated:\n//") + "\n// ".join(errs)
         else:                             # made from the HDL spec alone, as when generating
             d = H.xbar_hdlspec(spec)
             text = H.verilog(d, f"{spec.module}_pk.v" if which == "pk" else f"{spec.module}.v")
@@ -660,10 +648,9 @@ class InterconnectPage(ToolPage):
         if not 0 <= k < len(names):
             return
         if self.level is None and len(names) == 1:
-            QMessageBox.warning(self, self.title, "Interconnect'te en az bir master olmalı.")
+            QMessageBox.warning(self, self.title, tr("An interconnect needs at least one master."))
             return
-        if not ui.confirm(self, "Master'ı sil", f"MASTER{i} ({names[k]}) silinecek. Sonraki master'ların "
-                                                 "port numarası bir azalır."):
+        if not ui.confirm(self, tr("Delete master"), tr("MASTER{0} ({1}) will be deleted. The port numbers of the following masters go down by one.").format(i, names[k])):
             return
         del names[k]
         self._set_masters(names)
@@ -673,21 +660,21 @@ class InterconnectPage(ToolPage):
         names = self.masters
         if not 0 <= k < len(names):
             return
-        name, ok = QInputDialog.getText(self, f"MASTER{i}", "Ad:", text=names[k])
+        name, ok = QInputDialog.getText(self, f"MASTER{i}", tr("Name:"), text=names[k])
         if ok and name.strip():
             names[k] = name.strip()
             self._set_masters(names)
 
     # ================================================================ files / output
     def import_xbar(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Interconnect ayar dosyası", os.path.dirname(self.ctx.path or ROOT),
+        path, _ = QFileDialog.getOpenFileName(self, tr("Interconnect settings file"), os.path.dirname(self.ctx.path or ROOT),
                                               XBAR_FILTER)
         if not path:
             return
         try:
             spec = X.XbarSpec.load(path)
         except Exception as exc:  # noqa: BLE001 - shown to the user
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         b = self.level
         d = self._top()
         d["style"] = spec.style if spec.style in STYLE_SHORT else "packed"
@@ -699,11 +686,11 @@ class InterconnectPage(ToolPage):
             b.xbar = {"module": spec.module, "masters": names[1:]}     # MASTER0 stays the bridge
         self.proj.interconnect = d
         self._after_change()
-        self.status(f"Crossbar ayarları alındı: {path} (slave'ler ve adresler Address Map Editor'dan gelir)")
+        self.status(tr("Crossbar settings taken from {0} (slaves and addresses come from the Address Map Editor)").format(path))
 
     def export_xbar(self):
         spec = self.spec()
-        path, _ = QFileDialog.getSaveFileName(self, "Interconnect ayar dosyası",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Interconnect settings file"),
                                               os.path.join(os.path.dirname(self.ctx.path or ROOT),
                                                            f"{spec.module}.xbar.json"), XBAR_FILTER)
         if not path:
@@ -711,16 +698,15 @@ class InterconnectPage(ToolPage):
         try:
             spec.save(path)
         except OSError as exc:
-            return self.error("Kaydedilemedi", exc)
-        self.status(f"Kaydedildi: {path}")
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Saved: {0}").format(path))
 
     def generate(self):
         errs = self.all_errors()
         if errs:
-            QMessageBox.warning(self, self.title, "Interconnect'lerde ya da adres haritasında hata var. Alt çubukta "
-                                                  "gösterilen hataları düzeltip tekrar dene.")
+            QMessageBox.warning(self, self.title, tr("The interconnects or the address map have errors. Fix the errors shown in the status bar and try again."))
             return
-        outdir = QFileDialog.getExistingDirectory(self, "Çıktı klasörü", os.path.dirname(self.ctx.path or ROOT))
+        outdir = QFileDialog.getExistingDirectory(self, tr("Output folder"), os.path.dirname(self.ctx.path or ROOT))
         if not outdir:
             return
         paths = []
@@ -728,13 +714,10 @@ class InterconnectPage(ToolPage):
             for b in A.levels(self.proj):
                 paths += X.write_xbar(self.spec(b), outdir)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Üretim başarısız", exc)
-        hint = ("<modül>.v: MASTER<i>_AXI_* ve SLAVE<j>_AXI_* portları master'ların M_AXI_* ve slave'lerin S_AXI_* "
-                "portlarına bağlanır. Bir Sub-bus Bridge, üst interconnect'in SLAVE portuna ve arkasındaki "
-                "interconnect'in MASTER0 portuna bağlanan bloktur (bu araç onun için dosya üretmez).")
+            return self.error(tr("Generation failed"), exc)
+        hint = (tr("<module>.v: the MASTER<i>_AXI_* and SLAVE<j>_AXI_* ports connect to the masters' M_AXI_* and the slaves' S_AXI_* ports. A Sub-bus Bridge is the block connected to a SLAVE port of the upper interconnect and to MASTER0 of the interconnect behind it (no file is generated for it)."))
         if self.style == "packed":
-            hint += "\n<modül>_pk.v (HDL Designer) <modül>.v'yi sarar: port başına MASTER<i>/SLAVE<j>_AXI_REQ/RSP."
-        QMessageBox.information(self, "Üretim tamamlandı",
+            hint += tr("\n<module>_pk.v (HDL Designer) wraps <module>.v: MASTER<i>/SLAVE<j>_AXI_REQ/RSP per port.")
+        QMessageBox.information(self, tr("Generation complete"),
                                 f"{outdir}\n\n" + "\n".join(os.path.basename(p) for p in paths)
-                                + f"\n\n{hint}\n\naxilxbar yalnızca parametreleriyle yapılandırılır. HDL projesine "
-                                  "hdl/ klasöründeki axilxbar.v, addrdecode.v ve skidbuffer.v de eklenmelidir.")
+                                + tr("\n\n{0}\n\naxilxbar is configured through its parameters only. Also add axilxbar.v, addrdecode.v and skidbuffer.v from the hdl/ folder to the HDL project.").format(hint))

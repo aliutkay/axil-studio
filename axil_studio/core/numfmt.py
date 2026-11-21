@@ -11,18 +11,19 @@ bool for 1-bit fields, hex otherwise.
 """
 
 import re
+from axil_studio.i18n import tr
 
 BASE_FORMATS = [
     ("hex", "Hex"),
-    ("udec", "Unsigned decimal"),
-    ("sdec", "Signed decimal (2's complement)"),
+    ("udec", tr("Unsigned decimal")),
+    ("sdec", tr("Signed decimal (2's complement)")),
     ("bin", "Binary"),
-    ("oct", "Octal"),
+    ("oct", tr("Octal")),
     ("bool", "Boolean"),
-    ("ascii", "ASCII karakter"),
-    ("ufix", "Unsigned fixed point (Q)"),
-    ("sfix", "Signed fixed point (Q)"),
-    ("enum", "Değer anlamı (enum)"),
+    ("ascii", tr("ASCII character")),
+    ("ufix", tr("Unsigned fixed point (Q)")),
+    ("sfix", tr("Signed fixed point (Q)")),
+    ("enum", tr("Value meaning (enum)")),
 ]
 LABELS = dict(BASE_FORMATS)
 SHORT = {"hex": "hex", "udec": "uint", "sdec": "int", "bin": "bin", "oct": "oct", "bool": "bool",
@@ -50,7 +51,7 @@ def label(fmt, width=32):
     base, frac = split(fmt, width)
     if base in ("ufix", "sfix"):
         return f"{SHORT[base]} Q{width - frac}.{frac}" if base == "ufix" else f"{SHORT[base]} Q{width - frac - 1}.{frac}"
-    return SHORT[base] + ("" if fmt else " (oto)")
+    return SHORT[base] + ("" if fmt else tr(" (auto)"))
 
 
 def to_signed(value, width):
@@ -107,7 +108,7 @@ def parse_value(text, width, fmt="", meanings=None):
     base, frac = split(fmt, width)
     s = str(text).strip().replace("_", "").replace(" ", "")
     if not s:
-        raise ValueError("Boş değer")
+        raise ValueError(tr("Empty value"))
     mask = (1 << width) - 1
     low = s.lower()
 
@@ -128,13 +129,13 @@ def parse_value(text, width, fmt="", meanings=None):
         try:
             x = float(s)
         except ValueError:
-            raise ValueError(f"'{text}' bir sayı değil") from None
+            raise ValueError(tr("'{0}' is not a number").format(text)) from None
         return _check(round(x * (1 << frac)), width, signed=base == "sfix")
     radix = {"hex": 16, "bin": 2, "oct": 8}.get(base, 10)
     try:
         v = int(s, radix)
     except ValueError:
-        raise ValueError(f"'{text}' {LABELS.get(base, base)} olarak okunamadı") from None
+        raise ValueError(tr("'{0}' cannot be read as {1}").format(text, LABELS.get(base, base))) from None
     if v < 0 or base == "sdec":
         return _check(v, width, signed=True)
     return v if v <= mask else _check(v, width)
@@ -144,10 +145,10 @@ def _check(v, width, signed=False):
     if v < 0 or signed:
         lo = -(1 << (width - 1))
         if not lo <= v < (1 << width):
-            raise ValueError(f"{v}, {width} bitlik signed aralığa sığmıyor ({lo}..{(1 << (width - 1)) - 1})")
+            raise ValueError(tr("{0} does not fit in the {1}-bit signed range ({2}..{3})").format(v, width, lo, (1 << (width - 1)) - 1))
         return v & ((1 << width) - 1)
     if v >> width:
-        raise ValueError(f"{v} ({v:#x}), {width} bite sığmıyor (en fazla {(1 << width) - 1})")
+        raise ValueError(tr("{0} ({1:#x}) does not fit in {2} bits (at most {3})").format(v, v, width, (1 << width) - 1))
     return v
 
 
@@ -163,7 +164,7 @@ def all_views(value, width, frac=0):
     """[(label, text)] of the value in every format, for tooltips and the debug panel."""
     rows = [("Hex", format_value(value, width, "hex")), ("Unsigned", format_value(value, width, "udec")),
             ("Signed", format_value(value, width, "sdec")), ("Binary", format_value(value, width, "bin")),
-            ("Octal", format_value(value, width, "oct"))]
+            (tr("Octal"), format_value(value, width, "oct"))]
     if width % 8 == 0:
         rows.append(("ASCII", format_value(value, width, "ascii")))
     if frac:

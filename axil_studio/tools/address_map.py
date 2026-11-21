@@ -27,6 +27,7 @@ from axil_studio import ROOT, icons, theme, ui
 from axil_studio.dialogs import BridgeDialog, SlaveDialog, size_text, window_choices
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
+from axil_studio.i18n import tr
 
 # tree columns
 C_PORT, C_NAME, C_IP, C_ALOCK, C_ADDR, C_SLOCK, C_SIZE, C_ACT = range(8)
@@ -91,7 +92,7 @@ class MemoryMap(QWidget):
             p.setBrush(QColor(t["surface2"]))
             p.drawRoundedRect(r, 6, 6)
             p.setPen(QColor(t["muted"]))
-            p.drawText(r, Qt.AlignmentFlag.AlignCenter, "Adres haritası boş")
+            p.drawText(r, Qt.AlignmentFlag.AlignCenter, tr("Address map is empty"))
             return
         self._level(p, t, None, r, 0)
         sl = A.xbar_slaves(self.project)
@@ -103,7 +104,7 @@ class MemoryMap(QWidget):
         lo = min(s.base for s in sl)
         hi = max(s.base + s.window for s in sl) - 1
         p.drawText(QRectF(r.left(), r.bottom() + 4, r.width(), 16), Qt.AlignmentFlag.AlignRight,
-                   f"{n} slave · {len(self.project.bridges())} {BRIDGE} · {hex32(lo)} – {hex32(hi)}")
+                   tr("{0} slaves · {1} {2} · {3} – {4}").format(n, len(self.project.bridges()), BRIDGE, hex32(lo), hex32(hi)))
 
     def _level(self, p, t, bridge, r, depth):
         """Draw the entries of one bus (and a bridge's own window) side by side in `r`."""
@@ -150,7 +151,7 @@ class MemoryMap(QWidget):
                 p.setPen(QPen(QColor(bb), 1))
                 p.drawRoundedRect(inner, 4, 4)
                 p.setFont(small)
-                text = p.fontMetrics().elidedText(f"kendi · {size_text(win)}", Qt.TextElideMode.ElideRight,
+                text = p.fontMetrics().elidedText(tr("own · {0}").format(size_text(win)), Qt.TextElideMode.ElideRight,
                                                   int(inner.width() - 12))
                 tw = p.fontMetrics().horizontalAdvance(text) + 10
                 label = QRectF(inner.center().x() - tw / 2, inner.center().y() - 9, tw, 18)
@@ -181,7 +182,7 @@ class MemoryMap(QWidget):
                 else:
                     p.setPen(QColor(t["muted"]))
                     p.setFont(small)
-                    p.drawText(body, Qt.AlignmentFlag.AlignCenter, "boş")
+                    p.drawText(body, Qt.AlignmentFlag.AlignCenter, tr("empty"))
                 continue
             bf, bb, bt = theme.block_colors("ext" if s.external else "ip", t)
             p.setBrush(QColor(bf))
@@ -216,10 +217,9 @@ class MemoryMap(QWidget):
             self.setCursor(Qt.CursorShape.ArrowCursor)
             return
         w = A.window_of(self.project, inst)
-        kind = BRIDGE if inst.bridge else "harici slave" if inst.external else inst.ip
+        kind = BRIDGE if inst.bridge else tr("external slave") if inst.external else inst.ip
         QToolTip.showText(ev.globalPosition().toPoint(),
-                          f"{inst.name} · {kind}\n{hex32(inst.base)} – {hex32(inst.base + w - 1)}\n"
-                          f"pencere {size_text(w)}, kullanılan {A.span_of(self.project, inst):#x}", self)
+                          tr("{0} · {1}\n{2} – {3}\nwindow {4}, used {5:#x}").format(inst.name, kind, hex32(inst.base), hex32(inst.base + w - 1), size_text(w), A.span_of(self.project, inst)), self)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
     def mousePressEvent(self, ev):
@@ -301,12 +301,9 @@ class AddressMapPage(ToolPage):
     tool_id = "addrmap"
     title = "Address Map Editor"
     short_title = "Address Map Editor"
-    subtitle = "IP'leri adres haritasına yerleştir: base adres, pencere boyutu, port sırası ve Sub-bus Bridge'ler."
-    description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
-                   "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
-                   "çakışma kontrolü yapar.")
+    subtitle = tr("Place IPs in the address map: base address, window size, port order and Sub-bus Bridges.")
+    description = (tr("Places the project's IPs in the address map (an IP can be used several times), builds a bus hierarchy with Sub-bus Bridges, gives automatic or fixed addresses and checks alignment and overlaps."))
     icon_name = "addrmap"
-    version = "0.3.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -314,50 +311,38 @@ class AddressMapPage(ToolPage):
         self._collapsed = set()
 
         bar = self.header       # the tool's commands sit in the top bar
-        self.regs_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regs,
-                                "Seçili IP'nin register haritasını Register Map Editor'da aç")
-        bar.add("Excel'e aktar…", "file", self.export_xlsx, "Tüm adres haritası ve registerlar (.xlsx)",
+        self.regs_btn = bar.add(tr("Edit register map"), "regmap", self.edit_regs,
+                                tr("Open the selected IP's register map in the Register Map Editor"))
+        bar.add(tr("Export to Excel…"), "file", self.export_xlsx, tr("The whole address map and its registers (.xlsx)"),
                 regmap_xlsx.available())
         bar.sep()
         bar.add("Interconnect Configurator", "interconnect", lambda: self.open_tool("interconnect"),
-                "Bu adres haritasıyla crossbar'ları yapılandır ve üret")
+                tr("Configure and generate the crossbars of this address map"))
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
 
         # ---- left: start address + default window
         left = ui.Card(margins=16, spacing=10)
-        left.lay.addWidget(ui.label("BAŞLANGIÇ ADRESİ", "section"))
+        left.lay.addWidget(ui.section(tr("START ADDRESS"), tr("Automatic slaves are placed from this address, in list order, aligned to their windows (inside a Sub-bus Bridge: after its own window). A typed address is locked; the lock next to an address locks it or makes it automatic again.")))
         self.start_ed = QLineEdit()
         self.start_ed.setProperty("mono", "true")
-        self.start_ed.setToolTip("Üst bus'taki otomatik adresli slave'ler bu adresten itibaren liste sırasıyla yerleşir")
+        self.start_ed.setToolTip(tr("Automatic slaves on the top bus are placed from this address in list order"))
         self.start_ed.editingFinished.connect(self._start_changed)
         left.lay.addWidget(self.start_ed)
-        left.lay.addWidget(ui.label("Otomatik adresli slave'ler bu adresten başlayarak liste sırasıyla, pencere "
-                                    "boyutlarına hizalı yerleşir; bir Sub-bus Bridge'in içindekiler onun kendi "
-                                    "penceresinden sonra. Adres hücresine yazılan değer kilitlenir; "
-                                    "adresin yanındaki kilit düğmesi adresi kilitler ya da otomatiğe döndürür.", "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.label("VARSAYILAN PENCERE", "section"))
+        left.lay.addWidget(ui.section(tr("DEFAULT WINDOW"), tr("Every slave without a hand-set size gets this window (larger when its IP needs more). A size chosen in the Size column, or its lock, keeps that slave's size.")))
         self.window_cb = QComboBox()
         for w in window_choices(0x100):
             self.window_cb.addItem(f"{size_text(w)}  ({w:#x})", w)
-        self.window_cb.setToolTip("Boyutu elle seçilmemiş her slave'e ayrılan adres aralığı")
+        self.window_cb.setToolTip(tr("Window of every slave whose size is not set by hand"))
         self.window_cb.currentIndexChanged.connect(self._default_window_changed)
         left.lay.addWidget(self.window_cb)
-        left.lay.addWidget(ui.label("Boyutu elle seçilmemiş her slave bu pencereyi alır (IP daha büyükse "
-                                    "kendiliğinden büyür). Boyut sütununda seçilen boyut ya da boyutun yanındaki "
-                                    "kilit o slave'in boyutunu kilitler; kilit açılınca yeniden bu ayarı izler.",
-                                    "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.label(BRIDGE.upper(), "section"))
-        left.lay.addWidget(ui.label("Adres haritasında bir pencere kaplar; penceresinin başı köprünün kendisine "
-                                    "ayrılabilir, geri kalan adresler değiştirilmeden arkasındaki interconnect'e "
-                                    "iletilir. İçine IP, harici slave ve başka Sub-bus Bridge eklenir; satırlar "
-                                    "sürükle-bırak ya da sağ tık → Taşı ile bus'lar arasında taşınır (başka "
-                                    "bus'a taşınan sabit adres otomatiğe döner).", "muted", wrap=True))
+        left.lay.addWidget(ui.section(BRIDGE.upper(), tr("Takes one window in the address map; its start can be kept for the bridge itself, the rest is forwarded unchanged to the interconnect behind it. Add IPs, external slaves and more Sub-bus Bridges into it; move rows between buses by drag and drop or right-click → Move (a fixed address becomes automatic on another bus).")))
+        left.lay.addWidget(ui.label(tr("A sub-bus with its own interconnect, inside one window of this bus."), "muted", wrap=True))
         left.lay.addStretch(1)
-        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
+        self.issues = ui.IssueList(tr("No errors"))     # shown in the window's status bar
         left.setMinimumWidth(300)
         split.addWidget(left)
 
@@ -369,7 +354,7 @@ class AddressMapPage(ToolPage):
         right.lay.addWidget(self.map)
         self.tree = AddressTree()
         self.tree.setHeader(LockHeader(self.tree))
-        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "", "Adres", "", "Boyut", ""])
+        self.tree.setHeaderLabels(["Port", tr("Name"), tr("Type / IP"), "", tr("Address"), "", tr("Size"), ""])
         hdr = self.tree.header()
         hdr.setSectionsClickable(True)
         hdr.sectionClicked.connect(self._header_clicked)
@@ -390,18 +375,17 @@ class AddressMapPage(ToolPage):
         right.lay.addWidget(self.tree, 1)
         sbar = QHBoxLayout()
         sbar.setSpacing(4)
-        sbar.addWidget(ui.button("IP Kütüphanesinden slave ekle…", "plus", "ghost", self.add_ip,
-                                 "IP Library'den bir IP seç ve seçili bus'a ekle (aynı IP birden çok kez "
-                                 "eklenebilir: <IP>_0, <IP>_1 …)"))
-        sbar.addWidget(ui.button("Harici slave ekle…", "plus", "ghost", self.add_external,
-                                 "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle"))
-        sbar.addWidget(ui.button(f"{BRIDGE} ekle…", "plus", "ghost", self.add_bridge,
-                                 "Arkasında kendi interconnect'i olan bir alt bus ekle"))
+        sbar.addWidget(ui.button(tr("Add slave from IP Library…"), "plus", "ghost", self.add_ip,
+                                 tr("Pick an IP in the IP Library and add it to the selected bus (an IP can be added several times: <IP>_0, <IP>_1 …)")))
+        sbar.addWidget(ui.button(tr("Add external slave…"), "plus", "ghost", self.add_external,
+                                 tr("Add a slave that has no register map in the project (e.g. a memory, a ready-made IP)")))
+        sbar.addWidget(ui.button(tr("Add {0}…").format(BRIDGE), "plus", "ghost", self.add_bridge,
+                                 tr("Add a sub-bus with its own interconnect behind it")))
         sbar.addStretch(1)
-        sbar.addWidget(ui.button("Adrese göre sırala", None, "ghost", self.sort_slaves,
-                                 "Her bus'taki listeyi (port numaralarını) adres sırasına diz"))
-        sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), "Bus içinde yukarı taşı"))
-        sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), "Bus içinde aşağı taşı"))
+        sbar.addWidget(ui.button(tr("Sort by address"), None, "ghost", self.sort_slaves,
+                                 tr("Order every bus (port numbers) by address")))
+        sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), tr("Move up in the bus")))
+        sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), tr("Move down in the bus")))
         right.lay.addLayout(sbar)
         split.addWidget(right)
         split.setStretchFactor(1, 1)
@@ -413,13 +397,13 @@ class AddressMapPage(ToolPage):
     def build_menus(self, menubar):
         m = menubar.addMenu("&Address Map")
         win = self.window()
-        for text, slot in (("IP Kütüphanesinden slave ekle…", self.add_ip), ("Harici slave ekle…", self.add_external),
-                           (f"{BRIDGE} ekle…", self.add_bridge), (None, None),
-                           ("Adrese göre sırala", self.sort_slaves),
-                           ("Tüm adresleri kilitle / kilitleri aç", self.toggle_all_addr_locks),
-                           ("Tüm boyutları kilitle / kilitleri aç", self.toggle_all_size_locks), (None, None),
-                           ("Register haritasını düzenle", self.edit_regs),
-                           ("Excel'e aktar…", self.export_xlsx), (None, None),
+        for text, slot in ((tr("Add slave from IP Library…"), self.add_ip), (tr("Add external slave…"), self.add_external),
+                           (tr("Add {0}…").format(BRIDGE), self.add_bridge), (None, None),
+                           (tr("Sort by address"), self.sort_slaves),
+                           (tr("Lock / unlock every address"), self.toggle_all_addr_locks),
+                           (tr("Lock / unlock every size"), self.toggle_all_size_locks), (None, None),
+                           (tr("Edit register map"), self.edit_regs),
+                           (tr("Export to Excel…"), self.export_xlsx), (None, None),
                            ("Interconnect Configurator", lambda: self.open_tool("interconnect"))):
             if text is None:
                 m.addSeparator()
@@ -457,7 +441,7 @@ class AddressMapPage(ToolPage):
             except ValueError:
                 pass
             self._refresh()
-            QMessageBox.warning(self, self.title, f"Yapılamadı: {err}.\nPencereyi büyüt ya da otomatiğe çevir.")
+            QMessageBox.warning(self, self.title, tr("Not possible: {0}.\nMake the window larger or automatic.").format(err))
             return False
         self._changed(select() if callable(select) else select)
         return result
@@ -498,11 +482,10 @@ class AddressMapPage(ToolPage):
         all_a = bool(insts) and all(i.fixed for i in insts)
         all_s = bool(insts) and all(i.window for i in insts)
         head = self.tree.headerItem()
-        for col, on, what, more in ((C_ALOCK, all_a, "adres", "kilitli adres sabit kalır, açık olan otomatik verilir"),
-                                    (C_SLOCK, all_s, "boyut", "kilitli boyut sabit kalır, açık olan varsayılanı "
-                                                              "izler ya da içerikle büyür")):
+        for col, on, what, more in ((C_ALOCK, all_a, tr("addresses"), tr("a locked address stays, an unlocked one is automatic")),
+                                    (C_SLOCK, all_s, tr("sizes"), tr("a locked size stays, an unlocked one follows the default or grows with its contents"))):
             self.tree.header().locks[col] = on
-            head.setToolTip(col, (f"Tıkla: tüm {what} kilitlerini aç" if on else f"Tıkla: tüm {what}ları kilitle")
+            head.setToolTip(col, (tr("Click: unlock all {0}").format(what) if on else tr("Click: lock all {0}").format(what))
                             + f" ({more})")
         if sel in self._items:
             self.tree.setCurrentItem(self._items[sel])
@@ -510,13 +493,13 @@ class AddressMapPage(ToolPage):
         cur = self._sel_inst()
         self.map.set_project(self.proj, cur.name if cur else None)
         errs = A.validate(self.proj) if self.proj.instances else [
-            "Adres haritası boş: IP Kütüphanesinden slave ekle, Harici slave ekle ya da Sub-bus Bridge ekle."]
+            tr("Address map is empty: add a slave from the IP Library, an external slave or a Sub-bus Bridge.")]
         if not errs:
             sl = A.xbar_slaves(self.proj)
             lo = min(s.base for s in sl)
             hi = max(s.base + s.window for s in sl) - 1
             nb = len(self.proj.bridges())
-            self.issues.ok_text = (f"Hata yok · {len(self.proj.leaf_instances())} slave"
+            self.issues.ok_text = (tr("No errors · {0} slaves").format(len(self.proj.leaf_instances()))
                                    + (f" · {nb} {BRIDGE}" if nb else "") + f" · {hex32(lo)} – {hex32(hi)}")
         self.issues.set_issues(errs)
         self._sync_buttons()
@@ -529,15 +512,14 @@ class AddressMapPage(ToolPage):
         sl = A.xbar_slaves(self.proj, bridge)
         bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
         if bridge is not None and bridge.self_window:
-            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, "", hex32(bridge.base), "",
+            own = QTreeWidgetItem(["", tr("own window"), BRIDGE, "", hex32(bridge.base), "",
                                    size_text(bridge.self_window), ""])
             own.setData(0, ROLE, "")
             own.setFlags(Qt.ItemFlag.ItemIsEnabled)
             own.setFont(C_ADDR, mono)
             for c in range(C_ACT):
                 own.setForeground(c, muted)
-            own.setToolTip(C_NAME, f"{bridge.name} köprüsünün kendisine ayrılan alan (iletilmez): "
-                                   f"{hex32(bridge.base)} – {hex32(bridge.base + bridge.self_window - 1)}")
+            own.setToolTip(C_NAME, tr("Space kept for the bridge {0} itself (not forwarded): {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + bridge.self_window - 1)))
             parent_item.addChild(own)
         ro = (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled)
         for j, (inst, s) in enumerate(zip(items, sl)):
@@ -545,9 +527,9 @@ class AddressMapPage(ToolPage):
             if inst.bridge:
                 kind = BRIDGE
             elif inst.external:
-                kind = "harici"
+                kind = tr("external")
             elif ip is None:
-                kind = f"{inst.ip} (projede yok)"
+                kind = tr("{0} (not in the project)").format(inst.ip)
             else:
                 kind = ip.name + (f" {ip.version}" if ip.version else "")
             it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, "", hex32(s.base), "", "", ""])
@@ -558,27 +540,25 @@ class AddressMapPage(ToolPage):
                                                            else Qt.ItemFlag.NoItemFlags))
             for c in (C_PORT, C_ADDR):
                 it.setFont(c, mono)
-            tip = (f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}\nMASK {hex32(s.mask)}\n"
-                   f"kullanılan {s.span:#x} byte")
+            tip = (tr("{0} – {1}\nMASK {2}\nused {3:#x} bytes").format(hex32(s.base), hex32(s.base + s.window - 1), hex32(s.mask), s.span))
             for c in (C_PORT, C_ADDR, C_SIZE):
                 it.setToolTip(c, tip)
-            it.setToolTip(C_NAME, "Çift tık: adını değiştir (Debug Bridge ve interconnect bu adı kullanır)")
+            it.setToolTip(C_NAME, tr("Double-click: rename (the Debug Bridge and the interconnect use this name)"))
             if inst.bridge:
                 f = it.font(C_NAME)
                 f.setBold(True)
                 it.setFont(C_NAME, f)
                 it.setForeground(C_IP, QColor(theme.block_colors("bridge", t)[2]))
-                it.setToolTip(C_IP, f"{len(inst.children)} slave · interconnect {inst.xbar_module}\n"
-                                    "Sürükleyip üstüne bırakılan satır bu bus'a taşınır")
+                it.setToolTip(C_IP, tr("{0} slaves · interconnect {1}\nA row dropped on it moves to this bus").format(len(inst.children), inst.xbar_module))
             else:
                 it.setForeground(C_IP, muted if inst.external else QColor(t["danger"]) if ip is None
                                  else QColor(t["text"]))
                 if ip is not None:
                     n = len(self.proj.instances_of(ip.name))
-                    it.setToolTip(C_IP, f"{ip.name}: {len(ip.registers)} register"
-                                        + (f" · haritada {n} kez" if n > 1 else "")
-                                        + "\nSağ tık: register haritasını düzenle")
-            it.setToolTip(C_ADDR, tip + "\nÇift tık: adres yaz (yazılan adres kilitlenir)")
+                    it.setToolTip(C_IP, tr("{0}: {1} registers").format(ip.name, len(ip.registers))
+                                        + (tr(" · {0}× in the map").format(n) if n > 1 else "")
+                                        + tr("\nRight-click: edit register map"))
+            it.setToolTip(C_ADDR, tip + tr("\nDouble-click: type an address (a typed address is locked)"))
             if j in bad:
                 it.setForeground(C_ADDR, QColor(t["danger"]))
             parent_item.addChild(it)
@@ -586,17 +566,17 @@ class AddressMapPage(ToolPage):
             self.tree.setItemWidget(it, C_SIZE, self._size_combo(inst, s))
             self.tree.setItemWidget(it, C_ALOCK, self._lock_button(
                 inst.fixed, lambda *_, i=inst: self._toggle_lock(i),
-                "Adres kilitli (sabit): tıkla, otomatik adrese dön" if inst.fixed else
-                "Adres otomatik: tıkla, bu adreste kilitle"))
+                tr("Address locked (fixed): click to make it automatic") if inst.fixed else
+                tr("Address automatic: click to lock it here")))
             self.tree.setItemWidget(it, C_SLOCK, self._lock_button(
                 bool(inst.window), lambda *_, i=inst: self._toggle_size_lock(i),
-                "Boyut kilitli: tıkla, " + ("içerikle büyüsün" if inst.bridge else "varsayılanı izlesin")
-                if inst.window else "Boyut otomatik: tıkla, bu boyutta kilitle"))
+                tr("Size locked: click to") + (tr("grow with its contents") if inst.bridge else tr("follow the default"))
+                if inst.window else tr("Size automatic: click to lock this size")))
             ui.tree_row_actions(self.tree, it, C_ACT, lambda *_, i=inst: self.edit_slave(i),
                                 lambda *_, i=inst: self.delete_slave(i),
-                                edit_tip="Ad, adres ve boyut",
-                                delete_tip="Adres haritasından çıkar" + (
-                                    " (içindekilerle birlikte)" if inst.bridge else " (IP tanımı projede kalır)"))
+                                edit_tip=tr("Name, address and size"),
+                                delete_tip=tr("Remove from the address map") + (
+                                    tr(" (with its contents)") if inst.bridge else tr(" (the IP definition stays in the project)")))
             if inst.bridge:
                 self._fill_level(inst, it)
                 it.setExpanded(inst.name not in self._collapsed)
@@ -622,14 +602,12 @@ class AddressMapPage(ToolPage):
         cb = QComboBox()
         if inst.bridge:
             need = A.content_end(self.proj, inst)
-            cb.addItem(f"otomatik · {size_text(A.auto_window(self.proj, inst))}", 0)
-            cb.setToolTip("Sub-bus Bridge penceresi: otomatik seçilirse kendi penceresi ve içindekiler büyüdükçe "
-                          "büyür; elle seçilen (kilitli) boyut sabit kalır, sığmayan slave eklenemez.")
+            cb.addItem(tr("automatic · {0}").format(size_text(A.auto_window(self.proj, inst))), 0)
+            cb.setToolTip(tr("Sub-bus Bridge window: automatic grows with its own window and contents; a size chosen by hand (locked) stays and a slave that does not fit cannot be added."))
         else:
             need = A.need_window(s.span, 4)
-            cb.addItem(f"varsayılan · {size_text(A.auto_window(self.proj, inst))}", 0)
-            cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar). Elle seçilen boyut bu "
-                          "slave'de kalır (kilitli); \"varsayılan\" Varsayılan pencere ayarını izler.")
+            cb.addItem(tr("default · {0}").format(size_text(A.auto_window(self.proj, inst))), 0)
+            cb.setToolTip(tr("Address range of the slave (at least what its IP uses). A size chosen here stays with this slave (locked); \"default\" follows the Default window setting."))
         for w in window_choices(A.need_window(need, 4)):
             cb.addItem(size_text(w), w)
         cb.setCurrentIndex(max(0, cb.findData(inst.window if inst.window else 0)))
@@ -671,26 +649,26 @@ class AddressMapPage(ToolPage):
         m = QMenu(self)
         if inst is not None:
             self.tree.setCurrentItem(it)
-            m.addAction("Düzenle…", lambda: self.edit_slave(inst))
+            m.addAction(tr("Edit…"), lambda: self.edit_slave(inst))
             if not inst.external and not inst.bridge:
-                m.addAction("Register haritasını düzenle", self.edit_regs)
-            m.addAction("Otomatik adrese dön" if inst.fixed else "Adresi sabitle", lambda: self._toggle_lock(inst))
-            mv = m.addMenu("Taşı")
+                m.addAction(tr("Edit register map"), self.edit_regs)
+            m.addAction(tr("Make the address automatic") if inst.fixed else tr("Lock the address"), lambda: self._toggle_lock(inst))
+            mv = m.addMenu(tr("Move to"))
             here = self.proj.parent_of(inst)
             for b in [None] + self.proj.bridges():
                 if b is here or (inst.bridge and A.is_inside(self.proj, inst, b)):
                     continue
-                label = "Üst bus" if b is None else "  " * (len(A.path_of(self.proj, b)) - 1) + b.name
+                label = tr("Top bus") if b is None else "  " * (len(A.path_of(self.proj, b)) - 1) + b.name
                 mv.addAction(label, lambda *_, b=b: self._move_to(inst, b, None))
             mv.setEnabled(bool(mv.actions()))
             m.addSeparator()
-            m.addAction("Adres haritasından çıkar", lambda: self.delete_slave(inst))
+            m.addAction(tr("Remove from the address map"), lambda: self.delete_slave(inst))
             m.addSeparator()
         target = self._target_bus()
-        where = f" ({target.name} içine)" if target else ""
-        m.addAction(f"IP ekle…{where}", self.add_ip)
-        m.addAction(f"Harici slave ekle…{where}", self.add_external)
-        m.addAction(f"{BRIDGE} ekle…{where}", self.add_bridge)
+        where = tr(" (into {0})").format(target.name) if target else ""
+        m.addAction(tr("Add IP…{0}").format(where), self.add_ip)
+        m.addAction(tr("Add external slave…{0}").format(where), self.add_external)
+        m.addAction(tr("Add {0}…{1}").format(BRIDGE, where), self.add_bridge)
         m.exec(self.tree.viewport().mapToGlobal(pos))
 
     # ================================================================ edits
@@ -716,14 +694,14 @@ class AddressMapPage(ToolPage):
             if self._guarded(lambda: A.set_default_window(self.proj, w)) is False:
                 A.set_default_window(self.proj, old)
                 return self._refresh()
-            self.status(f"Varsayılan pencere {size_text(w)}; boyutu kilitli slave'ler değişmedi")
+            self.status(tr("Default window {0}; slaves with a locked size did not change").format(size_text(w)))
 
     def _name_ok(self, inst, name):
         if not X.IDENT.match(name):
-            QMessageBox.warning(self, self.title, "Ad harfle başlamalı, sadece harf/rakam/_ içermeli.")
+            QMessageBox.warning(self, self.title, tr("The name must start with a letter and contain only letters, digits and _."))
             return False
         if name != inst.name and self.proj.get_instance(name):
-            QMessageBox.warning(self, self.title, f"Adres haritasında “{name}” adında bir slave zaten var.")
+            QMessageBox.warning(self, self.title, tr("The address map already has a slave named “{0}”.").format(name))
             return False
         return True
 
@@ -754,11 +732,10 @@ class AddressMapPage(ToolPage):
             try:
                 v = parse_int(item.text(C_ADDR).strip()) & 0xFFFFFFFF
             except ValueError:
-                self.status("Adres bir sayı olmalı (ör. 0x80000000)")
+                self.status(tr("The address must be a number (e.g. 0x80000000)"))
                 return self._refresh(inst)
             if v & (w - 1):
-                QMessageBox.warning(self, self.title, f"{hex32(v)}, {inst.name} için {size_text(w)} "
-                                                      "sınırına hizalı değil.")
+                QMessageBox.warning(self, self.title, tr("{0} is not aligned to the {2} window of {1}.").format(hex32(v), inst.name, size_text(w)))
                 return self._refresh(inst)
 
             def set_base():
@@ -782,7 +759,7 @@ class AddressMapPage(ToolPage):
             ww = A.window_of(self.proj, inst)
             if inst.fixed and inst.base & (ww - 1):
                 A.set_base(self.proj, inst, inst.base & ~(ww - 1))
-                self.status(f"{inst.name} adresi yeni boyuta hizalandı: {hex32(inst.base)}")
+                self.status(tr("{0}'s address was aligned to its new size: {1}").format(inst.name, hex32(inst.base)))
         if self._guarded(apply, inst) is False:
             self._refresh(inst)
 
@@ -791,7 +768,7 @@ class AddressMapPage(ToolPage):
             note = A.move(self.proj, inst, bridge, index)
         except ValueError as exc:
             self._refresh(inst)
-            QMessageBox.warning(self, self.title, f"Taşınamadı: {exc}")
+            QMessageBox.warning(self, self.title, tr("Could not move: {0}").format(exc))
             return
         self._changed(inst)
         self.status(note or f"{inst.name} → {A.level_name(self.proj, bridge)}")
@@ -818,7 +795,7 @@ class AddressMapPage(ToolPage):
                 if i.bridge:
                     sort(i.children)
         if self._guarded(lambda: sort(self.proj.instances)) is not False:
-            self.status("Her bus'taki liste adres sırasına dizildi")
+            self.status(tr("Every bus is sorted by address"))
 
     def _toggle_size_lock(self, inst):
         if inst.window:
@@ -842,7 +819,7 @@ class AddressMapPage(ToolPage):
                 inst.fixed = lock
         if self._guarded(apply) is False:
             return
-        self.status("Tüm adresler kilitlendi (sabit)" if lock else "Tüm adres kilitleri açıldı (otomatik)")
+        self.status(tr("Every address is locked (fixed)") if lock else tr("Every address is unlocked (automatic)"))
 
     def toggle_all_size_locks(self):
         insts = self.proj.all_instances()
@@ -854,8 +831,8 @@ class AddressMapPage(ToolPage):
                 inst.window = sizes[id(inst)] if lock else 0
         if self._guarded(apply) is False:
             return
-        self.status("Tüm pencere boyutları kilitlendi" if lock else
-                    "Tüm boyut kilitleri açıldı (varsayılan pencere / içerikle büyür)")
+        self.status(tr("Every window size is locked") if lock else
+                    tr("Every size is unlocked (default window / grows with its contents)"))
 
     def unlock_all(self):
         insts = self.proj.all_instances()
@@ -911,25 +888,22 @@ class AddressMapPage(ToolPage):
         return inst
 
     def add_ip(self):
-        name = self.pick_ip("Adres haritasına IP ekle", "Projedeki ya da açık kütüphanelerdeki bir IP'yi seç. "
-                                                        "Aynı IP birden çok kez eklenebilir; her örnek kendi adını ve "
-                                                        "adresini alır.")
+        name = self.pick_ip(tr("Add IP to the address map"), tr("Pick an IP of the project or of an open library. An IP can be added several times; each instance gets its own name and address."))
         if not name:
             return
         inst = IPInstance(A.unique_name(self.proj, name), name)
         if self._guarded(lambda: self._add(inst), inst) is not False:
-            self.status(f"{inst.name} eklendi ({hex32(inst.base)})")
+            self.status(tr("{0} added ({1})").format(inst.name, hex32(inst.base)))
 
     def add_external(self):
         name = A.unique_name(self.proj, "EXT")                # EXT_0, EXT_1 …
         proto = X.XbarSlave(name, 0, 0xFFFFF000, 0x1000, True, False)    # external, automatic address
         proto.mask = (~(A.default_window(self.proj) - 1)) & 0xFFFFFFFF
-        new = SlaveDialog.ask(self, proto, "Harici slave", 4, False)
+        new = SlaveDialog.ask(self, proto, tr("External slave"), 4, False)
         if new is None:
             return
         if self.proj.get_instance(new.name) or not X.IDENT.match(new.name):
-            QMessageBox.warning(self, self.title, f"“{new.name}” kullanılamaz: ad benzersiz olmalı, harfle başlamalı "
-                                                  "ve sadece harf/rakam/_ içermeli.")
+            QMessageBox.warning(self, self.title, tr("“{0}” cannot be used: the name must be unique, start with a letter and contain only letters, digits and _.").format(new.name))
             return
         window = 0 if new.window == A.default_window(self.proj) else new.window   # 0: follows the default
         inst = IPInstance(new.name, "", new.base, window, new.fixed, new.span)
@@ -937,19 +911,17 @@ class AddressMapPage(ToolPage):
 
     def add_bridge(self):
         name = A.unique_name(self.proj, A.BRIDGE_STEM)
-        new = BridgeDialog.ask(self, f"{BRIDGE} ekle", name, 0, 0, 0, False, 0)
+        new = BridgeDialog.ask(self, tr("Add {0}").format(BRIDGE), name, 0, 0, 0, False, 0)
         if new is None:
             return
         name, base, own, window, fixed = new
         if self.proj.get_instance(name) or not X.IDENT.match(name):
-            QMessageBox.warning(self, self.title, f"“{name}” kullanılamaz: ad benzersiz olmalı, harfle başlamalı "
-                                                  "ve sadece harf/rakam/_ içermeli.")
+            QMessageBox.warning(self, self.title, tr("“{0}” cannot be used: the name must be unique, start with a letter and contain only letters, digits and _.").format(name))
             return
         inst = IPInstance(name, "", base, window, fixed, bridge=True, self_window=own,
                           xbar={"module": "", "masters": []})
         if self._guarded(lambda: self._add(inst), inst) is not False:
-            self.status(f"{inst.name} eklendi ({hex32(inst.base)}); içine IP eklemek için seçiliyken "
-                        "'IP Kütüphanesinden slave ekle…'")
+            self.status(tr("{0} added ({1}); to add IPs into it, keep it selected and use 'Add slave from IP Library…'").format(inst.name, hex32(inst.base)))
 
     def delete_slave(self, inst=None):
         inst = inst if isinstance(inst, IPInstance) else self._sel_inst()
@@ -957,13 +929,13 @@ class AddressMapPage(ToolPage):
             return
         if inst.bridge:
             n = len([i for i, _ in self.proj.walk(inst.children)])
-            text = f"{inst.name} ({BRIDGE}) " + (f"ve içindeki {n} öğe " if n else "") + "adres haritasından çıkarılacak."
+            text = f"{inst.name} ({BRIDGE}) " + (tr("and the {0} entries inside it").format(n) if n else "") + tr("will be removed from the address map.")
         elif inst.external:
-            text = f"{inst.name} adres haritasından çıkarılacak."
+            text = tr("{0} will be removed from the address map.").format(inst.name)
         else:
-            text = f"{inst.name} adres haritasından çıkarılacak; {inst.ip} IP tanımı projede kalır."
-        if not ui.confirm(self, "Adres haritasından çıkar", text + " Sonraki slave'lerin port numarası bir azalır.",
-                          ok="Çıkar"):
+            text = tr("{0} will be removed from the address map; the IP definition {1} stays in the project.").format(inst.name, inst.ip)
+        if not ui.confirm(self, tr("Remove from the address map"), text + tr(" The port numbers of the following slaves go down by one."),
+                          ok=tr("Remove")):
             return
         parent = self.proj.parent_of(inst)
         level = self.proj.level(parent)
@@ -988,16 +960,16 @@ class AddressMapPage(ToolPage):
     def export_xlsx(self):
         ips = self.ctx.address_ips()
         if not ips:
-            QMessageBox.information(self, self.title, "Adres haritasında register haritası olan IP yok.")
+            QMessageBox.information(self, self.title, tr("No IP with a register map in the address map."))
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Adres ve kütük haritası (Excel)",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Address and register map (Excel)"),
                                               os.path.join(os.path.dirname(self.ctx.path or ROOT),
                                                            f"{self.proj.name}_regmap.xlsx"), "Excel (*.xlsx)")
         if not path:
             return
         try:
-            regmap_xlsx.export_xlsx(ips, path, f"{self.proj.name} adres haritası",
+            regmap_xlsx.export_xlsx(ips, path, tr("{0} address map").format(self.proj.name),
                                     bus_of={i.name: A.level_name(self.proj, p) for i, p in self.proj.walk()})
         except (OSError, RuntimeError) as exc:
-            return self.error("Aktarılamadı", exc)
-        self.status(f"Excel'e aktarıldı: {path}")
+            return self.error(tr("Could not export"), exc)
+        self.status(tr("Exported to Excel: {0}").format(path))

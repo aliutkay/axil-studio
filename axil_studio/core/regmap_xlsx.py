@@ -16,6 +16,7 @@ import datetime
 
 from . import numfmt as N
 from .model import KIND_READS, KIND_WRITES, hex32
+from axil_studio.i18n import tr
 
 try:
     from openpyxl import Workbook
@@ -26,13 +27,13 @@ except ImportError:          # pragma: no cover - reported to the user by the ca
     HAVE_OPENPYXL = False
 
 KIND_TEXT = {
-    "RW": ("RW", "Yazılan değer tutulur ve geri okunur."),
-    "RO": ("RO", "Donanımın durumu okunur. Yazma etkisizdir."),
-    "PULSE": ("WO (darbe)", "1 yazılan bit 1 clock darbe üretir. Her zaman 0 okunur."),
-    "W1C": ("RW1C", "Olay olunca 1 olur ve 1 kalır. 1 yazmak siler, 0 yazmak etkisizdir."),
-    "CONST": ("RO (sabit)", "Sabit değer. Yazma etkisizdir."),
+    "RW": ("RW", tr("The written value is kept and read back.")),
+    "RO": ("RO", tr("Reads the hardware state. Writing has no effect.")),
+    "PULSE": (tr("WO (pulse)"), tr("Writing 1 to a bit gives a one-clock pulse. Always reads 0.")),
+    "W1C": ("RW1C", tr("Set to 1 by an event and stays 1. Writing 1 clears it, writing 0 has no effect.")),
+    "CONST": (tr("RO (constant)"), tr("Constant value. Writing has no effect.")),
 }
-ACCESS_TEXT = {"RW": "Okunur ve yazılır.", "RO": "Salt okunur.", "WO": "Salt yazılır, okunan değer anlamsız."}
+ACCESS_TEXT = {"RW": tr("Read and written."), "RO": tr("Read only."), "WO": tr("Write only; the value read has no meaning.")}
 KIND_FILL = {"RW": "DCE8FD", "RO": "D7F0DD", "PULSE": "FEF0C7", "W1C": "FADBD8", "CONST": "E8E8E8",
              "": "EDE7F6", "RSVD": "F5F5F5"}
 
@@ -139,21 +140,21 @@ def export_xlsx(ips, path, title=None, bus_of=None):
     """Write the register map of one or more IPBlocks to an .xlsx file. bus_of: {IP name: bus name}
     (the Sub-bus Bridge an instance sits behind), written next to its base address."""
     if not HAVE_OPENPYXL:
-        raise RuntimeError("Excel çıktısı için openpyxl gerekli: pip install openpyxl")
+        raise RuntimeError(tr("Excel output needs openpyxl: pip install openpyxl"))
     ips = list(ips)
     wb = Workbook()
     summary = wb.active
-    summary.title = "Özet"
-    regmap = wb.create_sheet("Kütük Haritası")
-    layout = wb.create_sheet("Bit Görünümü")
+    summary.title = tr("Summary")
+    regmap = wb.create_sheet(tr("Register Map"))
+    layout = wb.create_sheet(tr("Bit View"))
 
     # ------------------------------------------------------------ base address inputs
     s = summary
-    s["A1"] = title or ("Kütük haritası: " + ", ".join(ip.name for ip in ips))
+    s["A1"] = title or (tr("Register map:") + ", ".join(ip.name for ip in ips))
     s["A1"].font = Font(bold=True, size=14)
-    s["A2"] = f"Oluşturulma: {datetime.datetime.now():%Y-%m-%d %H:%M}"
+    s["A2"] = tr("Created: {0:%Y-%m-%d %H:%M}").format(datetime.datetime.now())
     s["A2"].font = Font(italic=True, color="808080")
-    _header(s, 4, ("IP", "Slave base adresi", "Not"), (14, 18, 18))
+    _header(s, 4, ("IP", tr("Slave base address"), "Not"), (14, 18, 18))
     base_ref = {}
     for i, ip in enumerate(ips):
         r = 5 + i
@@ -165,15 +166,15 @@ def export_xlsx(ips, path, title=None, bus_of=None):
         c.border = BORDER
         c.alignment = CENTER
         bus = (bus_of or {}).get(ip.name)
-        s.cell(row=r, column=3, value=(f"bus: {bus} · " if bus else "")
-               + "← interconnect'teki base adresi buraya yaz; tüm adresler güncellenir")
+        s.cell(row=r, column=3, value=(tr("bus: {0} · ").format(bus) if bus else "")
+               + tr("← enter the base address set on the interconnect; every address follows"))
         s.cell(row=r, column=3).font = Font(italic=True, color="808080")
-        base_ref[ip.name] = f"'Özet'!$B${r}"
+        base_ref[ip.name] = tr("'Summary'!$B${0}").format(r)
     summary_start = 6 + len(ips)
 
     # ------------------------------------------------------------ register map
-    cols = ("IP", "Adres", "Offset", "Register", "Bitler", "Bit alanı", "Erişim", "Veri tipi", "Reset",
-            "Açıklama", "Davranış", "Okunursa (hex | binary | tip → anlamı)", "Yazılırsa (hex | binary | tip → etkisi)")
+    cols = ("IP", tr("Address"), "Offset", "Register", tr("Bits"), tr("Bit field"), tr("Access"), tr("Data type"), "Reset",
+            tr("Description"), tr("Behavior"), tr("When read (hex | binary | type → meaning)"), tr("When written (hex | binary | type → effect)"))
     _header(regmap, 1, cols, (16, 13, 8, 16, 9, 18, 11, 12, 44, 40, 34, 50, 50))
     mid = {c: CENTER for c in (2, 3, 5, 7, 8, 9)}
     row, reg_row = 2, {}
@@ -188,8 +189,8 @@ def export_xlsx(ips, path, title=None, bus_of=None):
             row += 1
             for msb, lsb, f in _rows_of(reg):
                 if f is None:
-                    _put(regmap, row, ("", "", "", "", _bits(msb, lsb), "Ayrılmış", "—", "", "0",
-                                       "Kullanılmıyor.", "0 okunur. Yazma etkisizdir, 0 yazılması önerilir.",
+                    _put(regmap, row, ("", "", "", "", _bits(msb, lsb), tr("Reserved"), "—", "", "0",
+                                       tr("Not used."), tr("Reads 0. Writing has no effect; writing 0 is recommended."),
                                        "", ""), fill=KIND_FILL["RSVD"], italic=True, color="808080", align=mid)
                     _autofit(regmap, row)
                 else:
@@ -197,7 +198,7 @@ def export_xlsx(ips, path, title=None, bus_of=None):
                     rd = _meanings(f, "read") if KIND_READS.get(f.kind, True) else ""
                     wr = _meanings(f, "write") if KIND_WRITES.get(f.kind, True) else ""
                     reset = "—" if f.kind == "RO" else _value_text(f, f.extract(reg.reset))
-                    ftype = N.label(getattr(f, "fmt", ""), f.width).replace(" (oto)", "")
+                    ftype = N.label(getattr(f, "fmt", ""), f.width).replace(tr(" (auto)"), "")
                     _put(regmap, row, ("", "", "", "", f.bits, f.name, acc, ftype, reset, f.desc, behaviour, rd, wr),
                          align=mid)
                     regmap.cell(row=row, column=7).fill = PatternFill("solid", fgColor=KIND_FILL[f.kind])
@@ -241,10 +242,10 @@ def export_xlsx(ips, path, title=None, bus_of=None):
             layout.row_dimensions[lrow].height = 48
             lrow += 1
     lrow += 1
-    layout.cell(row=lrow, column=1, value="Renkler").font = Font(bold=True)
-    for i, (k, text) in enumerate((("RW", "RW"), ("RO", "RO"), ("PULSE", "PULSE (darbe)"),
-                                   ("W1C", "W1C (1 yaz sil)"), ("CONST", "Sabit"), ("", "Tipsiz alan"),
-                                   ("RSVD", "Ayrılmış"))):
+    layout.cell(row=lrow, column=1, value=tr("Colors")).font = Font(bold=True)
+    for i, (k, text) in enumerate((("RW", "RW"), ("RO", "RO"), ("PULSE", tr("PULSE (pulse)")),
+                                   ("W1C", tr("W1C (write 1 to clear)")), ("CONST", tr("Constant")), ("", tr("Untyped field")),
+                                   ("RSVD", tr("Reserved")))):
         c = layout.cell(row=lrow + 1 + i, column=1, value=text)
         c.fill = PatternFill("solid", fgColor=KIND_FILL[k])
         c.border = BORDER
@@ -267,18 +268,18 @@ def export_xlsx(ips, path, title=None, bus_of=None):
             c.alignment = WRAP
             s.row_dimensions[r].height = _height(ip.desc) + 4
             r += 1
-        _header(s, r, ("Offset", "Adres", "Register", "Erişim", "Reset", "Açıklama"), (14, 18, 18, 10, 13, 70))
+        _header(s, r, ("Offset", tr("Address"), "Register", tr("Access"), "Reset", tr("Description")), (14, 18, 18, 10, 13, 70))
         r += 1
         for reg in sorted(ip.registers, key=lambda x: x.offset):
             _put(s, r, (f"0x{reg.offset:02X}", _addr_formula(base_ref[ip.name], reg.offset), reg.name, reg.access,
                         hex32(reg.reset), reg.desc), align={c: CENTER for c in (1, 2, 4, 5)})
             link = s.cell(row=r, column=3)
-            link.hyperlink = f"#'Kütük Haritası'!D{reg_row[(ip.name, reg.name)]}"
+            link.hyperlink = tr("#'Register Map'!D{0}").format(reg_row[(ip.name, reg.name)])
             link.font = Font(color="0563C1", underline="single")
             _autofit(s, r)
             r += 1
         r += 1
-    s.cell(row=r, column=1, value="Erişim tipleri").font = Font(bold=True)
+    s.cell(row=r, column=1, value=tr("Access types")).font = Font(bold=True)
     for i, (k, (acc, text)) in enumerate(KIND_TEXT.items()):
         s.cell(row=r + 1 + i, column=1, value=acc).fill = PatternFill("solid", fgColor=KIND_FILL[k])
         s.cell(row=r + 1 + i, column=3, value=text)

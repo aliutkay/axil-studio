@@ -25,8 +25,9 @@ from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import fill_regmap_tree, regmap_tree
 from axil_studio.core.library import LibEntry
 from axil_studio.core.model import Project, hex32, single_line
+from axil_studio.i18n import tr
 
-LIB_FILTER = "IP kütüphanesi (*.axlib.json);;JSON (*.json);;Tüm dosyalar (*)"
+LIB_FILTER = tr("IP library (*.axlib.json);;JSON (*.json);;All files (*)")
 ROLE = Qt.ItemDataRole.UserRole
 
 
@@ -34,11 +35,9 @@ class IPLibraryPage(ToolPage):
     tool_id = "library"
     title = "IP Library"
     short_title = "IP Library"
-    subtitle = "Projedeki tüm IP'leri gör, IP kütüphaneleri oluştur, kütüphanelerden projeye IP al."
-    description = ("Projedeki IP'leri ve adres haritasındaki örneklerini listeler; birden fazla IP kütüphanesi "
-                   "(.axlib.json) açılır, IP'ler projeye alınır ya da projeden kütüphaneye kaydedilir.")
+    subtitle = tr("See every IP of the project, create IP libraries, bring IPs from libraries into the project.")
+    description = (tr("Lists the project's IPs and their address-map instances; opens several IP libraries (.axlib.json), brings IPs into the project or stores project IPs in a library."))
     icon_name = "library"
-    version = "0.2.1"
 
     picked = Signal()          # picker mode: an IP was double-clicked
 
@@ -48,22 +47,22 @@ class IPLibraryPage(ToolPage):
         if picker:      # inside the picker dialog: no outer margins; the bar keeps the library commands
             self.outer.setContentsMargins(0, 0, 0, 0)
         bar = self.header       # the tool's commands sit in the top bar
-        bar.add("Yeni kütüphane…", "plus", self.new_library, "Yeni bir .axlib.json dosyası oluştur")
-        bar.add("Kütüphane aç…", "folder", self.open_library)
-        self.close_btn = bar.add("Kütüphaneyi kapat", None, self.close_library, "Listeden çıkar (dosya silinmez)")
+        bar.add(tr("New library…"), "plus", self.new_library, tr("Create a new .axlib.json file"))
+        bar.add(tr("Open library…"), "folder", self.open_library)
+        self.close_btn = bar.add(tr("Close library"), None, self.close_library, tr("Remove from the list (the file is not deleted)"))
         bar.sep()
-        bar.add("İçe aktar: register spesifikasyonu…", "regmap", self.import_spec,
-                ".regspec.json dosyasını seçili kütüphaneye ekle")
-        bar.add("İçe aktar: proje dosyası…", "file", self.import_project,
-                "Başka bir .axproj.json dosyasındaki IP'leri seçili kütüphaneye ekle")
+        bar.add(tr("Import: register spec…"), "regmap", self.import_spec,
+                tr("Add a .regspec.json file to the selected library"))
+        bar.add(tr("Import: project file…"), "file", self.import_project,
+                tr("Add the IPs of another .axproj.json file to the selected library"))
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
 
         left = QSplitter(Qt.Orientation.Vertical)
-        proj = ui.Card("Bu projedeki IP'ler", "Alt satırlar: adres haritasındaki örnekler", margins=14)
+        proj = ui.Card(tr("IPs in this project"), tr("Sub-rows: instances in the address map"), margins=14)
         self.proj_tree = QTreeWidget()
-        self.proj_tree.setHeaderLabels(["Ad", "Sürüm", "Adres", "Kaynak"])
+        self.proj_tree.setHeaderLabels([tr("Name"), tr("Version"), tr("Address"), tr("Source")])
         self.proj_tree.setUniformRowHeights(True)
         h = self.proj_tree.header()
         h.setStretchLastSection(False)
@@ -74,9 +73,9 @@ class IPLibraryPage(ToolPage):
         self.proj_tree.itemDoubleClicked.connect(lambda *_: self._activated())
         proj.lay.addWidget(self.proj_tree, 1)
         left.addWidget(proj)
-        libs = ui.Card("Kütüphaneler", margins=14)
+        libs = ui.Card(tr("Libraries"), margins=14)
         self.lib_tree = QTreeWidget()
-        self.lib_tree.setHeaderLabels(["Ad", "Register", "Sürüm"])
+        self.lib_tree.setHeaderLabels([tr("Name"), "Register", tr("Version")])
         self.lib_tree.setUniformRowHeights(True)
         h = self.lib_tree.header()
         h.setStretchLastSection(False)
@@ -94,7 +93,7 @@ class IPLibraryPage(ToolPage):
         self.detail = ui.Card(margins=16)
         col = QVBoxLayout()
         col.setSpacing(2)
-        self.d_title = ui.label("IP seç", "cardTitle")
+        self.d_title = ui.label(tr("Select IP"), "cardTitle")
         self.d_sub = ui.label("", "muted", wrap=True)
         col.addWidget(self.d_title)
         col.addWidget(self.d_sub)
@@ -103,18 +102,18 @@ class IPLibraryPage(ToolPage):
         self.detail.lay.addWidget(self.d_desc)
         brow = QHBoxLayout()
         brow.setSpacing(6)
-        self.map_btn = ui.button("Adres haritasına ekle", "addrmap", "primary", self.add_to_address_map,
-                                 "IP'yi (gerekirse önce projeye alıp) adres haritasına bir kez daha yerleştir")
-        self.import_btn = ui.button("Projeye al", "arrow", None, self.import_to_project,
-                                    "Kütüphanedeki IP'yi projenin IP'lerine kopyala (adres vermeden)")
-        self.regmap_btn = ui.button("Register Map Editor'da aç", "regmap", None, self.open_in_regmap)
-        self.wrapper_btn = ui.button("Wrapper'da aç", "wrapper", None, self.open_in_wrapper,
-                                     "HDL'i Slave Interface Wrapper'da üret")
-        self.addr_btn = ui.button("Address Map Editor'da aç", "addrmap", None, self.open_in_addrmap)
-        self.store_btn = ui.button("Kütüphaneye kaydet…", "save", None, self.store_project_ip,
-                                   "Projedeki bu IP'yi bir kütüphaneye kaydet")
-        self.rename_btn = ui.button("Yeniden adlandır…", None, "ghost", self.rename_entry)
-        self.del_btn = ui.button("Sil", None, "ghost", self.delete_selected)
+        self.map_btn = ui.button(tr("Add to address map"), "addrmap", "primary", self.add_to_address_map,
+                                 tr("Place the IP in the address map once more (bringing it into the project first if needed)"))
+        self.import_btn = ui.button(tr("Bring into project"), "arrow", None, self.import_to_project,
+                                    tr("Copy the library IP into the project's IPs (without an address)"))
+        self.regmap_btn = ui.button(tr("Open in Register Map Editor"), "regmap", None, self.open_in_regmap)
+        self.wrapper_btn = ui.button(tr("Open in Wrapper"), "wrapper", None, self.open_in_wrapper,
+                                     tr("Generate the HDL in the Slave Interface Wrapper"))
+        self.addr_btn = ui.button(tr("Open in Address Map Editor"), "addrmap", None, self.open_in_addrmap)
+        self.store_btn = ui.button(tr("Store in library…"), "save", None, self.store_project_ip,
+                                   tr("Store this project IP in a library"))
+        self.rename_btn = ui.button(tr("Rename…"), None, "ghost", self.rename_entry)
+        self.del_btn = ui.button(tr("Delete"), None, "ghost", self.delete_selected)
         self.buttons = (self.map_btn, self.import_btn, self.regmap_btn, self.wrapper_btn, self.addr_btn,
                         self.store_btn, self.rename_btn, self.del_btn)
         for b in self.buttons:
@@ -138,13 +137,13 @@ class IPLibraryPage(ToolPage):
     def build_menus(self, menubar):
         m = menubar.addMenu("&Library")
         win = self.window()
-        for text, slot in (("Yeni kütüphane…", self.new_library), ("Kütüphane aç…", self.open_library),
-                           ("Kütüphaneyi kapat", self.close_library), (None, None),
-                           ("İçe aktar: register spesifikasyonu…", self.import_spec),
-                           ("İçe aktar: proje dosyası…", self.import_project), (None, None),
-                           ("Seçili IP'yi adres haritasına ekle", self.add_to_address_map),
-                           ("Seçili kütüphane IP'sini projeye al", self.import_to_project),
-                           ("Seçili proje IP'sini kütüphaneye kaydet…", self.store_project_ip)):
+        for text, slot in ((tr("New library…"), self.new_library), (tr("Open library…"), self.open_library),
+                           (tr("Close library"), self.close_library), (None, None),
+                           (tr("Import: register spec…"), self.import_spec),
+                           (tr("Import: project file…"), self.import_project), (None, None),
+                           (tr("Add the selected IP to the address map"), self.add_to_address_map),
+                           (tr("Bring the selected library IP into the project"), self.import_to_project),
+                           (tr("Store the selected project IP in a library…"), self.store_project_ip)):
             if text is None:
                 m.addSeparator()
                 continue
@@ -170,7 +169,7 @@ class IPLibraryPage(ToolPage):
         for ip in sorted(proj.ips, key=lambda i: i.name.lower()):
             insts = proj.instances_of(ip.name)
             top = QTreeWidgetItem([ip.name, ip.version or "—",
-                                   f"{len(insts)} örnek" if insts else "yerleşmedi", ip.source or "projede"])
+                                   tr("{0} instances").format(len(insts)) if insts else tr("not placed"), ip.source or "projede"])
             bf = top.font(0)
             bf.setBold(True)
             top.setFont(0, bf)
@@ -186,14 +185,14 @@ class IPLibraryPage(ToolPage):
                 ch = QTreeWidgetItem([inst.name, "", hex32(inst.base), ""])
                 ch.setFont(2, mono)
                 ch.setData(0, ROLE, ("inst", inst, None))
-                ch.setToolTip(0, f"{ip.name} örneği · çift tık: Address Map Editor")
+                ch.setToolTip(0, tr("Instance of {0} · double-click: Address Map Editor").format(ip.name))
                 top.addChild(ch)
                 if keep and keep[0] == "inst" and keep[1].name == inst.name:
                     ptarget = ch
             self.proj_tree.addTopLevelItem(top)
             top.setExpanded(True)
         if not proj.ips:
-            it = QTreeWidgetItem(["Projede IP yok: Register Map Editor'da oluştur ya da kütüphaneden al", "", "", ""])
+            it = QTreeWidgetItem([tr("No IPs in the project: create one in the Register Map Editor or take one from a library"), "", "", ""])
             it.setForeground(0, QColor(t["muted"]))
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.proj_tree.addTopLevelItem(it)
@@ -214,12 +213,12 @@ class IPLibraryPage(ToolPage):
                 versions = lib.versions(name)          # newest first
                 parent = None
                 for k, e in enumerate(versions):
-                    label = e.name if k == 0 else f"önceki sürüm {e.version}"
+                    label = e.name if k == 0 else tr("previous version {0}").format(e.version)
                     it = QTreeWidgetItem([label, str(len(e.ip.registers)),
-                                          f"{e.version}" + (f"  ({len(versions)} sürüm)" if k == 0 and len(versions) > 1
+                                          f"{e.version}" + (tr("  ({0} versions)").format(len(versions)) if k == 0 and len(versions) > 1
                                                             else "")])
                     it.setData(0, ROLE, ("lib", lib, e))
-                    it.setToolTip(0, single_line(e.ip.desc) + ("\nRegister spesifikasyonu var" if e.regspec else ""))
+                    it.setToolTip(0, single_line(e.ip.desc) + (tr("\nHas a register spec") if e.regspec else ""))
                     if k == 0:
                         top.addChild(it)
                         parent = it
@@ -233,7 +232,7 @@ class IPLibraryPage(ToolPage):
             if keep and keep[0] == "libroot" and keep[1] is lib:
                 target = top
         if not self.ctx.libraries:
-            it = QTreeWidgetItem(["Açık kütüphane yok: Yeni kütüphane ya da Kütüphane aç", "", ""])
+            it = QTreeWidgetItem([tr("No open library: New library or Open library"), "", ""])
             it.setForeground(0, muted)
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.lib_tree.addTopLevelItem(it)
@@ -250,7 +249,7 @@ class IPLibraryPage(ToolPage):
         else:
             self._show(None)
         if self.ctx.library_errors:
-            self.status("Açılamayan kütüphane: " + "; ".join(self.ctx.library_errors), 10000)
+            self.status(tr("Library that could not be opened:") + "; ".join(self.ctx.library_errors), 10000)
             self.ctx.library_errors.clear()
 
     def _picked(self, tree, item):
@@ -274,12 +273,12 @@ class IPLibraryPage(ToolPage):
         }.get(kind, ())
         for b in self.buttons:
             b.setVisible(not self.picker and b in visible)
-        self.del_btn.setText("Projeden kaldır" if kind == "proj" else "Kütüphaneden sil")
+        self.del_btn.setText(tr("Remove from project") if kind == "proj" else tr("Delete from library"))
         self.close_btn.setEnabled(bool(key and kind in ("lib", "libroot")))
         ip = None
         if not key:
-            self.d_title.setText("IP seç")
-            self.d_sub.setText("Soldan projedeki bir IP'yi ya da bir kütüphane IP'sini seç.")
+            self.d_title.setText(tr("Select IP"))
+            self.d_sub.setText(tr("Select a project IP or a library IP on the left."))
             self.d_desc.setText("")
         elif kind == "libroot":
             lib = key[1]
@@ -291,25 +290,24 @@ class IPLibraryPage(ToolPage):
             ip = e.ip
             used = self.ctx.project.get_ip(ip.name)
             others = [x.version for x in lib.versions(ip.name) if x.version != e.version]
-            self.d_title.setText(f"{ip.name}   ·   sürüm {e.version}")
-            self.d_sub.setText(f"Kütüphane: {lib.name}" + (f" · {e.updated}" if e.updated else "")
-                               + (f" · diğer sürümler: {', '.join(others)}" if others else "")
-                               + (" · register spesifikasyonu var" if e.regspec else "")
-                               + (f" · projede var (sürüm {used.version or '—'}, adres haritasında "
-                                  f"{len(self.ctx.project.instances_of(used.name))} kez)" if used else ""))
+            self.d_title.setText(tr("{0}   ·   version {1}").format(ip.name, e.version))
+            self.d_sub.setText(tr("Library: {0}").format(lib.name) + (f" · {e.updated}" if e.updated else "")
+                               + (tr(" · other versions: {0}").format(', '.join(others)) if others else "")
+                               + (tr(" · has a register spec") if e.regspec else "")
+                               + (tr(" · in the project (version {0}, {1}× in the address map)").format(used.version or '—', len(self.ctx.project.instances_of(used.name))) if used else ""))
         elif kind == "proj":
             ip = key[1]
             insts = self.ctx.project.instances_of(ip.name)
-            self.d_title.setText(f"{ip.name}" + (f"   ·   sürüm {ip.version}" if ip.version else ""))
-            self.d_sub.setText("Projede" + (f" · kaynak: {ip.source}" if ip.source else "")
-                               + (" · adres haritasında: " + ", ".join(f"{i.name} @ {hex32(i.base)}" for i in insts)
-                                  if insts else " · adres haritasında yok"))
+            self.d_title.setText(f"{ip.name}" + (tr("   ·   version {0}").format(ip.version) if ip.version else ""))
+            self.d_sub.setText(tr("In the project") + (tr(" · source: {0}").format(ip.source) if ip.source else "")
+                               + (tr(" · in the address map:") + ", ".join(f"{i.name} @ {hex32(i.base)}" for i in insts)
+                                  if insts else tr(" · not in the address map")))
         else:
             inst = key[1]
             ip = self.ctx.project.get_ip(inst.ip)
             self.d_title.setText(f"{inst.name}   ·   {hex32(inst.base)}")
-            self.d_sub.setText(f"{inst.ip} IP'sinin adres haritasındaki örneği · "
-                               + ("sabit adres" if inst.fixed else "otomatik adres"))
+            self.d_sub.setText(tr("Address-map instance of the IP {0} ·").format(inst.ip)
+                               + (tr("fixed address") if inst.fixed else tr("automatic address")))
         if ip is not None and kind != "inst":
             self.d_desc.setText(ip.desc or "")
         elif kind == "inst":
@@ -347,32 +345,32 @@ class IPLibraryPage(ToolPage):
         if len(libs) == 1:
             return libs[0]
         if not libs:
-            if ask and ui.confirm(self, self.title, "Açık kütüphane yok. Yeni bir kütüphane oluşturulsun mu?",
-                                  ok="Oluştur"):
+            if ask and ui.confirm(self, self.title, tr("No library is open. Create a new library?"),
+                                  ok=tr("Create")):
                 return self.new_library()
             return None
         if not ask:
             return None
-        name, ok = QInputDialog.getItem(self, "Kütüphane seç", "Kütüphane:", [lib.name for lib in libs], 0, False)
+        name, ok = QInputDialog.getItem(self, tr("Select library"), tr("Library:"), [lib.name for lib in libs], 0, False)
         return next((lib for lib in libs if lib.name == name), None) if ok else None
 
     # ================================================================ library files
     def new_library(self):
         lib = _new_library_file(self, self.ctx)
         if lib:
-            self.status(f"Kütüphane oluşturuldu: {lib.path}")
+            self.status(tr("Library created: {0}").format(lib.path))
         return lib
 
     def open_library(self):
-        path, _ = QFileDialog.getOpenFileName(self, "IP kütüphanesi aç", os.path.dirname(self.ctx.path or ROOT),
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open IP library"), os.path.dirname(self.ctx.path or ROOT),
                                               LIB_FILTER)
         if not path:
             return
         try:
             lib = self.ctx.open_library(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
-        self.status(f"Kütüphane açıldı: {lib.name}")
+            return self.error(tr("Could not open"), exc)
+        self.status(tr("Library opened: {0}").format(lib.name))
 
     def close_library(self):
         if not self._sel or self._sel[0] not in ("lib", "libroot"):
@@ -386,48 +384,47 @@ class IPLibraryPage(ToolPage):
         lib = self._selected_library()
         if lib is None:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Register spesifikasyonu", ROOT,
-                                              "Register spesifikasyonu (*.regspec.json);;JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Register spec"), ROOT,
+                                              tr("Register spec (*.regspec.json);;JSON (*.json)"))
         if not path:
             return
         try:
             spec = G.ModuleSpec.load(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         if lib.get(spec.module, spec.version) and not ui.confirm(
-                self, self.title, f"{lib.name} kütüphanesinde {spec.module} {spec.version} var. Üzerine yazılsın mı?",
-                ok="Üzerine yaz"):
+                self, self.title, tr("The library {0} already has {1} {2}. Overwrite it?").format(lib.name, spec.module, spec.version),
+                ok=tr("Overwrite")):
             return
         replaced = lib.put(LibEntry(G.to_ipblock(spec, 0), spec.to_dict()))
         self.ctx.save_library(lib)
-        self.status(f"{spec.module} {spec.version} {lib.name} kütüphanesine "
-                    f"{'güncellendi' if replaced else 'eklendi'}")
+        self.status(tr("{0} {1}: {3} in the library {2}").format(spec.module, spec.version, lib.name, tr("updated") if replaced else tr("added")))
 
     def import_project(self):
         lib = self._selected_library()
         if lib is None:
             return
-        path, _ = QFileDialog.getOpenFileName(self, "Proje dosyası", ROOT, "AXIL proje (*.axproj.json);;JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Project file"), ROOT, tr("AXIL project (*.axproj.json);;JSON (*.json)"))
         if not path:
             return
         try:
             proj = Project.load(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         if not proj.ips:
-            QMessageBox.information(self, self.title, "Bu proje dosyasında IP yok.")
+            QMessageBox.information(self, self.title, tr("This project file has no IPs."))
             return
         names = [ip.name for ip in proj.ips]
-        choice, ok = QInputDialog.getItem(self, "İçe aktar", "IP:", ["Tümü"] + names, 0, False)
+        choice, ok = QInputDialog.getItem(self, tr("Import"), "IP:", [tr("All")] + names, 0, False)
         if not ok:
             return
-        for ip in proj.ips if choice == "Tümü" else [proj.ips[names.index(choice)]]:
+        for ip in proj.ips if choice == tr("All") else [proj.ips[names.index(choice)]]:
             spec = ip.regspec
             ip.source, ip.regspec, ip.base = "", None, 0
             ip.version = ip.version or "1.0.0"
             lib.put(LibEntry(ip, spec))
         self.ctx.save_library(lib)
-        self.status(f"{lib.name} kütüphanesine aktarıldı")
+        self.status(tr("Imported into the library {0}").format(lib.name))
 
     # ================================================================ library <-> project
     def _import(self, lib, e):
@@ -436,31 +433,31 @@ class IPLibraryPage(ToolPage):
         old = proj.get_ip(e.name)
         if old is None:
             name = self.ctx.import_from_library(lib, e, source=self.tool_id)
-            self.status(f"{name} {e.version} projeye alındı")
+            self.status(tr("{0} {1} brought into the project").format(name, e.version))
             return name
         if old.version == e.version and old.source == lib.name:
             return old.name                       # the same IP is already in the project
         n = len(proj.instances_of(old.name))
         choice, ok = QInputDialog.getItem(
-            self, "Projede aynı adlı IP var",
-            f"{e.name} projede zaten var (sürüm {old.version or '—'}, adres haritasında {n} kez):",
-            [f"Projedekini kullan ({old.version or '—'})",
-             f"Projedekini kütüphanedekiyle değiştir ({e.version})",
-             "Yeni bir adla ayrı IP olarak al"], 0, False)
+            self, tr("The project has an IP with the same name"),
+            tr("{0} is already in the project (version {1}, {2}× in the address map):").format(e.name, old.version or '—', n),
+            [tr("Use the project's ({0})").format(old.version or '—'),
+             tr("Replace the project's with the library's ({0})").format(e.version),
+             tr("Bring it in as a separate IP with a new name")], 0, False)
         if not ok:
             return None
-        if choice.startswith("Projedekini kullan"):
+        if choice.startswith(tr("Use the project's")):
             return old.name
-        if choice.startswith("Projedekini kütüphane"):
+        if choice.startswith(tr("Replace the project's with the library's")):
             name = self.ctx.import_from_library(lib, e, source=self.tool_id)
-            self.status(f"{name} {e.version} sürümüne güncellendi ({n} örnek)")
+            self.status(tr("{0} updated to version {1} ({2} instances)").format(name, e.version, n))
             return name
-        new, ok = QInputDialog.getText(self, "IP adı", "Projedeki adı:", text=self.ctx.unique_ip_name(e.name))
+        new, ok = QInputDialog.getText(self, tr("IP name"), tr("Name in the project:"), text=self.ctx.unique_ip_name(e.name))
         new = new.strip()
         if not ok or not new:
             return None
         if proj.get_ip(new):
-            QMessageBox.warning(self, self.title, f"Projede “{new}” adlı bir IP zaten var.")
+            QMessageBox.warning(self, self.title, tr("The project already has an IP named “{0}”.").format(new))
             return None
         return self.ctx.import_from_library(lib, e, new, source=self.tool_id)
 
@@ -475,7 +472,7 @@ class IPLibraryPage(ToolPage):
         if not name:
             return
         inst = self.ctx.add_instance(name, source=self.tool_id)
-        self.status(f"{inst.name} adres haritasına eklendi ({hex32(inst.base)})")
+        self.status(tr("{0} added to the address map ({1})").format(inst.name, hex32(inst.base)))
         self.edit_address_map(inst.name)
 
     def store_project_ip(self):
@@ -500,18 +497,18 @@ class IPLibraryPage(ToolPage):
         ip.source = ip.source or lib.name
         self.ctx.use_library(lib)
         self.ctx.mark_modified(self.tool_id)
-        self.status(f"{ip.name} {version} {lib.name} kütüphanesine kaydedildi")
+        self.status(tr("{0} {1} stored in the library {2}").format(ip.name, version, lib.name))
 
     def rename_entry(self):
         if not self._sel or self._sel[0] != "lib":
             return
         lib, e = self._sel[1], self._sel[2]
-        new, ok = QInputDialog.getText(self, "Yeniden adlandır", "Ad:", text=e.name)
+        new, ok = QInputDialog.getText(self, tr("Rename"), tr("Name:"), text=e.name)
         new = new.strip()
         if not ok or not new or new == e.name:
             return
         if lib.get(new):
-            QMessageBox.warning(self, self.title, f"{lib.name} kütüphanesinde {new} zaten var.")
+            QMessageBox.warning(self, self.title, tr("The library {0} already has {1}.").format(lib.name, new))
             return
         for x in lib.versions(e.name):      # every version takes the new name
             x.ip.name = new
@@ -524,17 +521,16 @@ class IPLibraryPage(ToolPage):
             return
         if self._sel[0] == "lib":
             lib, e = self._sel[1], self._sel[2]
-            if ui.confirm(self, "Kütüphaneden sil", f"{e.name} {e.version}, {lib.name} kütüphanesinden silinecek. "
-                                                    "Diğer sürümler ve projelerdeki kopyalar etkilenmez."):
+            if ui.confirm(self, tr("Delete from library"), tr("{0} {1} will be deleted from the library {2}. Other versions and copies in projects are not affected.").format(e.name, e.version, lib.name)):
                 lib.remove(e.name, e.version)
                 self._sel = ("libroot", lib, None)
                 self.ctx.save_library(lib)
         elif self._sel[0] == "proj":
             ip = self._sel[1]
             n = len(self.ctx.project.instances_of(ip.name))
-            if ui.confirm(self, "Projeden kaldır", f"{ip.name} projeden kaldırılacak"
-                                                   + (f"; adres haritasındaki {n} örneği de çıkar" if n else "")
-                                                   + ".", ok="Kaldır"):
+            if ui.confirm(self, tr("Remove from project"), tr("{0} will be removed from the project").format(ip.name)
+                                                   + (tr("; its {0} instances in the address map are removed too").format(n) if n else "")
+                                                   + ".", ok=tr("Remove")):
                 self._sel = None
                 self.ctx.remove_ip(ip.name, self.tool_id)
                 self._refresh()
@@ -552,7 +548,7 @@ class IPLibraryPage(ToolPage):
             lib, e = self._sel[1], self._sel[2]
             spec = G.ModuleSpec.from_dict(e.regspec) if e.regspec else G.spec_from_ipblock(e.ip)
             w = self.open_tool("regmap")
-            w.page.load_spec(spec, f"{lib.name} kütüphanesinden {e.version}", lib.name)
+            w.page.load_spec(spec, tr("{1} from the library {0}").format(lib.name, e.version), lib.name)
 
     def open_in_wrapper(self):
         if self._sel and self._sel[0] == "proj":
@@ -582,8 +578,8 @@ class IPPickerDialog(QDialog):
         self.page.picked.connect(self.accept)
         lay.addWidget(self.page, 1)
         box = QDialogButtonBox()
-        self.ok = box.addButton("Seç", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        self.ok = box.addButton(tr("Select"), QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QDialogButtonBox.ButtonRole.RejectRole)
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
         lay.addWidget(box)
@@ -593,7 +589,7 @@ class IPPickerDialog(QDialog):
         name = self.page.selected_project_ip()
         if not name:
             if self.page._sel is None or self.page._sel[0] == "libroot":
-                QMessageBox.information(self, self.windowTitle(), "Bir IP seç (projedeki ya da bir kütüphanedeki).")
+                QMessageBox.information(self, self.windowTitle(), tr("Select an IP (of the project or of a library)."))
             return
         self.name = name
         super().accept()
@@ -611,21 +607,21 @@ class IPPickerDialog(QDialog):
 # ============================================================================ save dialogs
 def _new_library_file(parent, ctx):
     """Ask for a path and a name, create the library; returns it or None."""
-    path, _ = QFileDialog.getSaveFileName(parent, "Yeni IP kütüphanesi",
+    path, _ = QFileDialog.getSaveFileName(parent, tr("New IP library"),
                                           os.path.join(os.path.dirname(ctx.path or ROOT), "ip_library.axlib.json"),
                                           LIB_FILTER)
     if not path:
         return None
     if not path.endswith(".json"):
         path += ".axlib.json"
-    name, ok = QInputDialog.getText(parent, "Yeni IP kütüphanesi", "Kütüphane adı:",
+    name, ok = QInputDialog.getText(parent, tr("New IP library"), tr("Library name:"),
                                     text=os.path.basename(path).split(".")[0])
     if not ok or not name.strip():
         return None
     try:
         return ctx.new_library(path, name.strip())
     except OSError as exc:
-        QMessageBox.critical(parent, "Oluşturulamadı", str(exc))
+        QMessageBox.critical(parent, tr("Could not create"), str(exc))
         return None
 
 
@@ -641,10 +637,9 @@ class LibraryPane(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        lay.addWidget(ui.label(f"{ip_name} IP'sinin kaydedileceği kütüphaneyi seç. Kütüphanelerdeki IP'ler ve "
-                               "sürümleri listelenir; bu IP'nin kayıtları vurgulanır.", "muted", wrap=True))
+        lay.addWidget(ui.label(tr("Select the library to store {0} in. The libraries' IPs and versions are listed; the entries of this IP are highlighted.").format(ip_name), "muted", wrap=True))
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Kütüphane / IP", "Sürümler", "Güncelleme"])
+        self.tree.setHeaderLabels([tr("Library / IP"), tr("Versions"), tr("Updated")])
         self.tree.setUniformRowHeights(True)
         h = self.tree.header()
         h.setStretchLastSection(False)
@@ -654,10 +649,10 @@ class LibraryPane(QWidget):
         self.tree.currentItemChanged.connect(lambda *_: self._update())
         lay.addWidget(self.tree, 1)
         row = QHBoxLayout()
-        row.addWidget(ui.button("Yeni kütüphane…", "plus", "ghost", self._new_library))
-        row.addWidget(ui.button("Kütüphane aç…", "folder", "ghost", self._open_library))
+        row.addWidget(ui.button(tr("New library…"), "plus", "ghost", self._new_library))
+        row.addWidget(ui.button(tr("Open library…"), "folder", "ghost", self._open_library))
         row.addStretch(1)
-        row.addWidget(ui.label("Sürüm", "muted"))
+        row.addWidget(ui.label(tr("Version"), "muted"))
         self.version_ed = QLineEdit(version or "1.0.0")
         self.version_ed.setProperty("mono", "true")
         self.version_ed.setMaximumWidth(140)
@@ -700,7 +695,7 @@ class LibraryPane(QWidget):
             if lib is select or (target is None and select is None):
                 target = top
         if not self.ctx.libraries:
-            it = QTreeWidgetItem(["Açık kütüphane yok: Yeni kütüphane ya da Kütüphane aç", "", ""])
+            it = QTreeWidgetItem([tr("No open library: New library or Open library"), "", ""])
             it.setForeground(0, QColor(t["muted"]))
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.tree.addTopLevelItem(it)
@@ -726,18 +721,17 @@ class LibraryPane(QWidget):
         lib, v = self.library(), self.version()
         t = theme.manager().tokens
         if lib is None:
-            text, color = "Bir kütüphane seç ya da yeni bir kütüphane oluştur.", t["muted"]
+            text, color = tr("Select a library or create a new one."), t["muted"]
         elif not G.VERSION_RE.match(v):
-            text, color = "Sürüm rakam ve nokta ile yazılmalı, ör. 1.0.0", t["danger"]
+            text, color = tr("Write the version with digits and dots, e.g. 1.0.0"), t["danger"]
         else:
             have = [e.version for e in lib.versions(self.ip_name)]
             if v in have:
-                text, color = f"{lib.name}: {self.ip_name} {v} zaten var, üzerine yazılacak.", t["warning"]
+                text, color = tr("{0}: {1} {2} already exists and will be overwritten.").format(lib.name, self.ip_name, v), t["warning"]
             elif have:
-                text, color = (f"{lib.name}: {self.ip_name} için yeni sürüm {v} eklenecek "
-                               f"(mevcut: {', '.join(have)})."), t["success"]
+                text, color = (tr("{0}: new version {2} of {1} will be added (existing: {3}).").format(lib.name, self.ip_name, v, ', '.join(have))), t["success"]
             else:
-                text, color = f"{lib.name}: {self.ip_name} yeni IP olarak eklenecek ({v}).", t["success"]
+                text, color = tr("{0}: {1} will be added as a new IP ({2}).").format(lib.name, self.ip_name, v), t["success"]
         self.info.setText(text)
         self.info.setStyleSheet(f"color: {color};")
         self.changed.emit()
@@ -748,14 +742,14 @@ class LibraryPane(QWidget):
             self._fill(lib)
 
     def _open_library(self):
-        path, _ = QFileDialog.getOpenFileName(self, "IP kütüphanesi aç", os.path.dirname(self.ctx.path or ROOT),
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open IP library"), os.path.dirname(self.ctx.path or ROOT),
                                               LIB_FILTER)
         if not path:
             return
         try:
             lib = self.ctx.open_library(path)
         except Exception as exc:  # noqa: BLE001
-            return QMessageBox.critical(self, "Açılamadı", str(exc))
+            return QMessageBox.critical(self, tr("Could not open"), str(exc))
         self._fill(lib)
 
 
@@ -771,10 +765,9 @@ class ProjectPane(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        lay.addWidget(ui.label("Projedeki IP'ler. Register haritası aşağıdaki adla kaydedilir; listeden bir IP "
-                               "seçmek adını alır (o IP'nin haritası bununla değiştirilir).", "muted", wrap=True))
+        lay.addWidget(ui.label(tr("The project's IPs. The register map is saved under the name below; picking an IP in the list takes its name (its register map is replaced)."), "muted", wrap=True))
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["IP", "Sürüm", "Register", "Adres haritasında", "Kaynak"])
+        self.tree.setHeaderLabels(["IP", tr("Version"), "Register", tr("In the address map"), tr("Source")])
         self.tree.setRootIsDecorated(False)
         self.tree.setUniformRowHeights(True)
         h = self.tree.header()
@@ -786,23 +779,23 @@ class ProjectPane(QWidget):
         for ip in sorted(ctx.project.ips, key=lambda i: i.name.lower()):
             n = len(ctx.project.instances_of(ip.name))
             it = QTreeWidgetItem([ip.name, ip.version or "—", str(len(ip.registers)),
-                                  ", ".join(i.name for i in ctx.project.instances_of(ip.name)) if n else "yerleşmedi",
+                                  ", ".join(i.name for i in ctx.project.instances_of(ip.name)) if n else tr("not placed"),
                                   ip.source or "projede"])
             it.setData(0, ROLE, ip.name)
             if ip.name == current:
                 for c in range(5):
                     it.setForeground(c, QColor(t["accent"]))
-                it.setToolTip(0, "Düzenlenen IP")
+                it.setToolTip(0, tr("IP being edited"))
             self.tree.addTopLevelItem(it)
         if not ctx.project.ips:
-            it = QTreeWidgetItem(["Projede henüz IP yok", "", "", "", ""])
+            it = QTreeWidgetItem([tr("No IPs in the project yet"), "", "", "", ""])
             it.setForeground(0, QColor(t["muted"]))
             it.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.tree.addTopLevelItem(it)
         self.tree.itemClicked.connect(lambda it, _c: it.data(0, ROLE) and self.name_ed.setText(it.data(0, ROLE)))
         lay.addWidget(self.tree, 1)
         row = QHBoxLayout()
-        row.addWidget(ui.label("Ad", "muted"))
+        row.addWidget(ui.label(tr("Name"), "muted"))
         self.name_ed = QLineEdit(name)
         self.name_ed.textChanged.connect(lambda *_: self._update())
         row.addWidget(self.name_ed, 1)
@@ -826,18 +819,18 @@ class ProjectPane(QWidget):
         proj = self.ctx.project
         other = proj.get_ip(name)
         if not name:
-            text, color = "Ad boş olamaz.", t["danger"]
+            text, color = tr("The name cannot be empty."), t["danger"]
         elif other is not None and name != self.current:
             n = len(proj.instances_of(name))
-            text, color = (f"Projede “{name}” var: register haritası bununla değiştirilecek"
-                           + (f" (adres haritasında {n} örnek bu haritayı kullanır)." if n else "."), t["warning"])
+            text, color = (tr("The project has “{0}”: its register map will be replaced").format(name)
+                           + (tr(" ({0} address-map instances use this register map).").format(n) if n else "."), t["warning"])
         elif self.current and proj.get_ip(self.current) and name != self.current:
-            text, color = f"“{self.current}” IP'si “{name}” olarak yeniden adlandırılacak; örnekleri de izler.", \
+            text, color = tr("IP “{0}” will be renamed to “{1}”; its instances follow.").format(self.current, name), \
                 t["warning"]
         elif other is not None:
-            text, color = f"Projedeki “{name}” güncellenecek.", t["success"]
+            text, color = tr("“{0}” in the project will be updated.").format(name), t["success"]
         else:
-            text, color = f"“{name}” projeye yeni IP olarak eklenecek.", t["success"]
+            text, color = tr("“{0}” will be added to the project as a new IP.").format(name), t["success"]
         self.info.setText(text)
         self.info.setStyleSheet(f"color: {color};")
         self.changed.emit()
@@ -853,14 +846,13 @@ class FilePane(QWidget):
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
-        lay.addWidget(ui.label("Register haritası bir register spesifikasyonu dosyası (.regspec.json) olarak yazılır; "
-                               "başka bir projeye ya da komut satırına (axilgen) taşımak için.", "muted", wrap=True))
+        lay.addWidget(ui.label(tr("The register map is written as a register spec file (.regspec.json), to take it to another project or to the command line (axilgen)."), "muted", wrap=True))
         row = QHBoxLayout()
         self.path_ed = QLineEdit(path)
         self.path_ed.setProperty("mono", "true")
         self.path_ed.textChanged.connect(lambda *_: self._update())
         row.addWidget(self.path_ed, 1)
-        row.addWidget(ui.button("Gözat…", "folder", "ghost", self._browse))
+        row.addWidget(ui.button(tr("Browse…"), "folder", "ghost", self._browse))
         lay.addLayout(row)
         self.info = ui.label("", None, wrap=True)
         lay.addWidget(self.info)
@@ -879,21 +871,21 @@ class FilePane(QWidget):
         return bool(self.path()) and os.path.exists(self.path())
 
     def _browse(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Register spesifikasyonu", self.path() or ROOT,
-                                              "Register spesifikasyonu (*.regspec.json);;JSON (*.json)")
+        path, _ = QFileDialog.getSaveFileName(self, tr("Register spec"), self.path() or ROOT,
+                                              tr("Register spec (*.regspec.json);;JSON (*.json)"))
         if path:
             self.path_ed.setText(path)
 
     def _update(self):
         t = theme.manager().tokens
         if not self.path():
-            text, color = "Dosya yolu yaz ya da Gözat.", t["muted"]
+            text, color = tr("Type a file path or Browse."), t["muted"]
         elif not self.valid():
-            text, color = "Klasör bulunamadı.", t["danger"]
+            text, color = tr("Folder not found."), t["danger"]
         elif self.overwrites():
-            text, color = "Dosya var, üzerine yazılacak.", t["warning"]
+            text, color = tr("The file exists and will be overwritten."), t["warning"]
         else:
-            text, color = "Yeni dosya olarak yazılacak.", t["success"]
+            text, color = tr("It will be written as a new file."), t["success"]
         self.info.setText(text)
         self.info.setStyleSheet(f"color: {color};")
         self.changed.emit()
@@ -925,8 +917,8 @@ class _PaneDialog(QDialog):
             self.tabs.currentChanged.connect(lambda *_: self._update())
             lay.addWidget(self.tabs, 1)
         box = QDialogButtonBox()
-        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        self.ok = box.addButton(tr("Save"), QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QDialogButtonBox.ButtonRole.RejectRole)
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
         lay.addWidget(box)
@@ -941,7 +933,7 @@ class _PaneDialog(QDialog):
     def _update(self):
         _key, _label, pane = self.current()
         self.ok.setEnabled(pane.valid())
-        self.ok.setText("Üzerine yaz" if pane.valid() and pane.overwrites() else "Kaydet")
+        self.ok.setText(tr("Overwrite") if pane.valid() and pane.overwrites() else tr("Save"))
 
     def accept(self):
         key, _label, pane = self.current()
@@ -963,8 +955,8 @@ class LibrarySaveDialog:
     @staticmethod
     def ask(parent, ctx, ip_name, version, prefer=""):
         """(library, version) or None."""
-        r = _PaneDialog(parent, f"Kütüphaneye kaydet: {ip_name}",
-                        [("library", "Kütüphane", LibraryPane(ctx, ip_name, version, prefer))]).ask()
+        r = _PaneDialog(parent, tr("Store in library: {0}").format(ip_name),
+                        [("library", tr("Library"), LibraryPane(ctx, ip_name, version, prefer))]).ask()
         return (r[1], r[2]) if r else None
 
 
@@ -972,7 +964,7 @@ class ProjectSaveDialog:
     @staticmethod
     def ask(parent, ctx, name, current=None):
         """The project IP name or None."""
-        r = _PaneDialog(parent, "Projeye kaydet", [("project", "Proje", ProjectPane(ctx, name, current))]).ask()
+        r = _PaneDialog(parent, tr("Save to project"), [("project", tr("Project"), ProjectPane(ctx, name, current))]).ask()
         return r[1] if r else None
 
 
@@ -984,7 +976,7 @@ class SaveAsDialog:
 
     @staticmethod
     def ask(parent, ctx, name, version, current_project=None, prefer_lib="", path="", select="project"):
-        panes = [("project", "Proje", ProjectPane(ctx, name, current_project)),
-                 ("library", "Kütüphane", LibraryPane(ctx, name, version, prefer_lib)),
-                 ("file", "Dosya (.regspec.json)", FilePane(path))]
-        return _PaneDialog(parent, f"Farklı kaydet: {name}", panes, SaveAsDialog.ORDER.index(select)).ask()
+        panes = [("project", tr("Project"), ProjectPane(ctx, name, current_project)),
+                 ("library", tr("Library"), LibraryPane(ctx, name, version, prefer_lib)),
+                 ("file", tr("File (.regspec.json)"), FilePane(path))]
+        return _PaneDialog(parent, tr("Save as: {0}").format(name), panes, SaveAsDialog.ORDER.index(select)).ask()

@@ -113,12 +113,12 @@ def test_validation_errors():
     p = project()
     a, b = A.add_instance(p, "ip"), A.add_instance(p, "ip")
     b.base, b.fixed = a.base, True
-    assert any("çakışıyor" in e for e in A.validate(p))
+    assert any("overlaps" in e for e in A.validate(p))
     p2 = project()
     assert A.validate(p2)                                   # empty map
     A.add_instance(p2, "ip")
     A.add_bridge(p2)
-    assert any("boş" in e for e in A.validate(p2))          # empty Sub-bus Bridge
+    assert any("is empty" in e for e in A.validate(p2))      # empty Sub-bus Bridge
 
 
 @pytest.mark.parametrize("module, clash", [("axilxbar", True), ("ip", True), ("ip_pk", True), ("my_xbar", False)])

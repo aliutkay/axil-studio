@@ -5,6 +5,7 @@ import os
 import tempfile
 from dataclasses import dataclass, field
 from typing import List, Optional
+from axil_studio.i18n import tr
 
 ACCESS_TYPES = ("RW", "RO", "WO")
 PROJECT_FORMAT = "axil-uart-project"
@@ -38,7 +39,7 @@ def parse_int(text):
     """Parse decimal, 0x-hex or 0b-binary text into an int."""
     text = str(text).strip().replace("_", "")
     if not text:
-        raise ValueError("empty value")
+        raise ValueError(tr("empty value"))
     return int(text, 0)
 
 
@@ -345,8 +346,8 @@ class Project:
                 out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name))
         return out
 
-    def save(self, path=None):
-        self.path = path or self.path
+    def to_data(self):
+        """The project as plain data (what the file holds; also the undo snapshots)."""
         data = {"format": PROJECT_FORMAT, "version": PROJECT_VERSION, "name": self.name,
                 "ips": [i.to_dict(with_base=False) for i in self.ips],
                 "instances": [i.to_dict() for i in self.instances]}
@@ -360,14 +361,17 @@ class Project:
             data["debug"] = self.debug
         if self.libraries:
             data["libraries"] = list(self.libraries)
-        write_json(self.path, data)
+        return data
+
+    def save(self, path=None):
+        self.path = path or self.path
+        write_json(self.path, self.to_data())
 
     @staticmethod
-    def load(path):
-        with open(path, encoding="utf-8") as fh:
-            data = json.load(fh)
+    def from_data(data, path=None):
         if data.get("format") != PROJECT_FORMAT:
-            raise ValueError("Not a project file")
+            raise ValueError(tr("Not a project file"))
+        data = json.loads(json.dumps(data))           # the project never shares objects with `data`
         proj = Project(data.get("name", "Untitled"),
                        [IPBlock.from_dict(i) for i in data.get("ips", [])], path,
                        interconnect=data.get("interconnect"), debug=data.get("debug"),
@@ -379,6 +383,12 @@ class Project:
         for ip in proj.ips:
             ip.base = 0
         return proj
+
+    @staticmethod
+    def load(path):
+        with open(path, encoding="utf-8") as fh:
+            data = json.load(fh)
+        return Project.from_data(data, path)
 
 
 def _upgrade_v1(proj, data):
@@ -420,5 +430,5 @@ def load_config(path):
     with open(path, encoding="utf-8") as fh:
         data = json.load(fh)
     if data.get("format") != CONFIG_FORMAT:
-        raise ValueError("Not a config file")
+        raise ValueError(tr("Not a config file"))
     return [(w["ip"], w["register"], parse_int(w["value"])) for w in data.get("writes", [])]

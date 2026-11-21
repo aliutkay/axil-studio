@@ -13,6 +13,8 @@ from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout,
 from axil_studio import APP_NAME, ORG_NAME, ROOT, icons, theme, ui, version_text
 from axil_studio.project import PROJECT_FILTER, ProjectContext
 from axil_studio.tools import TOOLS, TOOLS_BY_ID
+from axil_studio import errors, i18n
+from axil_studio.i18n import tr
 
 EXAMPLE_PROJECT = os.path.join(ROOT, "examples", "gpio_demo.axproj.json")
 
@@ -25,17 +27,47 @@ class ProjectActions:
         self.win, self.ctx = window, ctx
 
     def build_menu(self, menubar):
-        m = menubar.addMenu("&Proje")
-        self._act(m, "Yeni proje", self.new, QKeySequence.StandardKey.New)
-        self._act(m, "Aç…", self.open, QKeySequence.StandardKey.Open)
-        self.recent_menu = m.addMenu("Son açılanlar")
+        m = menubar.addMenu(tr("&Project"))
+        self._act(m, tr("New project"), self.new, QKeySequence.StandardKey.New)
+        self._act(m, tr("Open…"), self.open, QKeySequence.StandardKey.Open)
+        self.recent_menu = m.addMenu(tr("Recent projects"))
         self.recent_menu.aboutToShow.connect(self._fill_recent)
         m.addSeparator()
-        self._act(m, "Kaydet", self.save, QKeySequence.StandardKey.Save)
-        self._act(m, "Farklı kaydet…", self.save_as, QKeySequence.StandardKey.SaveAs)
+        self._act(m, tr("Save"), self.save, QKeySequence.StandardKey.Save)
+        self._act(m, tr("Save as…"), self.save_as, QKeySequence.StandardKey.SaveAs)
         m.addSeparator()
-        self._act(m, "Çıkış", self.win.close, QKeySequence.StandardKey.Quit)
+        self._act(m, tr("Quit"), self.win.close, QKeySequence.StandardKey.Quit)
         return m
+
+    def build_edit_menu(self, menubar, page=None):
+        """Undo / redo. In a tool with its own history (the Register Map Editor's unsaved register
+        map) they act on that; everywhere else on the project."""
+        m = menubar.addMenu(tr("&Edit"))
+        self._page = page
+        self.undo_act = self._act(m, tr("Undo"), self.undo, QKeySequence.StandardKey.Undo)
+        self.redo_act = self._act(m, tr("Redo"), self.redo, QKeySequence.StandardKey.Redo)
+        m.aboutToShow.connect(self._sync_edit)
+        return m
+
+    def _history(self):
+        target = getattr(self._page, "history_target", None)
+        return target() if callable(target) else self.ctx
+
+    def _sync_edit(self):
+        h = self._history()
+        self.undo_act.setEnabled(h.can_undo())
+        self.redo_act.setEnabled(h.can_redo())
+
+    def _say(self, text):
+        bar = self.win.statusBar() if hasattr(self.win, "statusBar") else None
+        if bar is not None:
+            bar.showMessage(text, 3000)
+
+    def undo(self):
+        self._say(tr("Undone") if self._history().undo() else tr("Nothing to undo"))
+
+    def redo(self):
+        self._say(tr("Redone") if self._history().redo() else tr("Nothing to redo"))
 
     def _act(self, menu, text, slot, shortcut=None):
         a = QAction(text, self.win)
@@ -49,7 +81,7 @@ class ProjectActions:
         self.recent_menu.clear()
         items = self.ctx.recent()
         if not items:
-            a = self.recent_menu.addAction("(boş)")
+            a = self.recent_menu.addAction(tr("(empty)"))
             a.setEnabled(False)
         for p in items:
             self.recent_menu.addAction(os.path.basename(p), lambda *_, p=p: self.open(p))
@@ -57,7 +89,7 @@ class ProjectActions:
     def confirm_discard(self):
         if not self.ctx.dirty:
             return True
-        r = ui.ask_save(self.win, APP_NAME, f"“{self.ctx.project.name}” projesinde kaydedilmemiş değişiklikler var.")
+        r = ui.ask_save(self.win, APP_NAME, tr("Project “{0}” has unsaved changes.").format(self.ctx.project.name))
         if r == "save":
             return self.save()
         return r == "discard"
@@ -70,14 +102,14 @@ class ProjectActions:
         if not self.confirm_discard():
             return False
         if not path:
-            path, _ = QFileDialog.getOpenFileName(self.win, "Proje aç", os.path.dirname(self.ctx.path or ROOT),
+            path, _ = QFileDialog.getOpenFileName(self.win, tr("Open project"), os.path.dirname(self.ctx.path or ROOT),
                                                   PROJECT_FILTER)
             if not path:
                 return False
         try:
             self.ctx.open(path)
         except Exception as exc:  # noqa: BLE001 - shown to the user
-            QMessageBox.critical(self.win, "Proje açılamadı", f"{path}\n\n{exc}")
+            QMessageBox.critical(self.win, tr("Could not open the project"), f"{path}\n\n{exc}")
             return False
         return True
 
@@ -87,13 +119,13 @@ class ProjectActions:
         try:
             self.ctx.save()
         except OSError as exc:
-            QMessageBox.critical(self.win, "Kaydedilemedi", str(exc))
+            QMessageBox.critical(self.win, tr("Could not save"), str(exc))
             return False
         return True
 
     def save_as(self):
         start = self.ctx.path or os.path.join(ROOT, f"{self.ctx.project.name}.axproj.json")
-        path, _ = QFileDialog.getSaveFileName(self.win, "Projeyi kaydet", start, PROJECT_FILTER)
+        path, _ = QFileDialog.getSaveFileName(self.win, tr("Save project"), start, PROJECT_FILTER)
         if not path:
             return False
         if not path.endswith(".json"):
@@ -101,7 +133,7 @@ class ProjectActions:
         try:
             self.ctx.save(path)
         except OSError as exc:
-            QMessageBox.critical(self.win, "Kaydedilemedi", str(exc))
+            QMessageBox.critical(self.win, tr("Could not save"), str(exc))
             return False
         return True
 
@@ -127,9 +159,48 @@ class _ThemeMenu(QObject):
 
 
 def build_view_menu(window, menubar):
-    m = menubar.addMenu("&Görünüm")
-    window._theme_menu = _ThemeMenu(window, m.addMenu("Tema"))
+    m = menubar.addMenu(tr("&View"))
+    window._theme_menu = _ThemeMenu(window, m.addMenu(tr("Theme")))
+    build_language_menu(window, m.addMenu(tr("Language")))
     return m
+
+
+def build_language_menu(window, menu):
+    """Interface languages; the choice is used from the next start (offers to restart now)."""
+    current = i18n.saved_language()
+    for code, name in i18n.LANGUAGES.items():
+        a = QAction(name, window, checkable=True)
+        a.setChecked(code == current)
+        a.triggered.connect(lambda *_, code=code: change_language(window, code))
+        menu.addAction(a)
+    if os.environ.get(i18n.ENV):
+        menu.addSeparator()
+        note = menu.addAction(tr("Set by {0}={1} for this run").format(i18n.ENV, os.environ[i18n.ENV]))
+        note.setEnabled(False)
+
+
+def change_language(window, code):
+    if code == i18n.saved_language():
+        return
+    try:
+        i18n.set_saved_language(code)
+    except OSError as exc:
+        QMessageBox.critical(window, APP_NAME, str(exc))
+        return
+    if ui.confirm(window, tr("Language"), tr("The language changes when {0} starts again. Restart now?").format(APP_NAME),
+                  ok=tr("Restart"), cancel=tr("Later")):
+        restart_application()
+
+
+def restart_application():
+    """Close every window (they ask about unsaved changes) and start the program again."""
+    from PySide6.QtCore import QProcess
+    app = QApplication.instance()
+    app.closeAllWindows()
+    if any(w.isVisible() for w in app.topLevelWidgets() if isinstance(w, QMainWindow)):
+        return                                  # a window was kept open (unsaved changes): no restart
+    QProcess.startDetached(sys.executable, sys.argv)
+    app.quit()
 
 
 # ============================================================================ home page
@@ -143,12 +214,11 @@ class ToolCard(ui.Card):
         self.tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lay.addWidget(self.tile)
         self.lay.addWidget(ui.label(tool_cls.title, "cardTitle", wrap=True))
-        self.lay.addWidget(ui.Pill(version_text(tool_cls.version)), 0, Qt.AlignmentFlag.AlignLeft)
         self.lay.addWidget(ui.label(tool_cls.description, "muted", wrap=True), 1)
         row = QHBoxLayout()
-        row.addWidget(ui.button("Aç", "external", "primary", open_cb, "Aracı kendi penceresinde aç"))
+        row.addWidget(ui.button(tr("Open"), "external", "primary", open_cb, tr("Open the tool in its own window")))
         row.addStretch(1)
-        self.state = ui.Pill("açık", "ok")
+        self.state = ui.Pill(tr("open"), "ok")
         self.state.hide()
         row.addWidget(self.state)
         self.lay.addLayout(row)
@@ -181,16 +251,19 @@ class HomePage(QWidget):
         head.setSpacing(4)
         trow = QHBoxLayout()
         trow.setSpacing(10)
+        logo = QLabel()
+        logo.setPixmap(icons.app_icon().pixmap(QSize(40, 40)))
+        trow.addWidget(logo)
         trow.addWidget(ui.label(APP_NAME, "title"))
         trow.addWidget(ui.Pill(version_text(), "accent"), 0, Qt.AlignmentFlag.AlignVCenter)
         trow.addStretch(1)
         head.addLayout(trow)
-        head.addWidget(ui.label("AXI4-Lite slave IP'leri için register tanımı, adres haritası ve donanım üzerinde test.",
+        head.addWidget(ui.label(tr("Register maps, address maps and on-hardware testing for AXI4-Lite slave IPs."),
                                 "subtitle", wrap=True))
         lay.addLayout(head)
 
         # ---- project card
-        self.proj = ui.Card("Proje")
+        self.proj = ui.Card(tr("Project"))
         self.proj_name = ui.label("", "cardTitle")
         self.proj_path = ui.label("", "muted", wrap=True)
         self.proj_stats = QHBoxLayout()
@@ -204,13 +277,12 @@ class HomePage(QWidget):
         row.addLayout(info, 1)
         btns = QHBoxLayout()
         btns.setSpacing(8)
-        btns.addWidget(ui.button("Yeni", "file", None, hub.actions.new))
-        btns.addWidget(ui.button("Aç…", "folder", None, lambda: hub.actions.open()))
-        btns.addWidget(ui.button("Örnek proje", "play", "ghost", lambda: hub.actions.open(EXAMPLE_PROJECT)))
+        btns.addWidget(ui.button(tr("New"), "file", None, hub.actions.new))
+        btns.addWidget(ui.button(tr("Open…"), "folder", None, lambda: hub.actions.open()))
+        btns.addWidget(ui.button(tr("Example project"), "play", "ghost", lambda: hub.actions.open(EXAMPLE_PROJECT)))
         btns.addSpacing(8)
-        self.lib_btn = ui.button("IP'leri yönet", "library", "primary", lambda: hub.open_tool_window("library"),
-                                 "IP Library: projedeki IP'ler ve adres haritasındaki örnekleri, IP kütüphaneleri "
-                                 "(Ctrl+6)")
+        self.lib_btn = ui.button(tr("Manage IPs"), "library", "primary", lambda: hub.open_tool_window("library"),
+                                 tr("IP Library: the project's IPs and their address-map instances, IP libraries (Ctrl+6)"))
         btns.addWidget(self.lib_btn)
         row.addLayout(btns)
         self.proj.lay.addLayout(row)
@@ -220,7 +292,7 @@ class HomePage(QWidget):
         lay.addWidget(self.proj)
 
         # ---- tool cards
-        lay.addWidget(ui.label("ARAÇLAR", "section"))
+        lay.addWidget(ui.label(tr("TOOLS"), "section"))
         grid = QGridLayout()
         grid.setSpacing(16)
         self.cards = []
@@ -233,15 +305,14 @@ class HomePage(QWidget):
         lay.addLayout(grid)
 
         # ---- flow hint
-        flow = ui.Card("İş akışı", margins=18)
+        flow = ui.Card(tr("Workflow"), margins=18)
         steps = [
-            ("1", "Register Map Editor", "IP'nin register haritasını tasarla ve projeye kaydet (adres yok)."),
-            ("2", "Slave Interface Wrapper", "Register haritasından HDL, testbench, header ve dokümanı üret."),
-            ("3", "Address Map Editor", "IP'leri adres haritasına yerleştir; aynı IP birden çok kez kullanılabilir."),
-            ("4", "Interconnect Configurator", "Master'ları ve port stilini seç, axilxbar wrapper'ını üret."),
-            ("5", "UART-to-AXI Debug Bridge", "Aynı adres haritasıyla donanımdaki registerlara eriş."),
-            ("·", "IP'leri yönet (IP Library)", "Proje kartından: projedeki tüm IP'leri gör; IP'leri kütüphanelere "
-                                                "kaydet, kütüphanelerden projeye al."),
+            ("1", "Register Map Editor", tr("Design the IP's register map and save it to the project (no address).")),
+            ("2", "Slave Interface Wrapper", tr("Generate the HDL, testbench, C header and document from the register map.")),
+            ("3", "Address Map Editor", tr("Place IPs in the address map; an IP can be used more than once.")),
+            ("4", "Interconnect Configurator", tr("Choose masters and port style, generate the axilxbar wrappers.")),
+            ("5", "UART-to-AXI Debug Bridge", tr("Access the registers on the hardware with the same address map.")),
+            ("·", tr("Manage IPs (IP Library)"), tr("From the project card: see every IP of the project; store IPs in libraries, bring library IPs into the project.")),
         ]
         for num, name, text in steps:
             r = QHBoxLayout()
@@ -273,13 +344,13 @@ class HomePage(QWidget):
     def refresh(self):
         p = self.ctx.project
         self.proj_name.setText(self.ctx.display_name)
-        self.proj_path.setText(self.ctx.path or "Kaydedilmedi")
+        self.proj_path.setText(self.ctx.path or tr("Not saved"))
         while self.proj_stats.count():
             w = self.proj_stats.takeAt(0).widget()
             if w:
                 w.deleteLater()
         nregs = sum(len(ip.registers) for ip in p.ips)
-        for text in (f"{len(p.ips)} IP", f"{nregs} register", f"adres haritasında {len(p.leaf_instances())} slave"):
+        for text in (tr("{0} IPs").format(len(p.ips)), tr("{0} registers").format(nregs), tr("{0} slaves in the address map").format(len(p.leaf_instances()))):
             self.proj_stats.addWidget(ui.Pill(text))
         self.proj_stats.addStretch(1)
 
@@ -290,7 +361,7 @@ class HomePage(QWidget):
         recent = [r for r in self.ctx.recent() if os.path.abspath(r) != os.path.abspath(self.ctx.path or "")]
         if recent:
             self.recent_box.addWidget(ui.Divider())
-            self.recent_box.addWidget(ui.label("SON AÇILANLAR", "section"))
+            self.recent_box.addWidget(ui.label(tr("RECENT PROJECTS"), "section"))
             for path in recent[:5]:
                 b = ui.button(os.path.basename(path), None, "link", lambda _=False, p=path: self.hub.actions.open(p),
                               path)
@@ -315,14 +386,16 @@ class HubWindow(QMainWindow):
 
         mb = self.menuBar()
         self.actions.build_menu(mb)
+        self.actions.build_edit_menu(mb)
         build_view_menu(self, mb)
-        tm = mb.addMenu("&Araçlar")
+        tm = mb.addMenu(tr("&Tools"))
         for i, tool in enumerate(TOOLS):
             a = tm.addAction(tool.title, lambda *_, t=tool: self.open_tool_window(t.tool_id))
             a.setShortcut(QKeySequence(f"Ctrl+{i + 1}"))
-        hm = mb.addMenu("&Yardım")
-        hm.addAction(f"{APP_NAME} hakkında", self._about)
-        self.statusBar().showMessage("Hazır")
+        hm = mb.addMenu(tr("&Help"))
+        hm.addAction(tr("About {0}").format(APP_NAME), self._about)
+        hm.addAction(tr("Open log folder"), self._open_logs)
+        self.statusBar().showMessage(tr("Ready"))
         ctx.state_changed.connect(self._update_title)
         self._update_title()
 
@@ -357,10 +430,17 @@ class HubWindow(QMainWindow):
     def _update_title(self):
         self.setWindowTitle(f"{APP_NAME} {version_text()} | {self.ctx.display_name}")
 
+    def _open_logs(self):
+        from PySide6.QtCore import QUrl
+        from PySide6.QtGui import QDesktopServices
+        os.makedirs(errors.log_dir(), exist_ok=True)
+        QDesktopServices.openUrl(QUrl.fromLocalFile(errors.log_dir()))
+
     def _about(self):
-        QMessageBox.about(self, APP_NAME,
+        QMessageBox.about(self, tr("About {0}").format(APP_NAME),
                           f"<b>{APP_NAME}</b> {version_text()}<br><br>"
-                          + "<br>".join(f"{t.title} — {version_text(t.version)}" for t in TOOLS))
+                          + tr("Register maps, address maps and on-hardware testing for AXI4-Lite slave IPs.")
+                          + "<br><br>" + tr("Includes ZipCPU wb2axip cores (Apache 2.0, Gisselquist Technology LLC)."))
 
     def closeEvent(self, ev):
         wins = list(self.tool_windows.values())
@@ -384,19 +464,20 @@ class ToolWindow(QMainWindow):
         self.ctx, self.owned = ctx, owned
         cls = TOOLS_BY_ID[tool_id]
         self.page = cls(ctx)
-        self.tool_title = f"{cls.title} {version_text(cls.version)}"
+        self.tool_title = f"{cls.title} {version_text()}"
         self.setCentralWidget(self.page)
         self.resize(1180, 780)
         self.setAttribute(Qt.WidgetAttribute.WA_DeleteOnClose)
         self.actions = ProjectActions(self, ctx)
         self._forced = False
         self.actions.build_menu(self.menuBar())
+        self.actions.build_edit_menu(self.menuBar(), self.page)
         self.page.build_menus(self.menuBar())
         build_view_menu(self, self.menuBar())
         issues = getattr(self.page, "issues", None)
         if issues is not None:            # validation lives in the bottom line, not in a panel
             self.statusBar().addPermanentWidget(issues)
-        self.statusBar().showMessage("Hazır")
+        self.statusBar().showMessage(tr("Ready"))
         ctx.state_changed.connect(self._update_title)
         self._update_title()
 
@@ -419,30 +500,42 @@ class ToolWindow(QMainWindow):
 
 
 # ============================================================================ entry point
-def install_turkish(app):
-    """Turkish texts for Qt's own dialogs and buttons (file dialogs, Yes/No, Save/Cancel ...)."""
+def install_qt_translations(app):
+    """Qt's own dialogs and buttons (file dialogs, Yes/No, Save/Cancel ...) in the interface language."""
     from PySide6.QtCore import QLibraryInfo, QLocale, QTranslator
-    QLocale.setDefault(QLocale(QLocale.Language.Turkish, QLocale.Country.Turkey))
-    path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    code = i18n.language()
     app._translators = []
-    for name in ("qtbase_tr", "qt_tr"):
-        tr = QTranslator(app)
-        if tr.load(name, path):
-            app.installTranslator(tr)
-            app._translators.append(tr)
+    if code == "en":
+        QLocale.setDefault(QLocale(QLocale.Language.English, QLocale.Country.UnitedStates))
+        return
+    QLocale.setDefault(QLocale(code))
+    path = QLibraryInfo.path(QLibraryInfo.LibraryPath.TranslationsPath)
+    for name in (f"qtbase_{code}", f"qt_{code}"):
+        qtr = QTranslator(app)
+        if qtr.load(name, path):
+            app.installTranslator(qtr)
+            app._translators.append(qtr)
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="axil_studio", description=APP_NAME)
-    ap.add_argument("--tool", choices=sorted(TOOLS_BY_ID), help="yalnızca bu aracı ayrı pencerede aç")
-    ap.add_argument("project", nargs="?", help=".axproj.json dosyası")
+    ap.add_argument("--tool", choices=sorted(TOOLS_BY_ID), help=tr("open only this tool in its own window"))
+    ap.add_argument("project", nargs="?", help=tr(".axproj.json file"))
     args = ap.parse_args(argv)
 
     QCoreApplication.setOrganizationName(ORG_NAME)
     QCoreApplication.setApplicationName(APP_NAME)
     app = QApplication.instance() or QApplication(sys.argv[:1])
     app.setApplicationDisplayName(APP_NAME)
-    install_turkish(app)
+    install_qt_translations(app)
+    errors.install()                             # unexpected errors: log file + dialog
+    app.setWindowIcon(icons.app_icon())
+    if sys.platform.startswith("win"):           # own task-bar entry and icon, not python.exe's
+        try:
+            import ctypes
+            ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("AXILStudio.AXILStudio")
+        except (AttributeError, OSError):
+            pass
     theme.install(app)
 
     ctx = ProjectContext(app)
@@ -450,7 +543,7 @@ def main(argv=None):
         try:
             ctx.open(args.project)
         except Exception as exc:  # noqa: BLE001
-            QMessageBox.critical(None, "Proje açılamadı", f"{args.project}\n\n{exc}")
+            QMessageBox.critical(None, tr("Could not open the project"), f"{args.project}\n\n{exc}")
 
     win = ToolWindow(ctx, args.tool) if args.tool else HubWindow(ctx)
     win.show()

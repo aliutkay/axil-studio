@@ -17,6 +17,7 @@ parameter through unchanged.
 """
 
 import re
+from axil_studio.i18n import tr
 
 # MSB first. (name, width)
 REQ_FIELDS = (("AWADDR", 32), ("AWPROT", 3), ("AWVALID", 1), ("WDATA", 32), ("WSTRB", 4), ("WVALID", 1),
@@ -100,7 +101,7 @@ def parse_module(text, name=None):
     pat = r"\bmodule\s+(" + (re.escape(name) if name else r"[A-Za-z_]\w*") + r")\b"
     m = re.search(pat, src)
     if not m:
-        raise ParseError("Modül bulunamadı" + (f": {name}" if name else ""))
+        raise ParseError(tr("Module not found") + (f": {name}" if name else ""))
     mod, i = m.group(1), m.end()
     while src[i].isspace():
         i += 1
@@ -111,23 +112,23 @@ def parse_module(text, name=None):
         for item in _split_top(src[j + 1:k]):
             pm = re.match(r"(parameter|localparam)\b(.*?)([A-Za-z_]\w*)\s*=\s*(.+)$", item, re.S)
             if not pm:
-                raise ParseError(f"Parametre okunamadı: {item[:60]}")
+                raise ParseError(tr("Cannot read parameter: {0}").format(item[:60]))
             params.append((pm.group(1), " ".join(item.split()), pm.group(3)))
         i = k + 1
     while src[i].isspace():
         i += 1
     if src[i] != "(":
-        raise ParseError("Port listesi bulunamadı")
+        raise ParseError(tr("Port list not found"))
     k = _matching(src, i)
     ports = []
     for item in _split_top(src[i + 1:k]):
         pm = re.match(r"(input|output|inout)\s+(?:(?:wire|reg|logic|signed|unsigned|var)\s+)*"
                       r"(\[[^\]]+\])?\s*([A-Za-z_]\w*)$", " ".join(item.split()))
         if not pm:
-            raise ParseError(f"Port okunamadı (yalnızca ANSI başlık desteklenir): {item[:60]}")
+            raise ParseError(tr("Cannot read port (only ANSI headers are supported): {0}").format(item[:60]))
         ports.append((pm.group(1), pm.group(2) or "", pm.group(3)))
     if not ports:
-        raise ParseError("Modülde port yok")
+        raise ParseError(tr("The module has no ports"))
     return {"name": mod, "params": params, "ports": ports}
 
 
@@ -149,7 +150,7 @@ def gen_pack_wrapper(info, wrapper=None):
     wrapper = wrapper or f"{mod}_pk"
     groups = axi_groups(info)
     if not groups:
-        raise ParseError("S_AXI_* ya da M_AXI_* AXI4-Lite port grubu bulunamadı")
+        raise ParseError(tr("No S_AXI_* or M_AXI_* AXI4-Lite port group found"))
     axi = {f"{g}_AXI_{s}" for g in groups for s in REQ_SIGS | RSP_SIGS}
     ports = {p[2]: p for p in info["ports"]}
 

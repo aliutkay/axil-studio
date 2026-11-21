@@ -16,7 +16,9 @@ görünüm, açık/koyu tema):
 Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
 bir bar vardır: solda ikon ve ad (sürüm pencere başlığında: *AXIL Studio Register Map Editor early-alpha … | proje*),
 hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
-ve ana düğme (**Kaydet** mavi kalır). Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
+ve ana düğme (**Kaydet** mavi kalır). Uzun açıklamalar panellerde paragraf olarak değil, başlıkların yanındaki **?**
+düğmesinde durur (üzerine gelince ya da tıklayınca görünür). İkincil düğmelerin ince bir çerçevesi vardır, devre dışı
+olanlar kesikli çerçeveyle soluk görünür. Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
 dönüşümlü boyanır, listenin zemini satırların açık tonudur. Listedeki her satırın sonunda silik bir kalem (düzenle) ve çöp
 kutusu (sil) ikonu vardır; üzerine gelince belirginleşir. IP Library, Proje kartındaki
 **IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
@@ -29,6 +31,10 @@ yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca 
   *Adres haritasına ekle*) **Address Map Editor** açılır.
 - IP seçilen / eklenen her yerde (Address Map Editor *IP ekle*, Register Map Editor *IP aç*, Wrapper *IP seç*)
   **IP Library** seçici olarak açılır; kütüphanedeki bir IP seçilirse önce projeye alınır.
+
+Arayüz varsayılan olarak **İngilizce**dir; **View → Language** menüsünden **Türkçe** seçilebilir (bkz.
+[Arayüz dili ve çeviriler](#arayüz-dili-ve-çeviriler)). Bu belgede düğme ve menü adları Türkçe arayüzdeki
+karşılıklarıyla yazılmıştır.
 
 ```
 pip install -r requirements.txt
@@ -344,11 +350,12 @@ monitörde yan yana kullanılabilir. Pencere kapatılınca (ya da **Pencereye ge
 
 ## Sürümler
 
-Geliştirme aşaması: **early-alpha** (sonra alpha → beta → release). Program ve her araç kendi sürümünü taşır
-(bkz. `CHANGELOG.md`). Kaydedilen proje dosyasına `generator` olarak yazan programın adı ve sürümü eklenir.
+Geliştirme aşaması: **early-alpha** (sonra alpha → beta → release). Uygulamanın **tek bir sürümü** vardır
+(`axil_studio/__init__.py` → `APP_VERSION`); hub'da, pencere başlıklarında ve **Yardım → Hakkında**'da gösterilir.
+Araçların ayrı sürümü yoktur. Kaydedilen proje dosyasına `generator` olarak yazan programın adı ve sürümü eklenir.
 
-**Her commit programın sürümünü 0.0.1 artırır** (`axil_studio/__init__.py` → `APP_VERSION`). Bunu
-`.githooks/pre-commit` kendiliğinden yapar; depoyu klonladıktan sonra bir kez etkinleştir:
+**Her commit sürümü 0.0.1 artırır**. Bunu `.githooks/pre-commit` kendiliğinden yapar; depoyu klonladıktan sonra bir
+kez etkinleştir:
 
 ```
 git config core.hooksPath .githooks
@@ -356,6 +363,32 @@ git config core.hooksPath .githooks
 
 Sürüm elle değiştirilmiş bir commit'te (ör. yeni özellik için 0.2.0) hook dokunmaz. Elle artırmak için:
 `python scripts/bump_version.py`.
+
+## Arayüz dili ve çeviriler
+
+Kaynak dil İngilizcedir: koddaki her kullanıcı metni İngilizce yazılır ve `tr()` ile çevrilir
+(`axil_studio/i18n/`). Her dil, İngilizce metinden çeviriye bir JSON kataloğudur (`tr.json`); katalogda olmayan
+metin İngilizce kalır. Değer içeren metinler numaralı yer tutucu kullanır: `tr("{0} registers").format(n)`.
+
+- **View → Language** dili seçer; seçim bir sonraki açılışta geçerli olur (uygulama yeniden başlatmayı önerir).
+  Qt'nin kendi pencereleri (dosya seçici, Evet/Hayır) de seçilen dile geçer.
+- Komut satırı ve testler için `AXIL_STUDIO_LANG=tr` ortam değişkeni seçimi geçersiz kılar.
+- Ayar dosyası: Windows `%APPDATA%\AXIL Studio\settings.json`, macOS `~/Library/Application Support/AXIL Studio/`,
+  Linux `~/.config/AXIL Studio/`.
+- **Yeni dil eklemek:** `tr.json`'u `<kod>.json` olarak kopyala, değerleri çevir, kodu `i18n.LANGUAGES`'a ekle.
+- `python scripts/i18n_check.py` koddaki her `tr()` metnini kataloglarla karşılaştırır: eksik çeviriler, kullanılmayan
+  girdiler (`--prune` siler) ve yer tutucu uyuşmazlıkları. Testler de bunu çalıştırır.
+
+## Geri al / yinele ve hata kaydı
+
+- **Düzen → Geri al** (Ctrl+Z) / **Yinele** (Ctrl+Y, Ctrl+Shift+Z) projedeki her değişikliği geri alır: IP ekleme,
+  adres, boyut, kilit, taşıma, interconnect ayarları… Register Map Editor'da ise henüz kaydedilmemiş register
+  haritasındaki değişiklikleri (register, bit alanı, değer açıklaması…) geri alır; proje bundan etkilenmez.
+  Kaydedilen noktaya geri dönülünce "kaydedilmemiş" işareti kalkar. Metin kutularında Ctrl+Z kutunun kendi geri
+  almasıdır.
+- **Beklenmeyen hatalar** bir pencerede gösterilir (kısa mesaj, ayrıntılar, **Ayrıntıları kopyala**) ve log dosyasına
+  yazılır: ayar klasöründe `logs/axil_studio.log` (1 MB × 3). **Yardım → Log klasörünü aç** klasörü açar. Arka plan
+  işlerindeki (seri port, testbench) hatalar da yakalanır; Qt uyarıları da log'a gider.
 
 ## İki parçalı yapı ve testler
 
@@ -417,13 +450,15 @@ commit'in yanında görünür.
 | Yer | İçerik |
 |---|---|
 | `studio.py` | Başlatıcı (`python studio.py`) |
-| `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py` |
+| `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py`; `history.py` (geri al / yinele), `errors.py` (hata yakalayıcı ve log) |
 | `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
-| `scripts/` | Komut satırı araçları: `uart_validate.py` (+ `uart_validate_sim.py`) |
+| `scripts/` | Komut satırı araçları: `uart_validate.py` (+ `uart_validate_sim.py`), `i18n_check.py` (çeviri denetimi), `bump_version.py` |
 | `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri |
 | `examples/` | Örnek GPIO projesi ve config dosyaları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
+| `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |
+| `axil_studio/assets/` | Uygulama simgesi (`axil_studio.svg`; kurulum paketleri için `.png` ve `.ico`) |
 | `tests/` | pytest testleri: `part1` (girdi → HDL spec), `part2` (HDL spec → Verilog), `data` (örnek girdiler ve beklenen HDL spec'ler), `golden` (beklenen Verilog) |
 | `.github/workflows/` | GitHub Actions: her push'ta testler |
 

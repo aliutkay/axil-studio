@@ -10,6 +10,7 @@ import os
 from PySide6.QtCore import QEvent, QObject, QSettings, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
 from PySide6.QtWidgets import QAbstractItemView, QApplication, QComboBox, QStyleFactory
+from axil_studio.i18n import tr
 
 # Colours follow the corporate palette: the blue (R0 G48 B135) and its 20 % tints,
 # text in 90 % black, the orange support colour used only for rare highlights.
@@ -70,7 +71,7 @@ def ink_on(hex_color):
 UI_FONTS = ("IBM Plex Sans",)
 MONO_FONTS = ("IBM Plex Mono",)
 MODES = ("system", "light", "dark")
-MODE_LABELS = {"system": "Sistem", "light": "Açık", "dark": "Koyu"}
+MODE_LABELS = {"system": "Sistem", "light": tr("Light"), "dark": "Koyu"}
 
 QSS = """
 * {{ outline: none; }}
@@ -103,6 +104,7 @@ QLabel[role="pill"] {{ border-radius: 9px; padding: 2px 9px; font-size: 11px; fo
 QLabel[role="pill"][state="ok"] {{ background: transparent; color: {success}; border-color: {success}; }}
 QLabel[role="pill"][state="err"] {{ background: transparent; color: {danger}; border-color: {danger}; }}
 QLabel[role="pill"][state="accent"] {{ background: {accent_soft}; color: {accent}; border-color: {accent_soft}; }}
+QLabel[role="pill"][state="off"] {{ background: transparent; color: {muted}; border-color: transparent; font-size: 12px; }}
 QLabel[role="pill"][state="warn"] {{ background: transparent; color: {highlight}; border-color: {highlight}; }}
 
 /* ---------------------------------------------------------------- action bar */
@@ -137,8 +139,15 @@ QPushButton:disabled, QToolButton:disabled {{ color: {muted}; background: {surfa
 QPushButton[variant="primary"] {{ background: {primary}; border-color: {primary}; color: {accent_text}; font-weight: 600; }}
 QPushButton[variant="primary"]:hover {{ background: {primary_hover}; border-color: {primary_hover}; }}
 QPushButton[variant="primary"]:disabled {{ background: {accent_soft}; border-color: {accent_soft}; color: {muted}; }}
-QPushButton[variant="ghost"], QToolButton[variant="ghost"] {{ background: transparent; border-color: transparent; }}
-QPushButton[variant="ghost"]:hover, QToolButton[variant="ghost"]:hover {{ background: {hover}; }}
+/* secondary buttons: a light outline, so text-only ones never read as plain text; disabled ones fade out */
+QPushButton[variant="ghost"], QToolButton[variant="ghost"] {{ background: transparent; border-color: {border}; }}
+QPushButton[variant="ghost"]:hover, QToolButton[variant="ghost"]:hover {{ background: {hover}; border-color: {accent}; }}
+QPushButton[variant="ghost"]:disabled, QToolButton[variant="ghost"]:disabled {{ background: transparent; border-style: dashed; color: {muted}; }}
+QPushButton:disabled {{ border-style: dashed; }}
+#ActionBar QPushButton:disabled {{ border-color: transparent; background: transparent; color: {muted}; }}
+#HelpButton {{ min-height: 0; padding: 0; border: 1px solid {border}; border-radius: 9px; background: transparent;
+              color: {muted}; font-size: 11px; font-weight: 700; }}
+#HelpButton:hover {{ color: {accent}; border-color: {accent}; background: {accent_soft}; }}
 QPushButton[variant="link"] {{ background: transparent; border: none; color: {accent}; padding: 2px 0; }}
 QPushButton[variant="link"]:hover {{ text-decoration: underline; }}
 QToolButton::menu-indicator {{ image: none; width: 0; }}

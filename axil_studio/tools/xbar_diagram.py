@@ -26,6 +26,7 @@ from axil_studio.core import xbargen as X
 from axil_studio import theme
 from axil_studio.dialogs import size_text
 from axil_studio.core.model import hex32
+from axil_studio.i18n import tr
 
 IN_COLOR = "#3B82F6"     # towards the slaves (requests)
 OUT_COLOR = "#D99A00"    # towards the masters (responses)
@@ -39,9 +40,9 @@ ZOOM_MIN, ZOOM_MAX = 0.3, 3.0
 
 # how much of a connection is shown (both diagrams), from the plainest to the HDL Designer ports
 DETAILS = {
-    "simple": "Master / slave",
-    "axi": "AXI Lite (Basitleştirilmiş Görünüm)",
-    "axi_full": "AXI Lite (Detaylı Görünüm)",
+    "simple": tr("Master / slave"),
+    "axi": tr("AXI Lite (Simplified View)"),
+    "axi_full": tr("AXI Lite (Detailed View)"),
     "packed": "HDL Designer (REQ / RSP)",
 }
 # whole-system diagram: the lines drawn per connection: (label, 1 towards the slave / -1 back)
@@ -209,7 +210,7 @@ class BlockDiagram(QWidget):
             self._build()
             self.error = None
         except Exception as exc:  # noqa: BLE001 - the page must keep working; show why instead
-            self.error = f"Blok diyagramı çizilemedi: {exc}"
+            self.error = tr("Could not draw the block diagram: {0}").format(exc)
         self.update()
 
     def set_detail(self, detail):
@@ -324,14 +325,14 @@ class BlockDiagram(QWidget):
     def export_pdf(self, path):
         """The diagram as one PDF page of its own size (always the light palette, white page)."""
         if self.spec is None or self.error:
-            raise RuntimeError(self.error or "Çizilecek bir şey yok")
+            raise RuntimeError(self.error or tr("Nothing to draw"))
         w, h = self._size.width(), self._size.height()
         pdf = QPdfWriter(path)
         pdf.setResolution(72)
         pdf.setPageLayout(QPageLayout(QPageSize(QSizeF(w, h), QPageSize.Unit.Point, "diagram",
                                                 QPageSize.SizeMatchPolicy.ExactMatch),
                                       QPageLayout.Orientation.Portrait, QMarginsF(0, 0, 0, 0)))
-        pdf.setTitle("AXIL Studio block diagram")
+        pdf.setTitle(tr("AXIL Studio block diagram"))
         p = QPainter(pdf)
         p.setRenderHint(QPainter.RenderHint.Antialiasing)
         sx = pdf.width() / w
@@ -345,7 +346,7 @@ class BlockDiagram(QWidget):
     def export_drawio(self, path, name="diagram"):
         """The diagram as a draw.io file: every block, text and connection as an editable shape."""
         if self.spec is None or self.error:
-            raise RuntimeError(self.error or "Çizilecek bir şey yok")
+            raise RuntimeError(self.error or tr("Nothing to draw"))
         pic = QPicture()
         p = QPainter(pic)
         rec = []
@@ -370,8 +371,8 @@ class BlockDiagram(QWidget):
             for d in ("input", "output"):
                 grp = [p for p in pins if p[0] == d]
                 if grp:
-                    xb = "giriş" if d == "input" else "çıkış"
-                    own = "çıkış" if d == "input" else "giriş"     # the block's own direction
+                    xb = tr("input") if d == "input" else tr("output")
+                    own = tr("output") if d == "input" else tr("input")     # the block's own direction
                     out.append((d, f"({len(grp)} {xb})", f"{side_prefix}_AXI_*",
                                 f"{short}_AXI_* ({len(grp)} {own})", grp))
             return out
@@ -436,8 +437,8 @@ class BlockDiagram(QWidget):
 
         # legend
         x = MARGIN
-        legend = (((IN_COLOR, "istek yönü (master → slave)"),) if self.detail == "simple" else
-                  ((IN_COLOR, "crossbar girişi (input)"), (OUT_COLOR, "crossbar çıkışı (output)")))
+        legend = (((IN_COLOR, tr("request direction (master → slave)")),) if self.detail == "simple" else
+                  ((IN_COLOR, tr("crossbar input")), (OUT_COLOR, tr("crossbar output"))))
         for color, text in legend:
             cv.line(QPointF(x, 18), QPointF(x + 26, 18), color, 2, 1)
             w = QFontMetrics(base).horizontalAdvance(text) + 4
@@ -455,8 +456,8 @@ class BlockDiagram(QWidget):
             cx = xr.left() + 40 + k * 110
             cv.line(QPointF(cx, xr.top() - 34), QPointF(cx, xr.top()), IN_COLOR, 2, 1)
             cv.text(QRectF(cx + 6, xr.top() - 32, 100, 16), n, t["text"], small)
-        foot = (f"{sp.module}_pk (HDL Designer): port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
-                else f"{sp.module}: ayrık AXI4-Lite sinyalleri")
+        foot = (tr("{0}_pk (HDL Designer): packed REQ[110:0] / RSP[40:0] per port").format(sp.module) if sp.style == "packed"
+                else tr("{0}: separate AXI4-Lite signals").format(sp.module))
         cv.text(QRectF(xr.left() + 6, xr.bottom() - 22, xr.width() - 12, 18), foot, xt, small,
                 Qt.AlignmentFlag.AlignCenter)
 
@@ -513,12 +514,12 @@ class BlockDiagram(QWidget):
                     (Qt.AlignmentFlag.AlignRight if left else Qt.AlignmentFlag.AlignLeft) |
                     Qt.AlignmentFlag.AlignVCenter)
             own = "output" if is_in else "input"
-            tip = f"crossbar: {d} {w} {xname}\nblok: {own} {w} {block_pin_name(xname)}".replace("  ", " ")
+            tip = tr("crossbar: {0} {1} {2}\nblock: {3} {4} {5}").format(d, w, xname, own, w, block_pin_name(xname)).replace("  ", " ")
             if members and self.detail == "simple":
-                tip = f"{xname}: AXI4-Lite bağlantısı ({len(members)} sinyal)\n" + "\n".join(
+                tip = tr("{0}: AXI4-Lite connection ({1} signals)\n").format(xname, len(members)) + "\n".join(
                     f"  {m[0]:<6} {m[2]:<22} {m[1]}" for m in members)
             elif members:
-                tip = f"crossbar {d}, blok {own}:\n" + "\n".join(
+                tip = tr("crossbar {0}, block {1}:\n").format(d, own) + "\n".join(
                     f"  {m[2]:<22} {m[1]}  ↔  {block_pin_name(m[2])}" for m in members)
             self._hits.append((QRectF(min(block_edge, x_edge), y - 8, abs(x_edge - block_edge), 16),
                                "pin", -1, tip))
@@ -609,7 +610,7 @@ class SystemDiagram(BlockDiagram):
             self._build()
             self.error = None
         except Exception as exc:  # noqa: BLE001 - keep the page working
-            self.error = f"Sistem diyagramı çizilemedi: {exc}"
+            self.error = tr("Could not draw the system diagram: {0}").format(exc)
         self.update()
 
     # ------------------------------------------------------------ layout
@@ -685,12 +686,11 @@ class SystemDiagram(BlockDiagram):
         tiny.setPixelSize(8)
         base = QFont(self.font())
         cv.text(QRectF(MARGIN, 8, 1400, 20),
-                f"Gösterim: {MODE_TEXT[self.mode]} · istek yönü soldan sağa (master → interconnect → slave) · "
-                "Sub-bus Bridge: üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı", t["muted"], base,
+                tr("Display: {0} · requests flow left to right (master → interconnect → slave) · Sub-bus Bridge: a slave of the upper bus, MASTER0 of the interconnect behind it").format(MODE_TEXT[self.mode]), t["muted"], base,
                 elide=False)
         # legend: one swatch per block kind
         x = MARGIN
-        for kind, text in (("master", "master"), ("xbar", "interconnect"), ("ip", "IP"), ("ext", "harici slave"),
+        for kind, text in (("master", "master"), ("xbar", "interconnect"), ("ip", "IP"), ("ext", tr("external slave")),
                            ("bridge", "Sub-bus Bridge")):
             f, b, _ = theme.block_colors(kind, t)
             cv.rect(QRectF(x, 32, 16, 12), f, b, 1.2, 3)
@@ -732,9 +732,9 @@ class SystemDiagram(BlockDiagram):
                 cv.text(r.adjusted(10, 0, -70, 0), name, tc, bold)
                 cv.text(r.adjusted(0, 0, -10, 0), f"MASTER{i}", t["muted"], small,
                         Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
-                where = "üst bus" if not lvl else lvl
-                self._hits.append((r, "m", lvl, f"MASTER{i} · {name}\n{where} interconnect'i"
-                                   + ("\n(ek master: yalnızca bu interconnect'in slave'lerine erişir)" if extra else "")))
+                where = tr("top bus") if not lvl else lvl
+                self._hits.append((r, "m", lvl, tr("MASTER{0} · {1}\n{2} interconnect").format(i, name, where)
+                                   + (tr("\n(extra master: reaches only this interconnect's slaves)") if extra else "")))
             else:
                 inst, s, j, bad = data
                 self._slave(cv, t, bold, small, r, kind == "b", inst, s, j, bad)
@@ -748,8 +748,7 @@ class SystemDiagram(BlockDiagram):
         cv.text(head.adjusted(8, 0, -8, 0), module, "#FFFFFF", bold, Qt.AlignmentFlag.AlignCenter)
         cv.text(QRectF(r.left(), r.bottom() - 22, r.width(), 16), f"axilxbar · {nm}M × {ns}S", tc, small,
                 Qt.AlignmentFlag.AlignCenter)
-        self._hits.append((r, "x", lvl, f"{module}\n{'üst bus' if not lvl else lvl + ' arkasındaki'} interconnect · "
-                                        f"{nm} master, {ns} slave\nTıkla: seç"))
+        self._hits.append((r, "x", lvl, tr("{0}\n{1} interconnect · {2} masters, {3} slaves\nClick: select").format(module, tr("top bus") if not lvl else lvl + tr(" behind"), nm, ns)))
 
     def _slave(self, cv, t, bold, small, r, is_bridge, inst, s, j, bad):
         from axil_studio.core import addrmap as A
@@ -764,17 +763,16 @@ class SystemDiagram(BlockDiagram):
         cv.text(QRectF(inner.left(), inner.top() + 19, inner.width(), 15), rng,
                 t["danger"] if bad else t["muted"], small)
         if is_bridge:
-            kind = A.BRIDGE_LABEL + (f" · kendi {size_text(inst.self_window)}" if inst.self_window else "")
+            kind = A.BRIDGE_LABEL + (tr(" · own {0}").format(size_text(inst.self_window)) if inst.self_window else "")
         else:
-            kind = "harici" if inst.external else inst.ip
+            kind = tr("external") if inst.external else inst.ip
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width() - 60, 15), kind, t["muted"], small)
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), size_text(s.window), t["muted"], small,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if is_bridge:
-            tip = (f"{inst.name} · {A.BRIDGE_LABEL}\n{rng}\nüst bus'ta SLAVE{j}, arkasındaki interconnect'te MASTER0"
-                   f"\nÇift tık: arkasındaki interconnect'i seç")
+            tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, MASTER0 of the interconnect behind it\nDouble-click: select the interconnect behind it").format(inst.name, A.BRIDGE_LABEL, rng, j))
         else:
-            tip = f"SLAVE{j} · {inst.name}\n{rng}\nÇift tık: Address Map Editor'da düzenle"
+            tip = tr("SLAVE{0} · {1}\n{2}\nDouble-click: edit in the Address Map Editor").format(j, inst.name, rng)
         self._hits.append((r, "b" if is_bridge else "s", inst.name, tip))
 
     # ------------------------------------------------------------ mouse

@@ -18,6 +18,7 @@ into one crossbar, the Debug Bridge reads registers through it.
 
 from . import xbargen as X
 from .model import IPInstance, hex32, parse_int
+from axil_studio.i18n import tr
 
 MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it (changeable per project)
 DEFAULT_START = 0x00000000
@@ -130,7 +131,7 @@ def path_of(project, bridge):
 
 
 def level_name(project, bridge=None):
-    return "Üst bus" if bridge is None else bridge.name
+    return tr("Top bus") if bridge is None else bridge.name
 
 
 def xbar_slaves(project, bridge=None):
@@ -213,7 +214,7 @@ def _place(project, items, start, new_ref, old_ref):
             changed = True
     if new_ref + max([0] + [s.base + s.window for s in sl]) > 1 << 32:
         bad = next(i for i, s in zip(items, sl) if new_ref + s.base + s.window > 1 << 32)
-        raise ValueError(f"{bad.name} 32 bit adres alanına sığmıyor")
+        raise ValueError(tr("{0} does not fit in the 32-bit address space").format(bad.name))
     for inst, old in zip(items, olds):
         if inst.bridge:
             changed |= _place(project, inst.children, inst.self_window, inst.base, old)
@@ -259,15 +260,14 @@ def fit_errors(project):
     errs = []
     for b in project.bridges():
         if b.window and content_end(project, b) > b.window:
-            errs.append(f"{b.name}: içerik ({content_end(project, b):#x} byte) {BRIDGE_LABEL} penceresine "
-                        f"({b.window:#x}) sığmıyor")
+            errs.append(tr("{0}: contents ({1:#x} bytes) do not fit in the {2} window ({3:#x})").format(b.name, content_end(project, b), BRIDGE_LABEL, b.window))
     return errs
 
 
 def validate(project):
     """Error strings of the address map (empty when it is usable)."""
     if not project.instances:
-        return ["Adres haritası boş: üst bus'a en az bir slave ekle"]
+        return [tr("Address map is empty: add at least one slave to the top bus")]
     errs = []
     seen = set()
     for bridge in levels(project):
@@ -275,38 +275,36 @@ def validate(project):
         sl = xbar_slaves(project, bridge)
         where = "" if bridge is None else f"{bridge.name}/"
         if bridge is not None and bridge.self_window & (bridge.self_window - 1):
-            errs.append(f"{bridge.name}: kendi penceresi 2'nin kuvveti olmalı")
+            errs.append(tr("{0}: own window must be a power of two").format(bridge.name))
         out = outside(project, bridge) if bridge is not None else set()
         for j, (inst, s) in enumerate(zip(items, sl)):
             tag = f"{where}SLAVE{j} ({inst.name})"
             if not X.IDENT.match(inst.name or ""):
-                errs.append(f"{tag}: ad harfle başlamalı, sadece harf/rakam/_ içermeli")
+                errs.append(tr("{0}: name must start with a letter and contain only letters, digits and _").format(tag))
             if inst.name in seen:
-                errs.append(f"{tag}: aynı ad iki kez kullanılıyor")
+                errs.append(tr("{0}: the same name is used twice").format(tag))
             seen.add(inst.name)
             if not inst.external and not inst.bridge and project.get_ip(inst.ip) is None:
-                errs.append(f"{tag}: IP tanımı “{inst.ip}” projede yok")
+                errs.append(tr("{0}: IP definition “{1}” is not in the project").format(tag, inst.ip))
             if s.base & (s.window - 1):
-                errs.append(f"{tag}: base {hex32(s.base)} pencereye ({s.window:#x}) hizalı değil")
+                errs.append(tr("{0}: base {1} is not aligned to its window ({2:#x})").format(tag, hex32(s.base), s.window))
             if s.base + s.window > 1 << 32:
-                errs.append(f"{tag}: 32 bit adres alanına sığmıyor")
+                errs.append(tr("{0}: does not fit in the 32-bit address space").format(tag))
             if j in out:
-                errs.append(f"{tag}: {bridge.name} penceresinin iletilen kısmında değil "
-                            f"({hex32(bridge.base + bridge.self_window)} – "
-                            f"{hex32(bridge.base + window_of(project, bridge) - 1)})")
+                errs.append(tr("{0}: not inside the forwarded part of the {1} window ({2} – {3})").format(tag, bridge.name, hex32(bridge.base + bridge.self_window), hex32(bridge.base + window_of(project, bridge) - 1)))
             for k in range(j):
                 o = sl[k]
                 if not ((s.base ^ o.base) & s.mask & o.mask):
-                    errs.append(f"{tag} ile {where}SLAVE{k} ({o.name}) adres aralıkları çakışıyor")
+                    errs.append(tr("{0} overlaps {1}SLAVE{2} ({3})").format(tag, where, k, o.name))
         if bridge is not None:
             if not items:
-                errs.append(f"{bridge.name}: {BRIDGE_LABEL} boş; arkasındaki interconnect'e en az bir slave ekle")
+                errs.append(tr("{0}: {1} is empty; add at least one slave to the interconnect behind it").format(bridge.name, BRIDGE_LABEL))
             if not X.IDENT.match(bridge.xbar_module):
-                errs.append(f"{bridge.name}: interconnect modül adı geçerli değil")
+                errs.append(tr("{0}: interconnect module name is not valid").format(bridge.name))
             if not 1 <= 1 + len(bridge.xbar_masters) <= 16:
-                errs.append(f"{bridge.name}: interconnect'te en fazla 16 master olabilir")
+                errs.append(tr("{0}: an interconnect can have at most 16 masters").format(bridge.name))
             if len(items) > 64:
-                errs.append(f"{bridge.name}: interconnect'te en fazla 64 slave olabilir")
+                errs.append(tr("{0}: an interconnect can have at most 64 slaves").format(bridge.name))
     errs += fit_errors(project)
     errs += module_clashes(project)
     return errs
@@ -321,7 +319,7 @@ def module_clashes(project):
     owners = {}                                   # lower-case name -> [who defines it]
     for b in levels(project):
         m = xbar_module(project, b)
-        what = "üst interconnect" if b is None else f"{b.name} interconnect'i"
+        what = tr("top interconnect") if b is None else tr("{0} interconnect").format(b.name)
         names = [m] + ([f"{m}_pk"] if style == "packed" else [])
         for n in names:
             owners.setdefault(n.lower(), []).append((n, what))
@@ -335,9 +333,9 @@ def module_clashes(project):
         if key in RESERVED_MODULES or len(who) > 1:
             told.add(key)
         if key in RESERVED_MODULES:
-            errs.append(f"“{who[0][0]}” modül adı ({who[0][1]}) ZipCPU {key}.v ile çakışıyor")
+            errs.append(tr("Module name “{0}” ({1}) clashes with ZipCPU {2}.v").format(who[0][0], who[0][1], key))
         elif len(who) > 1:
-            errs.append(f"“{who[0][0]}” modül adı birden çok yerde tanımlanıyor: "
+            errs.append(tr("Module name “{0}” is defined in more than one place:").format(who[0][0])
                         + ", ".join(sorted({w for _, w in who})))
     return errs
 
@@ -383,7 +381,7 @@ def move(project, inst, parent, index=None):
     makes its address automatic again (a bridge's fixed children keep their place in it).
     Returns a message about the address, or raises ValueError when the move is not possible."""
     if inst.bridge and is_inside(project, inst, parent):
-        raise ValueError(f"{inst.name} kendi içine taşınamaz")
+        raise ValueError(tr("{0} cannot be moved into itself").format(inst.name))
     before = _fill(project)
     keep = _bases(project)
     old_parent = project.parent_of(inst)
@@ -399,7 +397,7 @@ def move(project, inst, parent, index=None):
     note = ""
     if old_parent is not parent and inst.fixed:
         inst.fixed = False
-        note = f"{inst.name} başka bir bus'a taşındı: adresi otomatiğe döndü"
+        note = tr("{0} moved to another bus: its address is automatic again").format(inst.name)
     _settle(project)
     new = [e for e in fit_errors(project) if _grew(project, e, before)]
     if new:

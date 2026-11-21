@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QToolButton
                                QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
 from axil_studio import icons, theme
+from axil_studio.i18n import tr
 
 
 def label(text="", role=None, wrap=False):
@@ -18,6 +19,63 @@ def label(text="", role=None, wrap=False):
     if wrap:
         w.setWordWrap(True)
     return w
+
+
+class HelpButton(QToolButton):
+    """A small "?" next to a title: its explanation shows on hover and stays on click, so panels
+    carry short labels instead of paragraphs."""
+
+    def __init__(self, text, parent=None):
+        super().__init__(parent)
+        self.help_text = text
+        self.setObjectName("HelpButton")
+        self.setText("?")
+        self.setAutoRaise(True)
+        self.setFixedSize(18, 18)
+        self.setCursor(Qt.CursorShape.WhatsThisCursor)
+        self.setToolTip(self._html())
+        self.clicked.connect(self._show)
+
+    def set_text(self, text):
+        self.help_text = text
+        self.setToolTip(self._html())
+        self.setVisible(bool(text))
+
+    def _html(self):
+        body = self.help_text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;").replace("\n", "<br>")
+        return f"<div style='max-width: 360px'>{body}</div>"
+
+    def _show(self):
+        from PySide6.QtWidgets import QToolTip
+        QToolTip.showText(self.mapToGlobal(QPoint(0, self.height())), self._html(), self)
+
+
+def section(title, help_text=None):
+    """A section title (role "section"), with a help button when there is more to say."""
+    if not help_text:
+        return label(title, "section")
+    box = QWidget()
+    lay = QHBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(4)
+    lay.addWidget(label(title, "section"))
+    lay.addWidget(HelpButton(help_text))
+    lay.addStretch(1)
+    return box
+
+
+def note(text, help_text=None):
+    """A one-line muted note, with a help button for the longer explanation."""
+    box = QWidget()
+    lay = QHBoxLayout(box)
+    lay.setContentsMargins(0, 0, 0, 0)
+    lay.setSpacing(4)
+    box.label = label(text, "muted", wrap=True)
+    lay.addWidget(box.label, 1)
+    box.help = HelpButton(help_text or "")
+    box.help.setVisible(bool(help_text))
+    lay.addWidget(box.help, 0, Qt.AlignmentFlag.AlignTop)
+    return box
 
 
 def button(text, icon=None, variant=None, slot=None, tip=None):
@@ -56,7 +114,7 @@ def row_icon(name, hover_token):
 class RowActions(QWidget):
     """Pencil (edit) and bin (delete) at the end of a list row."""
 
-    def __init__(self, on_edit=None, on_delete=None, edit_tip="Düzenle", delete_tip="Sil"):
+    def __init__(self, on_edit=None, on_delete=None, edit_tip=tr("Edit"), delete_tip=tr("Delete")):
         super().__init__()
         self.setObjectName("RowActions")
         lay = QHBoxLayout(self)
@@ -239,7 +297,7 @@ class ToolHeader(ActionBar):
         self.more.setObjectName("MoreButton")
         self.more.setAutoRaise(True)
         self.more.setFixedSize(28, 28)
-        self.more.setToolTip("Sığmayan komutlar")
+        self.more.setToolTip(tr("Commands that do not fit"))
         self.more.setCursor(Qt.CursorShape.PointingHandCursor)
         self.more.clicked.connect(self._show_more)
         self.more.hide()
@@ -345,7 +403,7 @@ class IssueList(QToolButton):
 
     MAX_CHARS = 140
 
-    def __init__(self, ok_text="Hata yok", compact=False):
+    def __init__(self, ok_text=tr("No errors"), compact=False):
         super().__init__()
         self.ok_text = ok_text
         self._issues = []
@@ -363,9 +421,9 @@ class IssueList(QToolButton):
             self.setToolTip(self.ok_text)
         else:
             n = len(self._issues)
-            text = (f"{n} hata: " if n > 1 else "") + self._issues[0]
+            text = (tr("{0} errors:").format(n) if n > 1 else "") + self._issues[0]
             color, icon = t["danger"], icons.icon("alert", "danger", 16)
-            self.setToolTip("\n".join(f"• {m}" for m in self._issues) + "\n\nTıkla: listeyi aç")
+            self.setToolTip("\n".join(f"• {m}" for m in self._issues) + tr("\n\nClick: open the list"))
         if len(text) > self.MAX_CHARS:
             text = text[:self.MAX_CHARS - 1] + "…"
         self.setText(text)
@@ -435,11 +493,11 @@ def ask_save(parent, title, text):
     from PySide6.QtWidgets import QMessageBox
     R = QMessageBox.ButtonRole
     return _box(parent, title, text, QMessageBox.Icon.Warning,
-                [("save", "Kaydet", R.AcceptRole), ("discard", "Kaydetme", R.DestructiveRole),
-                 ("cancel", "Vazgeç", R.RejectRole)], "save") if text else None
+                [("save", tr("Save"), R.AcceptRole), ("discard", tr("Don't save"), R.DestructiveRole),
+                 ("cancel", tr("Cancel"), R.RejectRole)], "save") if text else None
 
 
-def confirm(parent, title, text, ok="Sil", cancel="Vazgeç"):
+def confirm(parent, title, text, ok=tr("Delete"), cancel=tr("Cancel")):
     """Yes/no question with explicit button texts; True when `ok` is chosen."""
     from PySide6.QtWidgets import QMessageBox
     R = QMessageBox.ButtonRole
@@ -451,7 +509,7 @@ class SpecView(QWidget):
     """Read-only view of an HDL spec (JSON, see core/hdlspec.py): exactly what the Verilog is made
     from, nothing can be edited here. Copy to the clipboard; save via `save_cb`."""
 
-    def __init__(self, note, save_cb=None, save_text="Kaydet…", save_tip=None, parent=None):
+    def __init__(self, note, save_cb=None, save_text=tr("Save…"), save_tip=None, parent=None):
         super().__init__(parent)
         from PySide6.QtWidgets import QPlainTextEdit
         lay = QVBoxLayout(self)
@@ -460,7 +518,7 @@ class SpecView(QWidget):
         self.top = QHBoxLayout()
         self.note = label(note, "muted", wrap=True)
         self.top.addWidget(self.note, 1)
-        self.copy_btn = button("Kopyala", "copy", "ghost", self.copy, "JSON'u panoya kopyala")
+        self.copy_btn = button(tr("Copy"), "copy", "ghost", self.copy, tr("Copy the JSON to the clipboard"))
         self.top.addWidget(self.copy_btn)
         self.save_btn = None
         if save_cb:
@@ -510,8 +568,8 @@ class DetachableTabs(QTabWidget):
         self.tabBar().tabBarDoubleClicked.connect(self.detach)
         self.tabBar().setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tabBar().customContextMenuRequested.connect(self._menu)
-        self.detach_btn = button("Ayrı pencere", "external", "ghost", lambda: self.detach(self.currentIndex()),
-                                 "Bu sekmeyi ayrı bir pencerede aç (çift tık da olur)")
+        self.detach_btn = button(tr("Separate window"), "external", "ghost", lambda: self.detach(self.currentIndex()),
+                                 tr("Open this tab in a separate window (double-click works too)"))
         self.setCornerWidget(self.detach_btn, Qt.Corner.TopRightCorner)
 
     def _menu(self, pos):
@@ -520,7 +578,7 @@ class DetachableTabs(QTabWidget):
         if i < 0:
             return
         m = QMenu(self)
-        m.addAction("Ayrı pencerede aç", lambda: self.detach(i))
+        m.addAction(tr("Open in a separate window"), lambda: self.detach(i))
         m.exec(self.tabBar().mapToGlobal(pos))
 
     def detach(self, i):
@@ -571,7 +629,7 @@ class _DetachedWindow(QWidget):
         top = QHBoxLayout()
         top.addWidget(label(title, "cardTitle"))
         top.addStretch(1)
-        top.addWidget(button("Pencereye geri al", "arrow", "ghost", self.close, "Sekmeyi ana pencereye geri koy"))
+        top.addWidget(button(tr("Back to the window"), "arrow", "ghost", self.close, tr("Put the tab back into the main window")))
         lay.addLayout(top)
         lay.addWidget(page, 1)
         page.show()

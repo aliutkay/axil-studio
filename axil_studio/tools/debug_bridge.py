@@ -32,6 +32,7 @@ from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import KIND_READS, KIND_WRITES
 from axil_studio.core.model import (Field, IPBlock, Project, Register, hex32, load_config, parse_int, save_config,
                    single_line)
+from axil_studio.i18n import tr
 
 BAUDS = ["115200", "230400", "460800", "921600", "1000000", "2000000"]
 LOG_LINES = 2000
@@ -44,7 +45,7 @@ F_NAME, F_BITS, F_KIND, F_TYPE, F_READ, F_WRITE, F_MEAN = range(7)
 
 def raw_ip(addr):
     """A one-register IP for raw access to any address."""
-    return IPBlock("Ham adres", addr & ~3, "", [Register("DATA", 0, "RW", 0, "Herhangi bir adrese 32 bit erişim",
+    return IPBlock(tr("Raw address"), addr & ~3, "", [Register("DATA", 0, "RW", 0, tr("32-bit access to any address"),
                                                          [Field("DATA", 0, 32, "", "", [], "hex")])])
 
 
@@ -52,11 +53,9 @@ class DebugBridgePage(ToolPage):
     tool_id = "debug"
     title = "UART-to-AXI Debug Bridge"
     short_title = "UART-to-AXI Debug Bridge"
-    subtitle = "Donanımdaki AXI4-Lite registerlarını UART üzerinden okur ve yazar."
-    description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
-                   "SIMULATOR portu kullanılabilir.")
+    subtitle = tr("Reads and writes the AXI4-Lite registers on the hardware over UART.")
+    description = (tr("Reads and writes the registers on the hardware through the hexbus bridge on a UART. Without hardware, use the SIMULATOR port."))
     icon_name = "debug"
-    version = "0.0.5"
 
     _log = Signal(str, str)
 
@@ -66,7 +65,7 @@ class DebugBridgePage(ToolPage):
         self.bus = ui.Async(self)
         self.ip = self.reg = None
         self.read_value = None        # last value read from the board
-        self.staged = None            # value that "Yaz" will write
+        self.staged = None            # value that tr("Write") will write
         self.last_written = {}        # address -> value (base for write-only registers)
         self.raw = raw_ip(0x00000000)
         self.group = None             # "project" | "extra" | "raw"
@@ -90,11 +89,11 @@ class DebugBridgePage(ToolPage):
         row.addWidget(self.port_cb)
         self.refresh_btn = QToolButton()
         self.refresh_btn.setProperty("variant", "ghost")
-        self.refresh_btn.setToolTip("Portları yenile")
+        self.refresh_btn.setToolTip(tr("Refresh ports"))
         self.refresh_btn.clicked.connect(self.refresh_ports)
         row.addWidget(self.refresh_btn)
         row.addSpacing(10)
-        row.addWidget(ui.label("Baud", "muted"))
+        row.addWidget(ui.label(tr("Baud"), "muted"))
         self.baud_cb = QComboBox()
         self.baud_cb.setEditable(True)
         self.baud_cb.addItems(BAUDS)
@@ -102,10 +101,10 @@ class DebugBridgePage(ToolPage):
         self.baud_cb.setMinimumWidth(110)
         row.addWidget(self.baud_cb)
         row.addSpacing(10)
-        self.conn_btn = ui.button("Bağlan", "plug", "primary", self.toggle_connection)
+        self.conn_btn = ui.button(tr("Connect"), "plug", "primary", self.toggle_connection)
         row.addWidget(self.conn_btn)
         row.addStretch(1)
-        self.conn_pill = ui.Pill("Bağlı değil")
+        self.conn_pill = ui.Pill("● " + tr("Not connected"), "off")
         row.addWidget(self.conn_pill)
         conn.lay.addLayout(row)
         self.body.addWidget(conn)
@@ -114,9 +113,9 @@ class DebugBridgePage(ToolPage):
         split.setChildrenCollapsible(False)
 
         # ---- left: address map
-        left = ui.Card("Adres haritası")
+        left = ui.Card(tr("Address map"))
         self.tree = QTreeWidget()
-        self.tree.setHeaderLabels(["Ad", "Adres", "Erişim"])
+        self.tree.setHeaderLabels([tr("Name"), tr("Address"), tr("Access")])
         self.tree.setUniformRowHeights(True)
         hdr = self.tree.header()
         hdr.setStretchLastSection(False)
@@ -130,15 +129,14 @@ class DebugBridgePage(ToolPage):
         lbar = QHBoxLayout()
         lbar.setSpacing(4)
         add_menu = QMenu(self)
-        add_menu.addAction("Register spesifikasyonundan (.regspec.json)…", self.add_from_spec)
-        add_menu.addAction("Başka bir proje dosyasından (.axproj.json)…", self.add_from_project)
-        add_menu.addAction("IP kütüphanesinden…", self.add_from_library)
-        add_btn = ui.button("Ek IP", "plus", "ghost", None,
-                            "Projede olmayan bir IP'yi yalnızca hata ayıklama için ekle (projeye IP eklemek: "
-                            "Address Map Editor)")
+        add_menu.addAction(tr("From a register spec (.regspec.json)…"), self.add_from_spec)
+        add_menu.addAction(tr("From another project file (.axproj.json)…"), self.add_from_project)
+        add_menu.addAction(tr("From an IP library…"), self.add_from_library)
+        add_btn = ui.button(tr("Extra IP"), "plus", "ghost", None,
+                            tr("Add an IP that is not in the project, for debugging only (to add an IP to the project: Address Map Editor)"))
         add_btn.setMenu(add_menu)
         lbar.addWidget(add_btn)
-        self.remove_btn = ui.button("Kaldır", None, "ghost", self.remove_extra, "Seçili ek IP'yi listeden kaldır")
+        self.remove_btn = ui.button(tr("Remove"), None, "ghost", self.remove_extra, tr("Remove the selected extra IP from the list"))
         lbar.addWidget(self.remove_btn)
         lbar.addStretch(1)
         left.lay.addLayout(lbar)
@@ -156,8 +154,8 @@ class DebugBridgePage(ToolPage):
         top = QHBoxLayout()
         col = QVBoxLayout()
         col.setSpacing(2)
-        self.reg_title = ui.label("Register seç", "cardTitle")
-        self.reg_desc = ui.label("Soldaki haritadan bir register seç.", "muted", wrap=True)
+        self.reg_title = ui.label(tr("Select a register"), "cardTitle")
+        self.reg_desc = ui.label(tr("Select a register in the map on the left."), "muted", wrap=True)
         col.addWidget(self.reg_title)
         col.addWidget(self.reg_desc)
         top.addLayout(col, 1)
@@ -170,7 +168,7 @@ class DebugBridgePage(ToolPage):
         self.raw_row = QWidget()
         rr = QHBoxLayout(self.raw_row)
         rr.setContentsMargins(0, 0, 0, 0)
-        rr.addWidget(ui.label("Adres", "muted"))
+        rr.addWidget(ui.label(tr("Address"), "muted"))
         self.raw_ed = QLineEdit(hex32(self.raw.base))
         self.raw_ed.setProperty("mono", "true")
         self.raw_ed.setMaximumWidth(160)
@@ -182,15 +180,15 @@ class DebugBridgePage(ToolPage):
 
         vrow = QHBoxLayout()
         vrow.setSpacing(8)
-        vrow.addWidget(ui.label("Okunan", "muted"))
+        vrow.addWidget(ui.label(tr("Read"), "muted"))
         self.read_lbl = ui.label("—", "mono")
         self.read_lbl.setMinimumWidth(100)
         self.read_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vrow.addWidget(self.read_lbl)
-        self.read_btn = ui.button("Oku", "read", None, self.read_reg, "F5")
+        self.read_btn = ui.button(tr("Read"), "read", None, self.read_reg, "F5")
         vrow.addWidget(self.read_btn)
         vrow.addSpacing(16)
-        vrow.addWidget(ui.label("Yazılacak", "muted"))
+        vrow.addWidget(ui.label(tr("To write"), "muted"))
         self.value_ed = QLineEdit()
         self.value_ed.setProperty("mono", "true")
         self.value_ed.setPlaceholderText("0x00000000")
@@ -199,9 +197,9 @@ class DebugBridgePage(ToolPage):
         self.value_ed.returnPressed.connect(self.write_reg)
         self.value_ed.textEdited.connect(self._value_edited)
         vrow.addWidget(self.value_ed)
-        self.write_btn = ui.button("Yaz", "write", "primary", self.write_reg, "Registerın tamamını yaz (Ctrl+Enter)")
+        self.write_btn = ui.button(tr("Write"), "write", "primary", self.write_reg, tr("Write the whole register (Ctrl+Enter)"))
         vrow.addWidget(self.write_btn)
-        self.reset_btn = ui.button("Geri al", None, "ghost", self._reset_staged, "Yazılacak değeri okunana döndür")
+        self.reset_btn = ui.button(tr("Revert"), None, "ghost", self._reset_staged, tr("Reset the value to write to the value read"))
         vrow.addWidget(self.reset_btn)
         vrow.addStretch(1)
         self.reg_card.lay.addLayout(vrow)
@@ -210,27 +208,27 @@ class DebugBridgePage(ToolPage):
         self.stamp = ui.label("", "muted")
         vrow.addWidget(self.stamp)
         vrow.addStretch(1)
-        self.watch_btn = ui.button("İzle", None, "ghost", lambda: self.add_watch([self._cur_key()]),
-                                   "Bu registerı canlı izlemeye ekle")
+        self.watch_btn = ui.button(tr("Watch"), None, "ghost", lambda: self.add_watch([self._cur_key()]),
+                                   tr("Add this register to live watch"))
         vrow.addWidget(self.watch_btn)
-        self.cfg_btn = ui.button("Config'e ekle", None, "ghost", self.config_from_panel,
-                                 "Yazılacak değeri config listesine ekle")
+        self.cfg_btn = ui.button(tr("Add to config"), None, "ghost", self.config_from_panel,
+                                 tr("Add the value to write to the config list"))
         vrow.addWidget(self.cfg_btn)
         vrow.addSpacing(8)
-        vrow.addWidget(ui.label("Gösterim", "muted"))
+        vrow.addWidget(ui.label(tr("Display"), "muted"))
         self.view_cb = QComboBox()
-        self.view_cb.addItem("Veri tipi", "")
+        self.view_cb.addItem(tr("Data type"), "")
         for key, text in N.BASE_FORMATS:
             if key not in ("ufix", "sfix", "enum"):
                 self.view_cb.addItem(text, key)
-        self.view_cb.setToolTip("Bit alanı değerlerinin gösterimi. Varsayılan: Register Map Editor'da atanan veri tipi")
+        self.view_cb.setToolTip(tr("How bit field values are shown. Default: the data type set in the Register Map Editor"))
         self.view_cb.currentIndexChanged.connect(lambda *_: self._fill_fields())
         vrow.addWidget(self.view_cb)
         self.reg_card.lay.addLayout(vrow)
 
         self.fields = QTableWidget(0, 7)
-        self.fields.setHorizontalHeaderLabels(["Bit alanı", "Bitler", "Tip", "Veri tipi", "Okunan", "Yazılacak",
-                                               "Anlamı"])
+        self.fields.setHorizontalHeaderLabels([tr("Bit field"), tr("Bits"), tr("Type"), tr("Data type"), tr("Read"), tr("To write"),
+                                               tr("Meaning")])
         self.fields.verticalHeader().setVisible(False)
         self.fields.verticalHeader().setDefaultSectionSize(38)
         self.fields.setShowGrid(False)
@@ -243,11 +241,11 @@ class DebugBridgePage(ToolPage):
         self.rtabs.addTab(self.reg_card, "Register")
         self.watch_tab = self._build_watch_tab()
         self.cfg_tab = self._build_config_tab()
-        self.rtabs.addTab(self.watch_tab, "Canlı izleme")
+        self.rtabs.addTab(self.watch_tab, tr("Live watch"))
         self.rtabs.addTab(self.cfg_tab, "Config")
         # traffic log below the tabs (resizable)
-        log_card = ui.Card("Trafik", margins=12)
-        log_card.add_action(ui.button("Temizle", None, "ghost", lambda: self.log.clear()))
+        log_card = ui.Card(tr("Traffic"), margins=12)
+        log_card.add_action(ui.button(tr("Clear"), None, "ghost", lambda: self.log.clear()))
         self.log = QPlainTextEdit()
         self.log.setReadOnly(True)
         self.log.setProperty("mono", "true")
@@ -274,13 +272,13 @@ class DebugBridgePage(ToolPage):
     def build_menus(self, menubar):
         m = menubar.addMenu("&Debug")
         win = self.window()
-        for text, slot, key in (("Bağlan / bağlantıyı kes", self.toggle_connection, "Ctrl+K"),
-                                ("Registerı oku", self.read_reg, "F5"),
-                                ("Registerı yaz", self.write_reg, "Ctrl+Return"),
-                                ("Portları yenile", self.refresh_ports, None),
+        for text, slot, key in ((tr("Connect / disconnect"), self.toggle_connection, "Ctrl+K"),
+                                (tr("Read register"), self.read_reg, "F5"),
+                                (tr("Write register"), self.write_reg, "Ctrl+Return"),
+                                (tr("Refresh ports"), self.refresh_ports, None),
                                 (None, None, None),
-                                ("IP ekle: register spesifikasyonundan…", self.add_from_spec, None),
-                                ("IP ekle: proje dosyasından…", self.add_from_project, None)):
+                                (tr("Add IP: from a register spec…"), self.add_from_spec, None),
+                                (tr("Add IP: from a project file…"), self.add_from_project, None)):
             if text is None:
                 m.addSeparator()
                 continue
@@ -290,7 +288,7 @@ class DebugBridgePage(ToolPage):
                 a.setShortcut(QKeySequence(key))
             m.addAction(a)
         m.addSeparator()
-        m.addAction("Trafiği temizle", self.log.clear)
+        m.addAction(tr("Clear traffic"), self.log.clear)
 
     # ================================================================ connection
     def refresh_ports(self):
@@ -302,30 +300,30 @@ class DebugBridgePage(ToolPage):
     def toggle_connection(self):
         if self.link.connected:
             self.link.close()
-            self._log.emit("INFO", "Bağlantı kapatıldı")
+            self._log.emit("INFO", tr("Connection closed"))
             self._update_controls()
             return
         port = self.port_cb.currentText()
         try:
             baud = int(self.baud_cb.currentText())
         except ValueError:
-            return self.error("Geçersiz baud", self.baud_cb.currentText())
+            return self.error(tr("Invalid baud rate"), self.baud_cb.currentText())
         self.conn_btn.setEnabled(False)
-        self.conn_pill.set("Bağlanıyor…", "accent")
+        self.conn_pill.set(tr("Connecting…"), "accent")
 
         def done(_):
-            self._log.emit("INFO", f"{port} @ {baud} bağlandı")
+            self._log.emit("INFO", tr("Connected to {0} @ {1}").format(port, baud))
             self._update_controls()
 
         def fail(exc):
             self._update_controls()
-            self.error("Bağlanılamadı", exc)
+            self.error(tr("Could not connect"), exc)
         self.bus.run(lambda: self.link.open(port, baud), done, fail)
 
     def _update_controls(self):
         on = self.link.connected
         self.conn_btn.setEnabled(True)
-        self.conn_btn.setText("Bağlantıyı kes" if on else "Bağlan")
+        self.conn_btn.setText(tr("Disconnect") if on else tr("Connect"))
         self.conn_btn.setProperty("variant", None if on else "primary")
         theme.repolish(self.conn_btn)
         ui.refresh_icons(self.conn_btn.parentWidget())
@@ -333,9 +331,9 @@ class DebugBridgePage(ToolPage):
         self.baud_cb.setEnabled(not on)
         self.refresh_btn.setEnabled(not on)
         if on:
-            self.conn_pill.set(f"Bağlı · {self.port_cb.currentText()}", "ok")
+            self.conn_pill.set("● " + tr("Connected · {0}").format(self.port_cb.currentText()), "ok")
         else:
-            self.conn_pill.set("Bağlı değil")
+            self.conn_pill.set("● " + tr("Not connected"), "off")
         reg = self.reg
         self.read_btn.setEnabled(bool(on and reg and reg.readable))
         self.write_btn.setEnabled(bool(on and reg and reg.writable))
@@ -343,7 +341,7 @@ class DebugBridgePage(ToolPage):
         self.reset_btn.setEnabled(bool(reg and reg.writable))
         self.watch_btn.setEnabled(bool(reg and reg.readable))
         self.cfg_btn.setEnabled(bool(reg and reg.writable))
-        self.cfg_btn.setText("Config satırını güncelle" if self.cfg_edit is not None else "Config'e ekle")
+        self.cfg_btn.setText(tr("Update config row") if self.cfg_edit is not None else tr("Add to config"))
         self._update_watch_controls()
         self._update_config_controls()
         for row in range(self.fields.rowCount()):
@@ -389,7 +387,7 @@ class DebugBridgePage(ToolPage):
             g.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.tree.addTopLevelItem(g)
             if not ips:
-                e = QTreeWidgetItem(["Adres haritası boş (Address Map Editor)", "", ""])
+                e = QTreeWidgetItem([tr("Address map is empty (Address Map Editor)"), "", ""])
                 e.setForeground(0, muted)
                 e.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 g.addChild(e)
@@ -403,8 +401,7 @@ class DebugBridgePage(ToolPage):
                             node.setFont(1, mono)
                             node.setForeground(0, theme.manager().color("accent"))
                             node.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                            node.setToolTip(0, "Sub-bus Bridge: arkasındaki interconnect'teki IP'ler "
-                                               "(adresler globaldir)")
+                            node.setToolTip(0, tr("Sub-bus Bridge: the IPs on the interconnect behind it (addresses are global)"))
                             parent_item.addChild(node)
                             level(inst.children, node)
                         elif inst.name in by_name:
@@ -432,11 +429,11 @@ class DebugBridgePage(ToolPage):
                 if sel == (group, ip.name, reg.name):
                     target = it
             return top
-        add_group("PROJE", self.ctx.address_ips(), "project")
-        add_group("EK IP'LER", self._extra(), "extra")
-        raw = QTreeWidgetItem(["Ham adres erişimi", "", "RW"])
+        add_group(tr("PROJECT"), self.ctx.address_ips(), "project")
+        add_group(tr("EXTRA IPS"), self._extra(), "extra")
+        raw = QTreeWidgetItem([tr("Raw address access"), "", "RW"])
         raw.setData(0, ROLE, ("raw", "", "DATA"))
-        raw.setToolTip(0, "Register haritası olmayan herhangi bir adresi oku / yaz")
+        raw.setToolTip(0, tr("Read / write any address that has no register map"))
         self.tree.addTopLevelItem(raw)
         if sel and sel[0] == "raw":
             target = raw
@@ -477,40 +474,40 @@ class DebugBridgePage(ToolPage):
 
     # ---------------------------------------------------------------- extra IPs
     def add_from_spec(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Register spesifikasyonu", ROOT,
-                                              "Register spesifikasyonu (*.regspec.json);;JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Register spec"), ROOT,
+                                              tr("Register spec (*.regspec.json);;JSON (*.json)"))
         if not path:
             return
         try:
             spec = G.ModuleSpec.load(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         w = 0x1000
         while w < spec.span:
             w <<= 1
-        base = BaseDialog.ask(self, f"{spec.module}: base adres", 0x00000000, w,
-                              "IP'nin donanımdaki adresi.")
+        base = BaseDialog.ask(self, tr("{0}: base address").format(spec.module), 0x00000000, w,
+                              tr("The IP's address on the hardware."))
         if base is None:
             return
         self._add_extra([G.to_ipblock(spec, base)])
 
     def add_from_project(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Proje dosyası", ROOT, "AXIL proje (*.axproj.json);;JSON (*.json)")
+        path, _ = QFileDialog.getOpenFileName(self, tr("Project file"), ROOT, tr("AXIL project (*.axproj.json);;JSON (*.json)"))
         if not path:
             return
         try:
             proj = Project.load(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         placed = proj.address_ips()
         if not placed:
-            QMessageBox.information(self, self.title, "Bu proje dosyasının adres haritasında IP yok.")
+            QMessageBox.information(self, self.title, tr("The address map of this project file has no IPs."))
             return
         names = [f"{ip.name}  ({hex32(ip.base)})" for ip in placed]
-        choice, ok = QInputDialog.getItem(self, "IP ekle", "Eklenecek IP:", ["Tümü"] + names, 0, False)
+        choice, ok = QInputDialog.getItem(self, tr("Add IP"), tr("IP to add:"), [tr("All")] + names, 0, False)
         if not ok:
             return
-        ips = placed if choice == "Tümü" else [placed[names.index(choice)]]
+        ips = placed if choice == tr("All") else [placed[names.index(choice)]]
         out = []
         for ip in ips:
             ip = copy.deepcopy(ip)
@@ -521,10 +518,10 @@ class DebugBridgePage(ToolPage):
     def add_from_library(self):
         items = [(lib, e) for lib in self.ctx.libraries for e in lib.entries]
         if not items:
-            QMessageBox.information(self, self.title, "Açık IP kütüphanesi ya da kütüphanede IP yok (IP Library).")
+            QMessageBox.information(self, self.title, tr("No open IP library, or no IP in the libraries (IP Library)."))
             return
         labels = [f"{lib.name} / {e.name}" for lib, e in items]
-        choice, ok = QInputDialog.getItem(self, "Kütüphaneden IP ekle", "IP:", labels, 0, False)
+        choice, ok = QInputDialog.getItem(self, tr("Add IP from a library"), "IP:", labels, 0, False)
         if not ok:
             return
         lib, e = items[labels.index(choice)]
@@ -532,7 +529,7 @@ class DebugBridgePage(ToolPage):
         span = max((r.offset for r in e.ip.registers), default=0) + 4
         while w < span:
             w <<= 1
-        base = BaseDialog.ask(self, f"{e.name}: base adres", 0x00000000, w, "IP'nin donanımdaki adresi.")
+        base = BaseDialog.ask(self, tr("{0}: base address").format(e.name), 0x00000000, w, tr("The IP's address on the hardware."))
         if base is None:
             return
         ip = e.definition()
@@ -543,14 +540,14 @@ class DebugBridgePage(ToolPage):
         taken = {i.name for i in self.ctx.project.all_instances()}
         clash = [ip.name for ip in new if ip.name in taken]
         if clash:
-            QMessageBox.warning(self, self.title, f"Projede aynı adlı IP var: {', '.join(clash)}. Bu IP'ler eklenmedi.")
+            QMessageBox.warning(self, self.title, tr("The project already has IPs with these names: {0}. They were not added.").format(', '.join(clash)))
         new = [ip for ip in new if ip.name not in taken]
         if not new:
             return
         keep = [ip for ip in self._extra() if ip.name not in {n.name for n in new}]
         self._set_extra(keep + new)
         self._fill_tree()
-        self.status(f"{len(new)} IP eklendi")
+        self.status(tr("{0} IPs added").format(len(new)))
 
     def remove_extra(self):
         key = self._sel_key()
@@ -578,8 +575,8 @@ class DebugBridgePage(ToolPage):
         is_raw = self.ip is self.raw and reg is not None
         self.raw_row.setVisible(is_raw)
         if not reg:
-            self.reg_title.setText("Register seç")
-            self.reg_desc.setText("Soldaki haritadan bir register seç.")
+            self.reg_title.setText(tr("Select a register"))
+            self.reg_desc.setText(tr("Select a register in the map on the left."))
             self.access_pill.hide()
             self.fields.setRowCount(0)
             self.value_ed.clear()
@@ -587,8 +584,8 @@ class DebugBridgePage(ToolPage):
             self.stamp.clear()
         else:
             addr = self.ip.address(reg)
-            self.reg_title.setText("Ham adres erişimi" if is_raw else f"{self.ip.name}.{reg.name}   ·   {hex32(addr)}")
-            self.reg_desc.setText(reg.desc or "Açıklama yok")
+            self.reg_title.setText(tr("Raw address access") if is_raw else f"{self.ip.name}.{reg.name}   ·   {hex32(addr)}")
+            self.reg_desc.setText(reg.desc or tr("No description"))
             self.access_pill.set(reg.access, "accent")
             self.access_pill.show()
             cached = self.reads.get(addr) if reg.readable else None
@@ -599,9 +596,9 @@ class DebugBridgePage(ToolPage):
             self.read_lbl.setText(hex32(self.read_value) if self.read_value is not None else "—")
             self.value_ed.setText(hex32(self.staged))
             if cached:
-                self.stamp.setText(f"Okundu {cached[1]} · {cached[2]}")
+                self.stamp.setText(tr("Read {0} · {1}").format(cached[1], cached[2]))
             elif self.read_value is None:
-                self.stamp.setText("Henüz okunmadı" if reg.readable else "Salt yazılır register: okunamaz")
+                self.stamp.setText(tr("Not read yet") if reg.readable else tr("Write-only register: cannot be read"))
             self._fill_fields()
         self._update_controls()
 
@@ -665,7 +662,7 @@ class DebugBridgePage(ToolPage):
         more = QToolButton()
         more.setText("⋯")
         more.setProperty("variant", "ghost")
-        more.setToolTip("Özel değer yaz · register haritasını düzenle")
+        more.setToolTip(tr("Write a custom value · edit the register map"))
         more.setPopupMode(QToolButton.ToolButtonPopupMode.InstantPopup)
         more.setMenu(self._field_menu(f))
         holder.layout().addWidget(more)
@@ -676,14 +673,14 @@ class DebugBridgePage(ToolPage):
         reg = self.reg
         kind = f.kind or reg.access
         if reg.writable and kind not in ("RO", "CONST"):
-            m.addAction("Özel değer yaz…", lambda: self.custom_value(f))
+            m.addAction(tr("Write a custom value…"), lambda: self.custom_value(f))
         if self.group == "project" and self.ip.ref:
-            m.addAction("Register Map Editor'da düzenle…",
+            m.addAction(tr("Edit in the Register Map Editor…"),
                         lambda: self.edit_register_map(self.ip.ref, self.reg.name, f.name))
         elif self.group == "extra":
-            m.addAction("Veri tipi ve değer açıklamaları (yalnızca bu ek IP)…", lambda: self.edit_field_map(f))
+            m.addAction(tr("Data type and value meanings (this extra IP only)…"), lambda: self.edit_field_map(f))
         if m.isEmpty():
-            a = m.addAction("Bu bit alanı için işlem yok")
+            a = m.addAction(tr("No action for this bit field"))
             a.setEnabled(False)
         return m
 
@@ -708,22 +705,22 @@ class DebugBridgePage(ToolPage):
         lay.setContentsMargins(4, 2, 4, 2)
         lay.setSpacing(6)
         if not reg.writable or kind in ("RO", "CONST"):
-            lay.addWidget(ui.label("salt okunur", "muted"))
+            lay.addWidget(ui.label(tr("read-only"), "muted"))
             lay.addStretch(1)
             return holder
         if kind == "PULSE":
             if f.width == 1:
-                b = ui.button("Darbe gönder", "play", None, lambda: self.command(f, 1), f"{f.name}'e 1 yazar")
+                b = ui.button(tr("Send pulse"), "play", None, lambda: self.command(f, 1), tr("writes 1 to {0}").format(f.name))
             else:
                 ed = self._number_edit(f, fmt, 1, stage=False)
                 lay.addWidget(ed, 1)
-                b = ui.button("Gönder", "play", None, lambda: self._command_from(ed, f, fmt), "Bu değerle gönder")
+                b = ui.button(tr("Send"), "play", None, lambda: self._command_from(ed, f, fmt), tr("Send with this value"))
             b.setProperty("command", True)
             lay.addWidget(b)
             return holder
         if kind == "W1C":
-            b = ui.button("Temizle", None, None, lambda: self.command(f, (1 << f.width) - 1),
-                          f"{f.name} bayraklarına 1 yazarak siler")
+            b = ui.button(tr("Clear"), None, None, lambda: self.command(f, (1 << f.width) - 1),
+                          tr("Clears the {0} flags by writing 1").format(f.name))
             b.setProperty("command", True)
             lay.addWidget(b)
             lay.addStretch(1)
@@ -735,7 +732,7 @@ class DebugBridgePage(ToolPage):
             for e in choices:
                 cb.addItem(f"{e.write}  ({N.format_value(e.value, f.width, vfmt)})", e.value)
             if cb.findData(value) < 0:
-                cb.addItem(f"{N.format_value(value, f.width, vfmt)}  (tanımsız)", value)
+                cb.addItem(tr("{0}  (undefined)").format(N.format_value(value, f.width, vfmt)), value)
             cb.setCurrentIndex(cb.findData(value))
             cb.currentIndexChanged.connect(lambda _i, cb=cb: self._stage(f, cb.currentData()))
             lay.addWidget(cb, 1)
@@ -754,7 +751,7 @@ class DebugBridgePage(ToolPage):
         vfmt = "hex" if N.split(fmt, f.width)[0] == "enum" else fmt
         ed = QLineEdit(N.format_value(value, f.width, vfmt))
         ed.setProperty("mono", "true")
-        ed.setToolTip(f"{N.LABELS.get(N.split(vfmt, f.width)[0], vfmt)}, {f.width} bit · 0x / 0b önekleri de olur")
+        ed.setToolTip(tr("{0}, {1} bits · 0x / 0b prefixes also work").format(N.LABELS.get(N.split(vfmt, f.width)[0], vfmt), f.width))
         if stage:
             ed.textEdited.connect(lambda _t, ed=ed: self._typed(ed, f, vfmt))
         return ed
@@ -802,8 +799,8 @@ class DebugBridgePage(ToolPage):
                 self.staged = self._base_value()
                 self.value_ed.setText(hex32(self.staged))
                 self._fill_fields()
-            self._record(addr, value, "register paneli")
-        self.bus.run(lambda: self.link.read(addr), ok, lambda e: self.error("Okuma hatası", e))
+            self._record(addr, value, tr("register panel"))
+        self.bus.run(lambda: self.link.read(addr), ok, lambda e: self.error(tr("Read error"), e))
 
     # ---------------------------------------------------------------- shared read cache
     def _record(self, addr, value, source):
@@ -818,7 +815,7 @@ class DebugBridgePage(ToolPage):
             changed = value != self.read_value
             self.read_value = value
             self.read_lbl.setText(hex32(value))
-            self.stamp.setText(f"Okundu {ts} · {source}")
+            self.stamp.setText(tr("Read {0} · {1}").format(ts, source))
             editing = self.value_ed.hasFocus() or self.fields.isAncestorOf(QApplication.focusWidget() or self)
             if self.staged == old_base and not editing:
                 self.staged = self._base_value()
@@ -871,7 +868,7 @@ class DebugBridgePage(ToolPage):
                 self.staged = self._base_value()
                 self.value_ed.setText(hex32(self.staged))
                 self._fill_fields()
-        self.bus.run(lambda: self.link.write(addr, value), ok, lambda e: self.error("Yazma hatası", e))
+        self.bus.run(lambda: self.link.write(addr, value), ok, lambda e: self.error(tr("Write error"), e))
 
     def write_reg(self):
         if self.reg is None or not self.reg.writable:
@@ -879,14 +876,14 @@ class DebugBridgePage(ToolPage):
         try:
             value = parse_int(self.value_ed.text()) & 0xFFFFFFFF
         except ValueError:
-            return self.error("Geçersiz değer", self.value_ed.text())
-        self._write(value, "Yazıldı")
+            return self.error(tr("Invalid value"), self.value_ed.text())
+        self._write(value, tr("Written"))
 
     def command(self, f, v):
         """PULSE / W1C: write this field right away. Other fields keep their values; other PULSE
         and W1C bits are written 0 so they do not fire."""
         base = self._base_value()
-        self._write(f.insert(base, v) & 0xFFFFFFFF, f"{f.name} gönderildi")
+        self._write(f.insert(base, v) & 0xFFFFFFFF, tr("{0} sent").format(f.name))
 
     def _command_from(self, ed, f, fmt):
         try:
@@ -929,7 +926,7 @@ class DebugBridgePage(ToolPage):
         """Persist an edit of a debug-only (extra) IP; project IPs are edited in the Register Map Editor."""
         if self.group == "extra":
             self._set_extra([self.ip if x.name == self.ip.name else x for x in self._extra()])
-            self.status("Register haritası güncellendi")
+            self.status(tr("Register map updated"))
 
     # ================================================================ tree menu
     def _cur_key(self):
@@ -958,23 +955,23 @@ class DebugBridgePage(ToolPage):
         ip = self._find_ip(key[0], key[1])
         if key[2] is None and ip:
             regs = [(key[0], ip.name, r.name) for r in ip.registers if r.readable]
-            m.addAction(f"Tüm registerlarını izle ({len(regs)})", lambda: self.add_watch(regs))
+            m.addAction(tr("Watch all its registers ({0})").format(len(regs)), lambda: self.add_watch(regs))
         elif ip:
             reg = ip.get_register(key[2])
             if reg and reg.readable:
-                m.addAction("Canlı izlemeye ekle", lambda: self.add_watch([key]))
+                m.addAction(tr("Add to live watch"), lambda: self.add_watch([key]))
             if reg and reg.writable:
-                m.addAction("Config'e ekle (reset değeriyle)",
+                m.addAction(tr("Add to config (with the reset value)"),
                             lambda: self.add_config(key, reg.reset & ~reg.mask_of("PULSE", "W1C")))
         if key[0] == "project" and ip and ip.ref:
             m.addSeparator()
             reg_name = key[2]
-            m.addAction("Register haritasını düzenle (Register Map Editor)…",
+            m.addAction(tr("Edit register map (Register Map Editor)…"),
                         lambda: self.edit_register_map(ip.ref, reg_name))
-            m.addAction("Adresini düzenle (Address Map Editor)…", lambda: self.edit_address_map(ip.name))
+            m.addAction(tr("Edit its address (Address Map Editor)…"), lambda: self.edit_address_map(ip.name))
         if key[0] == "extra":
             m.addSeparator()
-            m.addAction("Ek IP'yi kaldır", self.remove_extra)
+            m.addAction(tr("Remove extra IP"), self.remove_extra)
         if not m.isEmpty():
             m.exec(self.tree.viewport().mapToGlobal(pos))
 
@@ -1038,8 +1035,8 @@ class DebugBridgePage(ToolPage):
 
     def _reg_name(self, key, ip, reg):
         if reg is None:
-            return f"{key[1]}.{key[2]} (bulunamadı)"
-        return f"Ham {hex32(ip.base)}" if key[0] == "raw" else f"{ip.name}.{reg.name}"
+            return tr("{0}.{1} (not found)").format(key[1], key[2])
+        return tr("Raw {0}").format(hex32(ip.base)) if key[0] == "raw" else f"{ip.name}.{reg.name}"
 
     # ================================================================ live watch
     def _build_watch_tab(self):
@@ -1049,9 +1046,9 @@ class DebugBridgePage(ToolPage):
         lay.setSpacing(8)
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.poll_btn = ui.button("Başlat", "play", "primary", self.toggle_poll, "Seçilen periyotla sürekli oku")
+        self.poll_btn = ui.button(tr("Start"), "play", "primary", self.toggle_poll, tr("Read continuously at the selected period"))
         row.addWidget(self.poll_btn)
-        row.addWidget(ui.label("Periyot", "muted"))
+        row.addWidget(ui.label(tr("Period"), "muted"))
         self.period_sp = QSpinBox()
         self.period_sp.setRange(20, 60000)
         self.period_sp.setSingleStep(50)
@@ -1059,19 +1056,19 @@ class DebugBridgePage(ToolPage):
         self.period_sp.setSuffix(" ms")
         self.period_sp.valueChanged.connect(lambda v: (self.poll_timer.setInterval(v), self._update_watch_controls()))
         row.addWidget(self.period_sp)
-        row.addWidget(ui.button("Bir kez oku", "read", "ghost", self._poll, "Listedeki registerları bir kez oku"))
+        row.addWidget(ui.button(tr("Read once"), "read", "ghost", self._poll, tr("Read the listed registers once")))
         row.addStretch(1)
         self.watch_info = ui.label("", "muted")
         row.addWidget(self.watch_info)
-        row.addWidget(ui.button("Tümünü aç", None, "ghost", lambda: self.watch_tree.expandAll()))
-        row.addWidget(ui.button("Tümünü kapat", None, "ghost", lambda: self.watch_tree.collapseAll()))
-        row.addWidget(ui.button("Kaldır", None, "ghost", self.remove_watch, "Seçili registerı izlemeden çıkar"))
-        row.addWidget(ui.button("Temizle", None, "ghost", self.clear_watch, "Listeyi boşalt"))
+        row.addWidget(ui.button(tr("Expand all"), None, "ghost", lambda: self.watch_tree.expandAll()))
+        row.addWidget(ui.button(tr("Collapse all"), None, "ghost", lambda: self.watch_tree.collapseAll()))
+        row.addWidget(ui.button(tr("Remove"), None, "ghost", self.remove_watch, tr("Stop watching the selected register")))
+        row.addWidget(ui.button(tr("Clear"), None, "ghost", self.clear_watch, tr("Clear the list")))
         lay.addLayout(row)
-        self.watch_tree = self._detail_tree(["Register / bit alanı", "Adres / bitler", "Değer", "Anlamı",
-                                             "Son değişim", "Son okuma", "Okuma"], 3)
+        self.watch_tree = self._detail_tree([tr("Register / bit field"), tr("Address / bits"), tr("Value"), tr("Meaning"),
+                                             tr("Last change"), tr("Last read"), tr("Read")], 3)
         self.watch_tree.itemDoubleClicked.connect(self._watch_open)
-        self.watch_tree.setToolTip("Tıkla: bit alanlarını aç / kapat · çift tık: Register sekmesinde aç")
+        self.watch_tree.setToolTip(tr("Click: expand / collapse bit fields · double-click: open in the Register tab"))
         self.watch_tree.currentItemChanged.connect(lambda *_: self._fill_history())
 
         hist = QWidget()
@@ -1080,19 +1077,19 @@ class DebugBridgePage(ToolPage):
         hl.setSpacing(6)
         hrow = QHBoxLayout()
         hrow.setSpacing(6)
-        self.hist_title = ui.label("GEÇMİŞ", "section")
+        self.hist_title = ui.label(tr("HISTORY"), "section")
         hrow.addWidget(self.hist_title)
         hrow.addStretch(1)
-        self.hist_changes = QCheckBox("Sadece değişimler")
+        self.hist_changes = QCheckBox(tr("Changes only"))
         self.hist_changes.setChecked(True)
         self.hist_changes.toggled.connect(lambda *_: self._fill_history())
         hrow.addWidget(self.hist_changes)
-        hrow.addWidget(ui.button("CSV'ye aktar…", "save", "ghost", self.export_history,
-                                 "İzlenen tüm registerların kaydını CSV dosyasına yaz"))
-        hrow.addWidget(ui.button("Geçmişi temizle", None, "ghost", self.clear_history))
+        hrow.addWidget(ui.button(tr("Export to CSV…"), "save", "ghost", self.export_history,
+                                 tr("Write the log of every watched register to a CSV file")))
+        hrow.addWidget(ui.button(tr("Clear history"), None, "ghost", self.clear_history))
         hl.addLayout(hrow)
-        self.hist_tree = self._detail_tree(["Zaman", "Değer", "Değişen bit alanları", "Bit alanları"], 3)
-        self.hist_tree.setToolTip("Tıkla: o andaki bit alanlarını aç / kapat")
+        self.hist_tree = self._detail_tree([tr("Time"), tr("Value"), tr("Changed bit fields"), tr("Bit fields")], 3)
+        self.hist_tree.setToolTip(tr("Click: expand / collapse the bit fields at that moment"))
         hl.addWidget(self.hist_tree, 1)
 
         wsplit = QSplitter(Qt.Orientation.Vertical)
@@ -1122,7 +1119,7 @@ class DebugBridgePage(ToolPage):
         tree = self.hist_tree
         tree.clear()
         if w is None:
-            self.hist_title.setText("GEÇMİŞ · bir register seç")
+            self.hist_title.setText(tr("HISTORY · select a register"))
             return
         ip, reg = self._resolve(w["key"])
         samples = list(w["history"])
@@ -1132,9 +1129,7 @@ class DebugBridgePage(ToolPage):
             if changed or not self.hist_changes.isChecked():
                 rows.append((ts, v, prev))
             prev = v
-        self.hist_title.setText(f"GEÇMİŞ · {self._reg_name(w['key'], ip, reg)} · {len(samples)} okuma, "
-                                f"{sum(1 for i in range(len(samples)) if i == 0 or samples[i][1] != samples[i - 1][1])} "
-                                f"değişim")
+        self.hist_title.setText(tr("HISTORY · {0} · {1} reads, {2} changes").format(self._reg_name(w['key'], ip, reg), len(samples), sum(1 for i in range(len(samples)) if i == 0 or samples[i][1] != samples[i - 1][1])))
         mono = theme.mono_font()
         accent = theme.manager().color("accent")
         for ts, v, prev in reversed(rows[-HISTORY_SHOWN:]):
@@ -1142,7 +1137,7 @@ class DebugBridgePage(ToolPage):
             if reg is not None and prev is not None:
                 diff = [f.name for f in sorted(reg.fields, key=lambda f: -f.lsb) if f.extract(v) != f.extract(prev)]
             it = QTreeWidgetItem([datetime.datetime.fromtimestamp(ts).strftime("%H:%M:%S.%f")[:-3], hex32(v),
-                                  ", ".join(diff) if prev is not None else "ilk okuma",
+                                  ", ".join(diff) if prev is not None else tr("first read"),
                                   self._decode(reg, v) if reg is not None else ""])
             it.setFont(0, mono)
             it.setFont(1, mono)
@@ -1168,9 +1163,9 @@ class DebugBridgePage(ToolPage):
 
     def export_history(self):
         if not any(w["history"] for w in self.watch):
-            QMessageBox.information(self, self.title, "Henüz kayıt yok: canlı izlemeyi başlat.")
+            QMessageBox.information(self, self.title, tr("Nothing recorded yet: start live watch."))
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Canlı izleme kaydı",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Live watch log"),
                                               os.path.join(os.path.dirname(self.ctx.path or ROOT),
                                                            time.strftime("izleme_%Y%m%d_%H%M%S.csv")), "CSV (*.csv)")
         if not path:
@@ -1178,7 +1173,7 @@ class DebugBridgePage(ToolPage):
         try:
             with open(path, "w", newline="", encoding="utf-8") as fh:
                 wr = csv.writer(fh)
-                wr.writerow(["zaman", "register", "adres", "deger", "bit_alanlari"])
+                wr.writerow(["zaman", "register", tr("addresses"), "deger", "bit_alanlari"])
                 rows = []
                 for w in self.watch:
                     ip, reg = self._resolve(w["key"])
@@ -1189,8 +1184,8 @@ class DebugBridgePage(ToolPage):
                 for ts, *rest in sorted(rows):
                     wr.writerow([datetime.datetime.fromtimestamp(ts).isoformat(timespec="milliseconds"), *rest])
         except OSError as exc:
-            return self.error("Kaydedilemedi", exc)
-        self.status(f"Kayıt aktarıldı: {path}")
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Log exported: {0}").format(path))
 
     def add_watch(self, keys):
         have = {w["key"] for w in self.watch}
@@ -1204,7 +1199,7 @@ class DebugBridgePage(ToolPage):
                                    "history": collections.deque(maxlen=HISTORY_MAX)})
                 added += 1
         self._fill_watch()
-        self.status(f"{added} register canlı izlemeye eklendi")
+        self.status(tr("{0} registers added to live watch").format(added))
 
     def _watch_index(self, item):
         while item is not None and item.parent() is not None:
@@ -1244,11 +1239,11 @@ class DebugBridgePage(ToolPage):
         if running and not self.link.connected:
             self.poll_timer.stop()
             running = False
-        self.poll_btn.setText("Durdur" if running else "Başlat")
+        self.poll_btn.setText(tr("Stop") if running else tr("Start"))
         self.poll_btn.setEnabled(self.link.connected and bool(self.watch))
         n = len(self.watch)
-        self.watch_info.setText((f"{n} register · her {self.period_sp.value()} ms" if running else f"{n} register")
-                                if n else "Register sekmesindeki İzle düğmesi ya da ağaçta sağ tık ile ekle")
+        self.watch_info.setText((tr("{0} registers · every {1} ms").format(n, self.period_sp.value()) if running else tr("{0} registers").format(n))
+                                if n else tr("Add with the Watch button on the Register tab or by right-clicking the tree"))
 
     def _poll(self):
         if self._polling or not self.link.connected or not self.watch:
@@ -1275,13 +1270,13 @@ class DebugBridgePage(ToolPage):
             for a, v in zip(targets, values):
                 if a is not None and a not in done:
                     done.add(a)
-                    self._record(a, v, "canlı izleme")
+                    self._record(a, v, tr("live watch"))
 
         def err(exc):
             self._polling = False
             self.poll_timer.stop()
             self._update_watch_controls()
-            self.error("Canlı izleme durdu", exc)
+            self.error(tr("Live watch stopped"), exc)
         self.bus.run(job, ok, err)
 
     def _fill_watch(self, rebuild=False):
@@ -1355,31 +1350,31 @@ class DebugBridgePage(ToolPage):
         lay.setSpacing(8)
         row = QHBoxLayout()
         row.setSpacing(6)
-        self.send_btn = ui.button("Cihaza gönder", "write", "primary", self.send_config,
-                                  "Listedeki değerleri sırayla yaz")
+        self.send_btn = ui.button(tr("Send to device"), "write", "primary", self.send_config,
+                                  tr("Write the listed values in order"))
         row.addWidget(self.send_btn)
-        self.capture_btn = ui.button("Cihazdan oku", "read", "ghost", self.capture_config,
-                                     "Listedeki registerların şu anki değerlerini cihazdan al")
+        self.capture_btn = ui.button(tr("Read from device"), "read", "ghost", self.capture_config,
+                                     tr("Take the current values of the listed registers from the device"))
         row.addWidget(self.capture_btn)
-        self.compare_btn = ui.button("Karşılaştır", None, "ghost", self.compare_config,
-                                     "Cihazdaki değerleri oku, config değerleri değişmez")
+        self.compare_btn = ui.button(tr("Compare"), None, "ghost", self.compare_config,
+                                     tr("Read the device's values; the config values do not change"))
         row.addWidget(self.compare_btn)
         row.addSpacing(8)
-        row.addWidget(ui.button("Aç…", "folder", "ghost", self.open_config))
-        row.addWidget(ui.button("Kaydet", "save", "ghost", self.save_config_file,
-                                "Config dosyasına kaydet (ilk kayıtta yeri sorar)"))
-        row.addWidget(ui.button("Farklı kaydet…", None, "ghost", lambda: self.save_config_file(True)))
+        row.addWidget(ui.button(tr("Open…"), "folder", "ghost", self.open_config))
+        row.addWidget(ui.button(tr("Save"), "save", "ghost", self.save_config_file,
+                                tr("Save to a config file (asks where the first time)")))
+        row.addWidget(ui.button(tr("Save as…"), None, "ghost", lambda: self.save_config_file(True)))
         row.addStretch(1)
         self.cfg_info = ui.label("", "muted")
         row.addWidget(self.cfg_info)
         row.addWidget(ui.button("↑", None, "ghost", lambda: self.move_config(-1)))
         row.addWidget(ui.button("↓", None, "ghost", lambda: self.move_config(1)))
-        row.addWidget(ui.button("Sil", None, "ghost", self.delete_config))
+        row.addWidget(ui.button(tr("Delete"), None, "ghost", self.delete_config))
         lay.addLayout(row)
-        self.cfg_tree = self._detail_tree(["#", "Register / bit alanı", "Adres / bitler", "Değer", "Anlamı",
-                                           "Cihazda (son okunan)"], 4)
+        self.cfg_tree = self._detail_tree(["#", tr("Register / bit field"), tr("Address / bits"), tr("Value"), tr("Meaning"),
+                                           tr("On device (last read)")], 4)
         self.cfg_tree.itemDoubleClicked.connect(lambda it, _c: self.load_config_row(self._cfg_index(it)))
-        self.cfg_tree.setToolTip("Tıkla: bit alanlarını aç / kapat · çift tık: Register sekmesinde düzenle")
+        self.cfg_tree.setToolTip(tr("Click: expand / collapse bit fields · double-click: edit in the Register tab"))
         lay.addWidget(self.cfg_tree, 1)
         return tab
 
@@ -1401,10 +1396,10 @@ class DebugBridgePage(ToolPage):
             row = self.cfg_edit
             self.cfg_edit = None
             self._fill_config(row)
-            self.status("Config satırı güncellendi")
+            self.status(tr("Config row updated"))
         else:
             self.add_config(key, self.staged)
-            self.status(f"Config'e eklendi: {hex32(self.staged)} (Config sekmesi)")
+            self.status(tr("Added to config: {0} (Config tab)").format(hex32(self.staged)))
         self._update_controls()
 
     def load_config_row(self, r):
@@ -1421,7 +1416,7 @@ class DebugBridgePage(ToolPage):
         self._fill_fields()
         self._update_controls()
         self.rtabs.show_page(self.reg_card)
-        self.status(f"Config satırı {r + 1} düzenleniyor: bit alanlarını değiştir, sonra Config satırını güncelle")
+        self.status(tr("Editing config row {0}: change the bit fields, then Update config row").format(r + 1))
 
     def delete_config(self):
         r = self._cfg_index(self.cfg_tree.currentItem())
@@ -1460,7 +1455,7 @@ class DebugBridgePage(ToolPage):
             if cached:
                 same = (cached[0] & ~reg.mask_of("PULSE", "W1C")) == (row["value"] & ~reg.mask_of("PULSE", "W1C"))
                 it.setForeground(5, QColor(t["success"] if same else t["danger"]))
-                it.setToolTip(5, "Cihazdaki değer config ile aynı" if same else "Cihazdaki değer config'ten farklı")
+                it.setToolTip(5, tr("The device value equals the config") if same else tr("The device value differs from the config"))
             bold = it.font(1)
             bold.setBold(True)
             it.setFont(1, bold)
@@ -1481,15 +1476,15 @@ class DebugBridgePage(ToolPage):
         for b in (self.send_btn, self.capture_btn, self.compare_btn):
             b.setEnabled(ok)
         n = len(self.config)
-        self.cfg_info.setText((f"{n} yazma" + (f" · {os.path.basename(self.cfg_path)}" if self.cfg_path else ""))
-                              if n else "Register sekmesindeki Config'e ekle düğmesiyle satır ekle")
+        self.cfg_info.setText((tr("{0} writes").format(n) + (f" · {os.path.basename(self.cfg_path)}" if self.cfg_path else ""))
+                              if n else tr("Add rows with the Add to config button on the Register tab"))
 
     def send_config(self):
         rows = []
         for row in self.config:
             ip, reg = self._resolve(row["key"])
             if not reg:
-                return self.error("Gönderilemedi", f"{row['key'][1]}.{row['key'][2]} adres haritasında yok")
+                return self.error(tr("Could not send"), tr("{0}.{1} is not in the address map").format(row['key'][1], row['key'][2]))
             rows.append((f"{ip.name}.{reg.name}", ip.address(reg), row["value"], reg.readable))
 
         def job():
@@ -1498,11 +1493,11 @@ class DebugBridgePage(ToolPage):
             return [(addr, self.link.read(addr)) for _n, addr, _v, readable in rows if readable]
 
         def ok(readback):
-            self.status(f"Config gönderildi: {len(rows)} yazma")
-            self._log.emit("INFO", f"Config gönderildi ({len(rows)} yazma)")
+            self.status(tr("Config sent: {0} writes").format(len(rows)))
+            self._log.emit("INFO", tr("Config sent ({0} writes)").format(len(rows)))
             for addr, v in readback:
-                self._record(addr, v, "config geri okuma")
-        self.bus.run(job, ok, lambda e: self.error("Config gönderilemedi", e))
+                self._record(addr, v, tr("config read-back"))
+        self.bus.run(job, ok, lambda e: self.error(tr("Could not send the config"), e))
 
     def _read_config_targets(self, on_done):
         targets = []
@@ -1518,29 +1513,29 @@ class DebugBridgePage(ToolPage):
             for i, a, clear, v in values:
                 self._record(a, v, "config")
             on_done(values)
-        self.bus.run(job, ok, lambda e: self.error("Okunamadı", e))
+        self.bus.run(job, ok, lambda e: self.error(tr("Could not read"), e))
 
     def capture_config(self):
         def done(values):
             for i, a, clear, v in values:
                 self.config[i]["value"] = v & ~clear & 0xFFFFFFFF
             self._fill_config()
-            self.status(f"{len(values)} değer cihazdan alındı (salt yazılır registerlar değişmedi)")
+            self.status(tr("{0} values taken from the device (write-only registers unchanged)").format(len(values)))
         self._read_config_targets(done)
 
     def compare_config(self):
         self._read_config_targets(lambda values: self.status(
-            f"{len(values)} register okundu; farklı olanlar Cihazda sütununda kırmızı"))
+            tr("{0} registers read; differing ones are red in the On device column").format(len(values))))
 
     def open_config(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Config dosyası", os.path.dirname(self.cfg_path or self.ctx.path or ROOT),
+        path, _ = QFileDialog.getOpenFileName(self, tr("Config file"), os.path.dirname(self.cfg_path or self.ctx.path or ROOT),
                                               "Config (*.axcfg.json);;JSON (*.json)")
         if not path:
             return
         try:
             writes = load_config(path)
         except Exception as exc:  # noqa: BLE001
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         self.config = []
         for ipn, regn, value in writes:
             group = "extra" if any(x.name == ipn for x in self._extra()) and not self.ctx.project.get_instance(ipn) \
@@ -1554,7 +1549,7 @@ class DebugBridgePage(ToolPage):
         """Kaydet: the config's file (asks only the first time); Farklı kaydet: another file."""
         path = self.cfg_path
         if as_new or not path:
-            path, _ = QFileDialog.getSaveFileName(self, "Config dosyası",
+            path, _ = QFileDialog.getSaveFileName(self, tr("Config file"),
                                                   self.cfg_path or os.path.join(os.path.dirname(self.ctx.path or ROOT),
                                                                                 "config.axcfg.json"),
                                                   "Config (*.axcfg.json)")
@@ -1564,10 +1559,10 @@ class DebugBridgePage(ToolPage):
         try:
             save_config(path, writes)
         except OSError as exc:
-            return self.error("Kaydedilemedi", exc)
+            return self.error(tr("Could not save"), exc)
         self.cfg_path = path
         skipped = len(self.config) - len(writes)
-        self.status(f"Kaydedildi: {path}" + (f" ({skipped} ham adres satırı dosyaya yazılmadı)" if skipped else ""))
+        self.status(tr("Saved: {0}").format(path) + (tr(" ({0} raw address rows were not written to the file)").format(skipped) if skipped else ""))
         self._update_config_controls()
 
     # ================================================================ log / theme / close

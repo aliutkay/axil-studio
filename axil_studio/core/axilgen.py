@@ -39,15 +39,16 @@ from dataclasses import dataclass, field
 from typing import List
 
 from .model import EnumValue, single_line, write_json
+from axil_studio.i18n import tr
 
 SPEC_FORMAT = "axil-regspec"
 KINDS = ("RW", "RO", "PULSE", "W1C", "CONST")
 KIND_HELP = {
-    "RW": "Kontrol: bus yazar, IP'ye çıkış (o_)",
-    "RO": "Durum: IP'den giriş (i_), bus okur",
-    "PULSE": "1 yazınca 1 clock darbe (o_), 0 okunur",
-    "W1C": "IP olay bayrağı (i_ set), tutulur, 1 yazınca silinir",
-    "CONST": "Sabit değer (ID, versiyon), port yok",
+    "RW": tr("Control: written by the bus, output to the IP (o_)"),
+    "RO": tr("Status: input from the IP (i_), read by the bus"),
+    "PULSE": tr("Writing 1 gives a one-clock pulse (o_), reads 0"),
+    "W1C": tr("IP event flag (i_ sets it), held, cleared by writing 1"),
+    "CONST": tr("Constant value (ID, version), no port"),
 }
 
 VERILOG_KEYWORDS = set("""
@@ -231,7 +232,7 @@ class ModuleSpec:
     @staticmethod
     def from_dict(d):
         if d.get("format") != SPEC_FORMAT:
-            raise SpecError("Bu dosya bir register spesifikasyonu değil")
+            raise SpecError(tr("This file is not a register spec"))
         # older files also hold "base": not part of a register map any more, ignored
         return ModuleSpec(d.get("module", "my_ip_axil"), d.get("desc", ""),
                           [RegSpec.from_dict(r) for r in d.get("registers", [])],
@@ -277,77 +278,77 @@ class ModuleSpec:
 
         def check_name(name, what):
             if not ident.match(name or ""):
-                errs.append(f"{what} '{name}': harfle başlamalı, sadece harf/rakam/_ içermeli")
+                errs.append(tr("{0} '{1}': must start with a letter and contain only letters, digits and _").format(what, name))
             elif name.lower() in VERILOG_KEYWORDS or name.lower() in VHDL_KEYWORDS:
-                errs.append(f"{what} '{name}': Verilog/VHDL anahtar kelimesi olamaz")
+                errs.append(tr("{0} '{1}': cannot be a Verilog/VHDL keyword").format(what, name))
             elif "__" in name or name.endswith("_"):
-                errs.append(f"{what} '{name}': '__' içeremez ve '_' ile bitemez (VHDL uyumu)")
+                errs.append(tr("{0} '{1}': must not contain '__' or end with '_' (VHDL compatibility)").format(what, name))
 
-        check_name(self.module, "Modül adı")
+        check_name(self.module, tr("Module name"))
         if (self.module or "").lower() in RESERVED_MODULES or (self.module or "").lower().removesuffix("_pk") \
                 in RESERVED_MODULES:
-            errs.append(f"Modül adı '{self.module}': ZipCPU {self.module.lower().removesuffix('_pk')}.v ile çakışır")
+            errs.append(tr("Module name '{0}': clashes with ZipCPU {1}.v").format(self.module, self.module.lower().removesuffix('_pk')))
         if not hdl_only and not VERSION_RE.match(self.version or ""):
-            errs.append(f"Sürüm '{self.version}': rakam ve nokta ile yazılmalı, ör. 1.0.0 (sonuna -beta gibi ek olabilir)")
+            errs.append(tr("Version '{0}': use digits and dots, e.g. 1.0.0 (a suffix like -beta is allowed)").format(self.version))
         if not self.registers:
-            errs.append("En az bir register tanımlanmalı")
+            errs.append(tr("At least one register is needed"))
         seen_regs, seen_offs = set(), {}
         # names easyaxil.v / the generated logic already use: an IP port must not take them
-        ports = {"i_reset": "easyaxil'in iç reset sinyali", "o_irq": "kesme çıkışı (o_irq)"}
+        ports = {"i_reset": tr("easyaxil's internal reset signal"), "o_irq": tr("interrupt output (o_irq)")}
         for r in self.registers:
             check_name(r.name, "Register")
             if r.name.upper() in seen_regs:
-                errs.append(f"Register adı tekrar ediyor: {r.name}")
+                errs.append(tr("Register name used twice: {0}").format(r.name))
             seen_regs.add(r.name.upper())
             if r.offset % 4 or r.offset < 0:
-                errs.append(f"{r.name}: offset 4'ün katı olmalı (0x{r.offset:X})")
+                errs.append(tr("{0}: offset must be a multiple of 4 (0x{1:X})").format(r.name, r.offset))
             if r.offset in seen_offs:
-                errs.append(f"{r.name}: offset 0x{r.offset:02X}, {seen_offs[r.offset]} ile aynı")
+                errs.append(tr("{0}: offset 0x{1:02X} is the same as {2}").format(r.name, r.offset, seen_offs[r.offset]))
             seen_offs[r.offset] = r.name
             if not r.fields:
-                errs.append(f"{r.name}: en az bir alan tanımlanmalı")
+                errs.append(tr("{0}: at least one bit field is needed").format(r.name))
             used, seen_f = 0, set()
             for f in r.fields:
                 where = f"{r.name}.{f.name}"
-                check_name(f.name, "Alan")
+                check_name(f.name, tr("Bit field"))
                 if f.name.upper() in seen_f:
-                    errs.append(f"{r.name}: alan adı tekrar ediyor: {f.name}")
+                    errs.append(tr("{0}: bit field name used twice: {1}").format(r.name, f.name))
                 seen_f.add(f.name.upper())
                 if f.kind not in KINDS:
-                    errs.append(f"{where}: bilinmeyen tip {f.kind}")
+                    errs.append(tr("{0}: unknown type {1}").format(where, f.kind))
                 if not (0 <= f.lsb <= 31 and f.width >= 1 and f.msb <= 31):
-                    errs.append(f"{where}: alan 32 bitin içinde kalmalı ({f.bits})")
+                    errs.append(tr("{0}: bit field must stay within 32 bits ({1})").format(where, f.bits))
                     continue
                 if used & f.mask:
-                    errs.append(f"{where}: başka bir alanla çakışıyor")
+                    errs.append(tr("{0}: overlaps another bit field").format(where))
                 used |= f.mask
                 if f.reset >> f.width:
-                    errs.append(f"{where}: reset/sabit değeri {f.width} bite sığmıyor")
+                    errs.append(tr("{0}: reset / constant value does not fit in {1} bits").format(where, f.width))
                 if f.reset and f.kind not in ("RW", "CONST"):
-                    errs.append(f"{where}: reset değeri sadece RW ve CONST için kullanılır")
+                    errs.append(tr("{0}: a reset value is only used by RW and CONST").format(where))
                 if f.irq and f.kind != "W1C":
-                    errs.append(f"{where}: IRQ sadece W1C alanlarında kullanılabilir")
+                    errs.append(tr("{0}: IRQ can only be used on W1C bit fields").format(where))
                 if f.sync and f.kind != "RO":
-                    errs.append(f"{where}: senkronizör sadece RO alanlarında kullanılabilir")
+                    errs.append(tr("{0}: a synchronizer can only be used on RO bit fields").format(where))
                 seen_v = set()
                 for e in f.values:
                     if e.value < 0 or e.value >> f.width:
-                        errs.append(f"{where}: değer tablosundaki 0x{e.value:X}, {f.width} bite sığmıyor")
+                        errs.append(tr("{0}: value 0x{1:X} in the value table does not fit in {2} bits").format(where, e.value, f.width))
                     if e.value in seen_v:
-                        errs.append(f"{where}: değer tablosunda 0x{e.value:X} tekrar ediyor")
+                        errs.append(tr("{0}: value 0x{1:X} appears twice in the value table").format(where, e.value))
                     seen_v.add(e.value)
                 for p in port_names(r, f):
                     if p in ports:
-                        errs.append(f"{where}: port adı '{p}', {ports[p]} ile çakışıyor")
+                        errs.append(tr("{0}: port name '{1}' clashes with {2}").format(where, p, ports[p]))
                     ports[p] = where
             for flag, suffix in ((r.wr_strobe, "wr"), (r.rd_strobe, "rd")):
                 if flag:
                     p = f"o_{r.name.lower()}_{suffix}"
                     if p in ports:
-                        errs.append(f"{r.name}: port adı '{p}' çakışıyor")
+                        errs.append(tr("{0}: port name '{1}' clashes").format(r.name, p))
                     ports[p] = r.name
             if r.rd_strobe and not r.kinds() - {"PULSE"}:
-                errs.append(f"{r.name}: okunacak alanı olmayan registerda okuma strobe'u anlamsız")
+                errs.append(tr("{0}: a read strobe is meaningless on a register with nothing to read").format(r.name))
         return errs
 
 
@@ -384,13 +385,13 @@ def _template_cut(text, start, end, what):
     i = text.find(start)
     j = text.find(end, i + len(start)) if i >= 0 else -1
     if i < 0 or j < 0:
-        raise SpecError(f"easyaxil.v şablonunda beklenen bölüm bulunamadı: {what}")
+        raise SpecError(tr("easyaxil.v template: expected section not found: {0}").format(what))
     return text[:i], text[j:]
 
 
 def _template_replace(text, old, new, what):
     if text.count(old) != 1:
-        raise SpecError(f"easyaxil.v şablonunda beklenen satır bulunamadı: {what}")
+        raise SpecError(tr("easyaxil.v template: expected line not found: {0}").format(what))
     return text.replace(old, new)
 
 
@@ -795,7 +796,7 @@ def add_to_project(spec: ModuleSpec, path, replace=True, base=None):
     if old and replace:
         proj.ips[proj.ips.index(old)] = ip
     elif old:
-        raise SpecError(f"Projede '{ip.name}' adında bir IP zaten var")
+        raise SpecError(tr("The project already has an IP named '{0}'").format(ip.name))
     else:
         proj.ips.append(ip)
     if not proj.instances_of(ip.name) and not proj.get_instance(ip.name):
@@ -1105,7 +1106,7 @@ def hdl_files(spec: ModuleSpec):
 def export_xlsx(spec: ModuleSpec, path, base=0):
     """Register map workbook (see regmap_xlsx.py); addresses follow the base cell in the sheet."""
     from . import regmap_xlsx
-    return regmap_xlsx.export_xlsx([to_ipblock(spec, base)], path, f"{spec.module} kütük haritası")
+    return regmap_xlsx.export_xlsx([to_ipblock(spec, base)], path, tr("{0} register map").format(spec.module))
 
 
 def main():
@@ -1184,7 +1185,7 @@ def main():
             errs = list(addrmap.validate(proj))
             for b, xs in zip(addrmap.levels(proj), specs):
                 where = "" if b is None else f"{xs.module}: "
-                errs += [where + e for e in (xs.validate() if xs.slaves else ["slave yok"]) if e not in errs]
+                errs += [where + e for e in (xs.validate() if xs.slaves else [tr("no slaves")]) if e not in errs]
         if errs:
             raise SystemExit("\n".join("error: " + e for e in errs))
         for xs in specs:

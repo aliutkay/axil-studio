@@ -25,13 +25,14 @@ from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import SPEC_FILTER, fill_regmap_tree, regmap_tree
 from axil_studio.core.model import hex32
+from axil_studio.i18n import tr
 
 
 # what each generated Verilog file is (preview selector)
 def verilog_label(spec, name):
     m = spec.module
-    return {f"{m}.v": "IP (easyaxil, S_AXI_*)", f"{m}_pk.v": "HDL Designer wrapper'ı (SLAVE_AXI_REQ/RSP)",
-            f"{m}_inst.v": "örnekleme şablonu", f"{m}_pk_inst.v": "HDL Designer wrapper'ı örnekleme şablonu",
+    return {f"{m}.v": "IP (easyaxil, S_AXI_*)", f"{m}_pk.v": tr("HDL Designer wrapper (SLAVE_AXI_REQ/RSP)"),
+            f"{m}_inst.v": tr("instantiation template"), f"{m}_pk_inst.v": tr("HDL Designer wrapper instantiation template"),
             f"{m}_tb.v": "testbench"}.get(name, "")
 
 
@@ -44,11 +45,9 @@ class WrapperPage(ToolPage):
     tool_id = "wrapper"
     title = "Slave Interface Wrapper"
     short_title = "Slave Interface Wrapper"
-    subtitle = "Register haritasından AXI4-Lite slave HDL, testbench, header ve dokümantasyonu üret."
-    description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
-                   "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
+    subtitle = tr("Generate AXI4-Lite slave HDL, testbench, header and documentation from the register map.")
+    description = (tr("Generates AXI4-Lite slave HDL, testbench, C header, document and Excel register map from the IP designed in the Register Map Editor; makes HDL Designer wrappers for ready-made IPs."))
     icon_name = "wrapper"
-    version = "0.2.7"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -60,23 +59,23 @@ class WrapperPage(ToolPage):
         self._jobs = ui.Async(self)
         self.has_iverilog = bool(shutil.which("iverilog"))
 
-        self.gen_btn = self.header.add_right(ui.button("Üret…", "play", "primary", self.generate,
-                                                 "Wrapper, testbench, header, doküman ve Excel'i üret (Ctrl+G)"))
+        self.gen_btn = self.header.add_right(ui.button(tr("Generate…"), "play", "primary", self.generate,
+                                                 tr("Generate the wrapper, testbench, header, document and Excel (Ctrl+G)")))
 
         bar = self.header       # the tool's commands sit in the top bar
-        bar.add("IP seç…", "library", self.choose_ip, "IP Library'den projedeki ya da bir kütüphanedeki IP'yi seç")
-        bar.add("İçe aktar…", "folder", self.open_spec, "Bir .regspec.json dosyasından HDL üret")
+        bar.add(tr("Select IP…"), "library", self.choose_ip, tr("Select an IP of the project or of a library (IP Library)"))
+        bar.add(tr("Import…"), "folder", self.open_spec, tr("Generate HDL from a .regspec.json file"))
         bar.sep()
-        self.edit_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regmap,
-                                "Register Map Editor'da aç")
+        self.edit_btn = bar.add(tr("Edit register map"), "regmap", self.edit_regmap,
+                                tr("Open in Register Map Editor"))
         bar.sep()
-        self.xlsx_btn = bar.add("Excel'e aktar…", "file", self.export_xlsx, "Kütük haritası (.xlsx)",
+        self.xlsx_btn = bar.add(tr("Export to Excel…"), "file", self.export_xlsx, tr("Register map (.xlsx)"),
                                 regmap_xlsx.available())
-        self.tb_btn = bar.add("Testbench çalıştır", "play", self.run_testbench,
-                              "iverilog ile kendini kontrol eden testbench" if self.has_iverilog
-                              else "iverilog bulunamadı", self.has_iverilog)
-        bar.add("Hazır IP için HDL Designer wrapper'ı…", "wrapper", self.pack_existing,
-                "Mevcut bir AXI4-Lite modülünün üstüne paketli REQ/RSP portlu <modül>_pk.v bloğu üretir")
+        self.tb_btn = bar.add(tr("Run testbench"), "play", self.run_testbench,
+                              tr("Self-checking testbench with iverilog") if self.has_iverilog
+                              else tr("iverilog not found"), self.has_iverilog)
+        bar.add(tr("HDL Designer wrapper for a ready-made IP…"), "wrapper", self.pack_existing,
+                tr("Makes a <module>_pk.v block with packed REQ/RSP ports around an existing AXI4-Lite module"))
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -89,16 +88,15 @@ class WrapperPage(ToolPage):
         left.lay.addWidget(self.ip_title)
         left.lay.addWidget(self.ip_sub)
         left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.label("ÇIKTI", "section"))
-        self.packed_cb = QCheckBox("HDL Designer için paketli AXI wrapper'ı")
-        self.packed_cb.setToolTip("S_AXI_* portlu IP'nin üzerine, HDL Designer'da kullanmak için paketli\n"
-                                  "SLAVE_AXI_REQ / SLAVE_AXI_RSP portlu bir blok (<modül>_pk.v) da üretir.")
+        left.lay.addWidget(ui.label(tr("OUTPUT"), "section"))
+        self.packed_cb = QCheckBox(tr("Packed AXI wrapper for HDL Designer"))
+        self.packed_cb.setToolTip(tr("Besides the IP with S_AXI_* ports, also generates a block with packed\nSLAVE_AXI_REQ / SLAVE_AXI_RSP ports (<module>_pk.v) for HDL Designer."))
         self.packed_cb.toggled.connect(self._packed_changed)
         left.lay.addWidget(self.packed_cb)
         self.files = QListWidget()
         self.files.setSelectionMode(QListWidget.SelectionMode.NoSelection)
         left.lay.addWidget(self.files, 1)
-        self.issues = ui.IssueList("Hata yok")     # shown in the window's status bar
+        self.issues = ui.IssueList(tr("No errors"))     # shown in the window's status bar
         left.setMinimumWidth(340)
         split.addWidget(left)
 
@@ -111,21 +109,20 @@ class WrapperPage(ToolPage):
         rl.setContentsMargins(12, 12, 12, 12)
         self.regs = regmap_tree()
         self.regs.itemDoubleClicked.connect(self._reg_double_clicked)
-        self.regs.setToolTip("Çift tık: Register Map Editor'da düzenle")
+        self.regs.setToolTip(tr("Double-click: edit in the Register Map Editor"))
         rl.addWidget(self.regs)
-        self.tabs.addTab(rtab, "Register haritası")
+        self.tabs.addTab(rtab, tr("Register map"))
         self.previews = {}
-        for key, title in (("verilog", "Verilog önizleme"), ("header", "C header"), ("doc", "Doküman")):
+        for key, title in (("verilog", tr("Verilog preview")), ("header", "C header"), ("doc", tr("Document"))):
             tab = QWidget()
             tl = QVBoxLayout(tab)
             tl.setContentsMargins(12, 12, 12, 12)
             if key == "verilog":
                 frow = QHBoxLayout()
-                frow.addWidget(ui.label("Dosya", "muted"))
+                frow.addWidget(ui.label(tr("File"), "muted"))
                 self.vfile_cb = QComboBox()
                 self.vfile_cb.setMinimumWidth(360)
-                self.vfile_cb.setToolTip("Önizlenecek Verilog dosyası: IP, HDL Designer wrapper'ı, örnekleme "
-                                         "şablonları, testbench")
+                self.vfile_cb.setToolTip(tr("Verilog file to preview: IP, HDL Designer wrapper, instantiation templates, testbench"))
                 self.vfile_cb.currentIndexChanged.connect(lambda *_: self._refresh_preview())
                 frow.addWidget(self.vfile_cb)
                 frow.addStretch(1)
@@ -138,10 +135,8 @@ class WrapperPage(ToolPage):
             self.tabs.addTab(tab, title)
             self.previews[key] = (tab, ed)
         self.spec_view = ui.SpecView(
-            "HDL spec (salt okunur): Verilog dosyaları yalnızca bundan üretilir. Sadece kodu etkileyen veri var: "
-            "registerlar, bit alanları ve türleri, strobe'lar, reset değerleri; açıklamalar, değer anlamları, sürüm ve "
-            "adres yok. Komut satırında: python -m axil_studio.core.hdlspec <dosya> -o out",
-            self.save_hdlspec, "Kaydet (.hdlspec.json)…", "HDL spec'i dosyaya yaz")
+            tr("HDL spec (read-only): the Verilog files are made from this alone. Only data that changes the code: registers, bit fields and their types, strobes, reset values; no descriptions, value meanings, version or address. Command line: python -m axil_studio.core.hdlspec <file> -o out"),
+            self.save_hdlspec, tr("Save (.hdlspec.json)…"), tr("Write the HDL spec to a file"))
         self.tabs.addTab(self.spec_view, "Spec")
         self.tabs.currentChanged.connect(lambda *_: self._refresh_preview())
         split.addWidget(right)
@@ -169,14 +164,14 @@ class WrapperPage(ToolPage):
             a.setEnabled(enabled)
             m.addAction(a)
             return a
-        act("IP seç (IP Library)…", self.choose_ip, "Ctrl+Shift+O")
-        act("İçe aktar (.regspec.json)…", self.open_spec)
-        act("Register haritasını düzenle", self.edit_regmap)
+        act(tr("Select IP (IP Library)…"), self.choose_ip, "Ctrl+Shift+O")
+        act(tr("Import (.regspec.json)…"), self.open_spec)
+        act(tr("Edit register map"), self.edit_regmap)
         m.addSeparator()
-        act("Üret…", self.generate, "Ctrl+G")
-        act("Excel'e aktar…", self.export_xlsx, None, regmap_xlsx.available())
-        act("Testbench'i çalıştır (iverilog)", self.run_testbench, None, self.has_iverilog)
-        act("Hazır IP için HDL Designer wrapper'ı…", self.pack_existing)
+        act(tr("Generate…"), self.generate, "Ctrl+G")
+        act(tr("Export to Excel…"), self.export_xlsx, None, regmap_xlsx.available())
+        act(tr("Run the testbench (iverilog)"), self.run_testbench, None, self.has_iverilog)
+        act(tr("HDL Designer wrapper for a ready-made IP…"), self.pack_existing)
 
     # ================================================================ source
     def load_project_ip(self, name, quiet=False):
@@ -188,34 +183,33 @@ class WrapperPage(ToolPage):
         self._refresh()
         if not quiet:
             self.window().raise_()
-            self.status(f"{name} seçildi")
+            self.status(tr("{0} selected").format(name))
         return True
 
     def load_spec(self, spec, origin=""):
         """Take a register map from another tool (not in the project yet)."""
-        self.spec, self.origin = spec, ("other", origin or "dışarıdan")
+        self.spec, self.origin = spec, ("other", origin or tr("external"))
         self._refresh()
         self.window().raise_()
-        self.status(f"{spec.module} açıldı" + (f" ({origin})" if origin else ""))
+        self.status(tr("{0} opened").format(spec.module) + (f" ({origin})" if origin else ""))
         return True
 
     def choose_ip(self):
-        name = self.pick_ip("HDL üretilecek IP", "Projedeki ya da açık kütüphanelerdeki bir IP'yi seç. "
-                                                 "Kütüphane IP'si önce projeye alınır.")
+        name = self.pick_ip(tr("IP to generate HDL for"), tr("Select an IP of the project or of an open library. A library IP is brought into the project first."))
         if name:
             self.load_project_ip(name)
 
     def open_spec(self):
-        path, _ = QFileDialog.getOpenFileName(self, "Register spesifikasyonu aç", self.outdir or ROOT, SPEC_FILTER)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open register spec"), self.outdir or ROOT, SPEC_FILTER)
         if not path:
             return
         try:
             spec = G.ModuleSpec.load(path)
         except Exception as exc:  # noqa: BLE001 - shown to the user
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         self.spec, self.origin, self.outdir = spec, ("file", path), os.path.dirname(path)
         self._refresh()
-        self.status(f"Açıldı: {path}")
+        self.status(tr("Opened: {0}").format(path))
 
     def edit_regmap(self, reg=None):
         if self.spec is None:
@@ -224,7 +218,7 @@ class WrapperPage(ToolPage):
             self.edit_register_map(self.origin[1], reg)
         else:
             w = self.open_tool("regmap")
-            w.page.load_spec(copy.deepcopy(self.spec), "Slave Interface Wrapper'dan")
+            w.page.load_spec(copy.deepcopy(self.spec), tr("from the Slave Interface Wrapper"))
 
     def _reg_double_clicked(self, item, _col):
         while item.parent() is not None:
@@ -244,7 +238,7 @@ class WrapperPage(ToolPage):
         if self.origin and self.origin[0] == "project":
             ip = self.ctx.project.get_ip(self.origin[1])
             if ip is None:
-                self.origin = ("other", f"{self.origin[1]} projeden kaldırıldı")
+                self.origin = ("other", tr("{0} was removed from the project").format(self.origin[1]))
             else:
                 self.spec = G.spec_from_ipblock(ip)
         self._refresh()
@@ -270,21 +264,19 @@ class WrapperPage(ToolPage):
         self.tb_btn.setEnabled(has and self.has_iverilog)
         self.files.clear()
         if not has:
-            self.ip_title.setText("IP seçilmedi")
-            self.ip_sub.setText("IP seç ile projedeki ya da kütüphanedeki bir IP'yi seç, ya da bir .regspec.json "
-                                "dosyası aç. Register haritası Register Map Editor'da tasarlanır.")
+            self.ip_title.setText(tr("No IP selected"))
+            self.ip_sub.setText(tr("Select an IP of the project or of a library with Select IP, or open a .regspec.json file. The register map is designed in the Register Map Editor."))
             self.issues.set_issues([])
             fill_regmap_tree(self.regs, None)
             self._fill_vfiles()
             self._refresh_preview()
             return
         o = self.origin or ("other", "")
-        where = {"project": "projedeki IP", "file": f"dosya: {o[1]}", "other": o[1]}[o[0]]
+        where = {"project": tr("project IP"), "file": tr("file: {0}").format(o[1]), "other": o[1]}[o[0]]
         nf = sum(len(r.fields) for r in spec.registers)
         self.ip_title.setText(f"{spec.module}   ·   {spec.version}")
         n_inst = len(self.ctx.project.instances_of(spec.module)) if o[0] == "project" else 0
-        self.ip_sub.setText(f"{where} · {len(spec.registers)} register, {nf} bit alanı · adres alanı "
-                            f"0x{spec.span:X} byte" + (f" · adres haritasında {n_inst} kez" if n_inst else ""))
+        self.ip_sub.setText(tr("{0} · {1} registers, {2} bit fields · address space 0x{3:X} bytes").format(where, len(spec.registers), nf, spec.span) + (tr(" · {0}× in the address map").format(n_inst) if n_inst else ""))
         self._loading = True
         self.packed_cb.setChecked(spec.packed)
         self._loading = False
@@ -329,13 +321,13 @@ class WrapperPage(ToolPage):
         try:
             H.save(d, path)
         except OSError as exc:
-            return self.error("Kaydedilemedi", exc)
-        self.status(f"Kaydedildi: {path}")
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Saved: {0}").format(path))
 
     def _refresh_preview(self):
         if self.tabs.is_shown(self.spec_view):
             data = self.spec_data()
-            self.spec_view.set_data(data if data is not None else "IP seçilmedi.")
+            self.spec_view.set_data(data if data is not None else tr("No IP selected."))
         for key, (tab, ed) in self.previews.items():
             if not self.tabs.is_shown(tab):
                 continue
@@ -355,7 +347,7 @@ class WrapperPage(ToolPage):
                     else:
                         text = G.gen_markdown(spec)
                 except G.SpecError as exc:
-                    text = "// Register haritası geçerli değil (Register Map Editor'da düzelt):\n// " \
+                    text = tr("// The register map is not valid (fix it in the Register Map Editor):\n//") \
                            + str(exc).replace("\n", "\n// ")
             bar = ed.verticalScrollBar().value()
             ed.setPlainText(text)
@@ -368,11 +360,10 @@ class WrapperPage(ToolPage):
     # ================================================================ outputs
     def _ready(self):
         if self.spec is None:
-            QMessageBox.information(self, self.title, "Önce bir IP seç.")
+            QMessageBox.information(self, self.title, tr("Select an IP first."))
             return False
         if self.spec.validate():
-            QMessageBox.warning(self, self.title, "Register haritasında hata var. Soldaki listede gösterilen "
-                                                  "hataları Register Map Editor'da düzeltip tekrar dene.")
+            QMessageBox.warning(self, self.title, tr("The register map has errors. Fix the errors listed on the left in the Register Map Editor and try again."))
             return False
         return True
 
@@ -386,37 +377,37 @@ class WrapperPage(ToolPage):
     def generate(self):
         if not self._ready():
             return
-        outdir = QFileDialog.getExistingDirectory(self, "Çıktı klasörü", self.outdir or ROOT)
+        outdir = QFileDialog.getExistingDirectory(self, tr("Output folder"), self.outdir or ROOT)
         if not outdir:
             return
         self.outdir = outdir
         try:
             paths = G.generate_all(self.spec, outdir, self._project_base())
         except Exception as exc:  # noqa: BLE001
-            return self.error("Üretim başarısız", exc)
+            return self.error(tr("Generation failed"), exc)
         names = "\n".join(os.path.basename(p) for p in paths)
-        text = f"{len(paths)} dosya oluşturuldu:\n{outdir}\n\n{names}"
+        text = tr("{0} files created:\n{1}\n\n{2}").format(len(paths), outdir, names)
         if self.origin and self.origin[0] == "project":
-            QMessageBox.information(self, "Üretim tamamlandı", text)
-        elif ui.confirm(self, "Üretim tamamlandı", text + "\n\nIP projeye de eklensin mi?", ok="Projeye ekle",
-                        cancel="Kapat"):
+            QMessageBox.information(self, tr("Generation complete"), text)
+        elif ui.confirm(self, tr("Generation complete"), text + tr("\n\nAdd the IP to the project too?"), ok=tr("Add to project"),
+                        cancel=tr("Close")):
             self.add_to_project()
 
     def add_to_project(self):
         name = self.spec.module
         if self.ctx.project.get_ip(name) and not ui.confirm(
-                self, self.title, f"Projede “{name}” adlı bir IP var. Register haritası bununla değiştirilsin mi?",
-                ok="Değiştir"):
+                self, self.title, tr("The project has an IP named “{0}”. Replace its register map with this one?").format(name),
+                ok=tr("Replace")):
             return
         self.ctx.put_ip(G.to_ipblock(copy.deepcopy(self.spec), 0, with_spec=True), self.tool_id)
         self.origin = ("project", name)
         self._refresh()
-        self.status(f"{name} projeye eklendi; adres haritasına Address Map Editor'dan yerleştirilir")
+        self.status(tr("{0} added to the project; place it in the address map with the Address Map Editor").format(name))
 
     def export_xlsx(self):
         if not self._ready():
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Kütük haritası (Excel)",
+        path, _ = QFileDialog.getSaveFileName(self, tr("Register map (Excel)"),
                                               os.path.join(self.outdir or ROOT, f"{self.spec.module}_regmap.xlsx"),
                                               "Excel (*.xlsx)")
         if not path:
@@ -425,15 +416,15 @@ class WrapperPage(ToolPage):
         try:
             G.export_xlsx(self.spec, path, base)
         except (OSError, RuntimeError) as exc:
-            return self.error("Aktarılamadı", exc)
-        self.status(f"Excel'e aktarıldı: {path} (base {hex32(base)}; Özet sayfasındaki sarı hücreden değiştirilebilir)")
+            return self.error(tr("Could not export"), exc)
+        self.status(tr("Exported to Excel: {0} (base {1}; can be changed in the yellow cell of the Summary sheet)").format(path, hex32(base)))
 
     def run_testbench(self):
         if not self._ready():
             return
         d = self.outdir or os.path.join(ROOT, "axilgen_out")
         spec, base = copy.deepcopy(self.spec), self._project_base()
-        self.status("Testbench çalışıyor…", 0)
+        self.status(tr("Running the testbench…"), 0)
 
         def job():
             G.generate_all(spec, d, base)
@@ -451,16 +442,16 @@ class WrapperPage(ToolPage):
             box(self, "Testbench", "\n".join(lines[-20:]) or out[-2000:])
 
         def err(exc):
-            self.status("Testbench başarısız")
+            self.status(tr("Testbench failed"))
             msg = exc.stderr[-2000:] if isinstance(exc, subprocess.CalledProcessError) else str(exc)
             QMessageBox.critical(self, "Testbench", msg)
 
         self._jobs.run(job, ok, err)
 
     def pack_existing(self):
-        src, _ = QFileDialog.getOpenFileName(self, "HDL Designer wrapper'ı üretilecek AXI4-Lite modülü (.v)",
+        src, _ = QFileDialog.getOpenFileName(self, tr("AXI4-Lite module to wrap for HDL Designer (.v)"),
                                              self.outdir or ROOT,
-                                             "Verilog (*.v *.sv);;Tüm dosyalar (*)")
+                                             tr("Verilog (*.v *.sv);;All files (*)"))
         if not src:
             return
         try:
@@ -475,10 +466,10 @@ class WrapperPage(ToolPage):
                 if axilpack.axi_groups(info):
                     infos.append(info)
             if not infos:
-                raise axilpack.ParseError("Dosyada S_AXI_* / M_AXI_* portlu ANSI başlıklı modül bulunamadı")
+                raise axilpack.ParseError(tr("No module with ANSI header and S_AXI_* / M_AXI_* ports found in the file"))
         except (OSError, axilpack.ParseError) as exc:
-            return self.error("Paketlenemedi", exc)
-        d = QFileDialog.getExistingDirectory(self, "Çıktı klasörü", os.path.dirname(src))
+            return self.error(tr("Could not wrap"), exc)
+        d = QFileDialog.getExistingDirectory(self, tr("Output folder"), os.path.dirname(src))
         if not d:
             return
         out = []
@@ -488,12 +479,11 @@ class WrapperPage(ToolPage):
                     with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
                         fh.write(text)
             except (OSError, axilpack.ParseError) as exc:
-                return self.error("Yazılamadı", exc)
+                return self.error(tr("Could not write"), exc)
             groups = ", ".join(axilpack.PACKED_NAME[g] + "_REQ/RSP" for g in axilpack.axi_groups(info))
             out.append(f"{info['name']}_pk.v (+ _pk_inst.v)  →  {groups}")
-        QMessageBox.information(self, "HDL Designer wrapper'ı üretildi",
-                                "\n".join(out) + f"\n\n{d}\n\nHDL Designer'da _pk bloğunu kullan. Orijinal "
-                                "modül dosyası da projede bulunmalı.")
+        QMessageBox.information(self, tr("HDL Designer wrapper generated"),
+                                "\n".join(out) + tr("\n\n{0}\n\nUse the _pk block in HDL Designer. The original module file must be in the project too.").format(d))
 
     def shutdown(self):
         self._jobs.shutdown()

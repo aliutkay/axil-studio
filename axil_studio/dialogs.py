@@ -10,9 +10,10 @@ from axil_studio.core import axilgen as G
 from axil_studio.core import numfmt as N
 from axil_studio import theme, ui
 from axil_studio.core.model import KIND_READS, KIND_WRITES, EnumValue, parse_int
+from axil_studio.i18n import tr
 
-KIND_SHORT = {"RW": "kontrol (o_)", "RO": "durum (i_)", "PULSE": "darbe (o_)",
-              "W1C": "olay bayrağı (i_)", "CONST": "sabit"}
+KIND_SHORT = {"RW": tr("control (o_)"), "RO": tr("status (i_)"), "PULSE": tr("pulse (o_)"),
+              "W1C": tr("event flag (i_)"), "CONST": tr("constant")}
 
 
 def text_box(text="", lines=3):
@@ -32,7 +33,7 @@ def mono_edit(text=""):
 class FormatPicker(QWidget):
     """Data type combo + fraction bits (for fixed point). value() -> numfmt string."""
 
-    def __init__(self, fmt="", width_getter=lambda: 32, allow_auto=True, auto_text="Otomatik"):
+    def __init__(self, fmt="", width_getter=lambda: 32, allow_auto=True, auto_text=None):
         super().__init__()
         self._width = width_getter
         lay = QHBoxLayout(self)
@@ -40,10 +41,10 @@ class FormatPicker(QWidget):
         lay.setSpacing(8)
         self.combo = QComboBox()
         if allow_auto:
-            self.combo.addItem(auto_text, "")
+            self.combo.addItem(auto_text or tr("Automatic"), "")
         for key, text in N.BASE_FORMATS:
             self.combo.addItem(text, key)
-        self.frac_lbl = ui.label("Kesir biti", "muted")
+        self.frac_lbl = ui.label(tr("Fraction bits"), "muted")
         self.frac = QSpinBox()
         self.frac.setRange(0, 31)
         lay.addWidget(self.combo, 1)
@@ -96,10 +97,10 @@ class FormDialog(QDialog):
         self.build()
         bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         ok = bb.button(QDialogButtonBox.StandardButton.Ok)
-        ok.setText("Tamam")
+        ok.setText(tr("OK"))
         ok.setProperty("variant", "primary")
         ok.setDefault(True)
-        bb.button(QDialogButtonBox.StandardButton.Cancel).setText("İptal")
+        bb.button(QDialogButtonBox.StandardButton.Cancel).setText(tr("Cancel"))
         bb.accepted.connect(self._ok)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
@@ -123,7 +124,7 @@ class FormDialog(QDialog):
         try:
             self.result_value = self.apply()
         except ValueError as exc:
-            QMessageBox.warning(self, "Geçersiz değer", str(exc))
+            QMessageBox.warning(self, tr("Invalid value"), str(exc))
             return
         self.accept()
 
@@ -141,12 +142,12 @@ class RegDialog(FormDialog):
 
     def build(self):
         r = self.reg
-        self.name = self.row("Ad", QLineEdit(r.name))
-        self.off = self.row("Offset", mono_edit(f"0x{r.offset:02X}"), "4'ün katı")
-        self.desc = self.row("Açıklama", text_box(r.desc, 3))
-        self.wr = QCheckBox("Yazma strobe'u  (o_<reg>_wr, ör. FIFO push)")
+        self.name = self.row(tr("Name"), QLineEdit(r.name))
+        self.off = self.row("Offset", mono_edit(f"0x{r.offset:02X}"), tr("multiple of 4"))
+        self.desc = self.row(tr("Description"), text_box(r.desc, 3))
+        self.wr = QCheckBox(tr("Write strobe  (o_<reg>_wr, e.g. FIFO push)"))
         self.wr.setChecked(r.wr_strobe)
-        self.rd = QCheckBox("Okuma strobe'u  (o_<reg>_rd, ör. FIFO pop)")
+        self.rd = QCheckBox(tr("Read strobe  (o_<reg>_rd, e.g. FIFO pop)"))
         self.rd.setChecked(r.rd_strobe)
         self.extra.addWidget(self.wr)
         self.extra.addWidget(self.rd)
@@ -156,13 +157,13 @@ class RegDialog(FormDialog):
     def apply(self):
         name = self.name.text().strip()
         if not name:
-            raise ValueError("Ad boş olamaz")
+            raise ValueError(tr("Name cannot be empty"))
         try:
             off = parse_int(self.off.text())
         except ValueError:
-            raise ValueError("Offset bir sayı olmalı") from None
+            raise ValueError(tr("Offset must be a number")) from None
         if off % 4 or off < 0:
-            raise ValueError("Offset 4'ün katı olmalı")
+            raise ValueError(tr("Offset must be a multiple of 4"))
         return G.RegSpec(name, off, self.desc.toPlainText().strip(), self.wr.isChecked(), self.rd.isChecked(),
                          self.reg.fields)
 
@@ -170,20 +171,20 @@ class RegDialog(FormDialog):
 # ============================================================================ value meanings
 def fmt_hint(width, fmt):
     base, _ = N.split(fmt, width)
-    return f"{N.label(fmt, width)}, {width} bit"
+    return tr("{0}, {1} bits").format(N.label(fmt, width), width)
 
 
 class ValueDialog(FormDialog):
     def __init__(self, parent, e: EnumValue, width, reads, writes, fmt=""):
         self.e, self.nbits, self.reads, self.writes = e, width, reads, writes
         self.fmt = "hex" if N.split(fmt, width)[0] == "enum" else fmt
-        super().__init__(parent, "Değer açıklaması", 460)
+        super().__init__(parent, tr("Value meaning"), 460)
 
     def build(self):
-        self.val = self.row("Değer", mono_edit(N.format_value(self.e.value, self.nbits, self.fmt)),
+        self.val = self.row(tr("Value"), mono_edit(N.format_value(self.e.value, self.nbits, self.fmt)),
                             fmt_hint(self.nbits, self.fmt))
-        self.read = self.row("Okunursa anlamı", text_box(self.e.read, 2))
-        self.write = self.row("Yazılırsa etkisi", text_box(self.e.write, 2))
+        self.read = self.row(tr("Meaning when read"), text_box(self.e.read, 2))
+        self.write = self.row(tr("Effect when written"), text_box(self.e.write, 2))
         self.read.setEnabled(self.reads)
         self.write.setEnabled(self.writes)
         self.val.selectAll()
@@ -207,7 +208,7 @@ class ValuesEditor(QWidget):
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(6)
         head = QHBoxLayout()
-        head.addWidget(ui.label("DEĞER AÇIKLAMALARI (İSTEĞE BAĞLI)", "section"))
+        head.addWidget(ui.label(tr("VALUE MEANINGS (OPTIONAL)"), "section"))
         head.addStretch(1)
         self.hint = ui.label("", "muted")
         head.addWidget(self.hint)
@@ -230,7 +231,7 @@ class ValuesEditor(QWidget):
         lay.addWidget(self.table, 1)
         bar = QHBoxLayout()
         bar.setSpacing(6)
-        bar.addWidget(ui.button("Ekle", "plus", None, self._add))
+        bar.addWidget(ui.button(tr("Add"), "plus", None, self._add))
         bar.addStretch(1)
         lay.addLayout(bar)
         self.set_kind(kind)
@@ -245,8 +246,8 @@ class ValuesEditor(QWidget):
 
     def set_kind(self, kind):
         self._kind = kind
-        self.hint.setText("Bu tipte sadece okuma anlamı kullanılır" if not self.writes else
-                          "Bu tipte sadece yazma etkisi kullanılır" if not self.reads else "")
+        self.hint.setText(tr("Only the read meaning is used for this type") if not self.writes else
+                          tr("Only the write effect is used for this type") if not self.reads else "")
         self.refresh()
 
     def _vfmt(self):
@@ -261,8 +262,8 @@ class ValuesEditor(QWidget):
         muted = theme.manager().color("muted")
         w, fmt = self._width(), self._fmt()
         extra = N.typed_extra(fmt, w)
-        self.table.setHorizontalHeaderLabels(["Hex", "Binary", N.label(fmt, w).replace(" (oto)", "") if extra else "",
-                                              "Okunursa anlamı", "Yazılırsa etkisi", ""])
+        self.table.setHorizontalHeaderLabels(["Hex", "Binary", N.label(fmt, w).replace(tr(" (auto)"), "") if extra else "",
+                                              tr("Meaning when read"), tr("Effect when written"), ""])
         self.table.setColumnHidden(2, not extra)
         self.table.setRowCount(len(self._values))
         for row, e in enumerate(self._values):
@@ -277,7 +278,7 @@ class ValuesEditor(QWidget):
                     it.setForeground(muted)
                 self.table.setItem(row, col, it)
             ui.table_row_actions(self.table, row, 5, self._edit, self._delete,
-                                 edit_tip="Değer açıklamasını düzenle", delete_tip="Değer açıklamasını sil")
+                                 edit_tip=tr("Edit value meaning"), delete_tip=tr("Delete value meaning"))
 
     def _selected(self):
         row = self.table.currentRow()
@@ -285,8 +286,7 @@ class ValuesEditor(QWidget):
 
     def _store(self, new, old=None):
         if any(e.value == new.value and e is not old for e in self._values):
-            QMessageBox.warning(self, "Değer açıklaması", f"{N.format_value(new.value, self._width(), self._vfmt())} "
-                                                      "zaten tanımlı")
+            QMessageBox.warning(self, tr("Value meaning"), tr("{0} is already defined").format(N.format_value(new.value, self._width(), self._vfmt())))
             return
         if old is None:
             self._values.append(new)
@@ -333,8 +333,8 @@ class FieldDialog(FormDialog):
 
     def build(self):
         f = self.f
-        self.name = self.row("Ad", QLineEdit(f.name))
-        self.name.setToolTip("Bit alanı adı register adıyla aynıysa port adı o_<register> olur.")
+        self.name = self.row(tr("Name"), QLineEdit(f.name))
+        self.name.setToolTip(tr("If the bit field has the register's name, its port is o_<register>."))
         bits = QWidget()
         h = QHBoxLayout(bits)
         h.setContentsMargins(0, 0, 0, 0)
@@ -343,29 +343,28 @@ class FieldDialog(FormDialog):
         self.width_ed = mono_edit(str(f.width))
         h.addWidget(ui.label("LSB", "muted"))
         h.addWidget(self.lsb)
-        h.addWidget(ui.label("Genişlik", "muted"))
+        h.addWidget(ui.label(tr("Width"), "muted"))
         h.addWidget(self.width_ed)
         self.bits_lbl = ui.label("", "muted")
         h.addWidget(self.bits_lbl)
-        self.form.addRow("Bitler", bits)
+        self.form.addRow(tr("Bits"), bits)
         self.kind = QComboBox()
         for k in G.KINDS:
             self.kind.addItem(f"{k}  —  {KIND_SHORT[k]}", k)
         self.kind.setCurrentIndex(max(0, G.KINDS.index(f.kind) if f.kind in G.KINDS else 0))
-        self.form.addRow("Tip", self.kind)
+        self.form.addRow(tr("Type"), self.kind)
         self.kind_help = ui.label("", "muted", wrap=True)
         self.form.addRow("", self.kind_help)
-        self.fmt = FormatPicker(f.fmt, self._cur_width, auto_text="Otomatik (1 bit: bool, diğer: hex)")
-        self.form.addRow("Veri tipi", self.fmt)
-        self.form.addRow("", ui.label("Değerlerin gösterim ve giriş biçimi. UART-to-AXI Debug Bridge'de de "
-                                      "varsayılan olarak kullanılır.", "muted", wrap=True))
+        self.fmt = FormatPicker(f.fmt, self._cur_width, auto_text=tr("Automatic (1 bit: bool, else: hex)"))
+        self.form.addRow(tr("Data type"), self.fmt)
+        self.form.addRow("", ui.label(tr("How values are shown and typed; also the default in the UART-to-AXI Debug Bridge."), "muted", wrap=True))
         self._shown_fmt = f.fmt
-        self.reset = self.row("Reset / sabit", mono_edit(N.format_value(f.reset, f.width, f.fmt)), "")
-        self.desc = self.row("Açıklama", text_box(f.desc, 3))
+        self.reset = self.row(tr("Reset / constant"), mono_edit(N.format_value(f.reset, f.width, f.fmt)), "")
+        self.desc = self.row(tr("Description"), text_box(f.desc, 3))
         opts = QHBoxLayout()
-        self.irq = QCheckBox("Interrupt (o_irq'ya bağla)")
+        self.irq = QCheckBox(tr("Interrupt (drives o_irq)"))
         self.irq.setChecked(f.irq)
-        self.sync = QCheckBox("2-FF senkronizör (asenkron giriş)")
+        self.sync = QCheckBox(tr("2-FF synchronizer (asynchronous input)"))
         self.sync.setChecked(f.sync)
         opts.addWidget(self.irq)
         opts.addWidget(self.sync)
@@ -433,25 +432,25 @@ class FieldDialog(FormDialog):
     def apply(self):
         name = self.name.text().strip()
         if not name:
-            raise ValueError("Ad boş olamaz")
+            raise ValueError(tr("Name cannot be empty"))
         try:
             lsb, width = parse_int(self.lsb.text()), parse_int(self.width_ed.text())
         except ValueError:
-            raise ValueError("LSB ve genişlik sayı olmalı") from None
+            raise ValueError(tr("LSB and width must be numbers")) from None
         if not (0 <= lsb <= 31 and width >= 1 and lsb + width <= 32):
-            raise ValueError("Bit alanı 32 bitin içinde kalmalı")
+            raise ValueError(tr("The bit field must stay within 32 bits"))
         fmt = self.fmt.value()
         base, frac = N.split(fmt, width)
         if base in ("ufix", "sfix") and frac >= width:
-            raise ValueError(f"Kesir biti ({frac}) alan genişliğinden ({width}) küçük olmalı")
+            raise ValueError(tr("Fraction bits ({0}) must be fewer than the field width ({1})").format(frac, width))
         try:
             reset = N.parse_value(self.reset.text(), width, fmt)
         except ValueError as exc:
-            raise ValueError(f"Reset değeri: {exc}") from None
+            raise ValueError(tr("Reset value: {0}").format(exc)) from None
         values = self.values.get()
         bad = [f"0x{e.value:X}" for e in values if e.value >> width]
         if bad:
-            raise ValueError(f"Değer tablosundaki {', '.join(bad)} {width} bite sığmıyor")
+            raise ValueError(tr("Value(s) {0} in the value table do not fit in {1} bits").format(', '.join(bad), width))
         return G.FieldSpec(name, lsb, width, self.kind.currentData(), reset, self.desc.toPlainText().strip(),
                            self.irq.isChecked(), self.sync.isChecked(), values, fmt)
 
@@ -466,7 +465,7 @@ class BaseDialog(FormDialog):
         super().__init__(parent, title, 460)
 
     def build(self):
-        self.ed = self.row("Base adres", mono_edit(f"0x{self.base:08X}"), f"{self.window:#x} hizalı")
+        self.ed = self.row(tr("Base address"), mono_edit(f"0x{self.base:08X}"), tr("{0:#x} aligned").format(self.window))
         if self.note:
             self.extra.addWidget(ui.label(self.note, "muted", wrap=True))
         self.ed.selectAll()
@@ -476,11 +475,11 @@ class BaseDialog(FormDialog):
         try:
             v = parse_int(self.ed.text())
         except ValueError:
-            raise ValueError("Base adres bir sayı olmalı (ör. 0x80002000)") from None
+            raise ValueError(tr("Base address must be a number (e.g. 0x80002000)")) from None
         if not 0 <= v <= 0xFFFFFFFF:
-            raise ValueError("Base adres 32 bite sığmalı")
+            raise ValueError(tr("Base address must fit in 32 bits"))
         if v & (self.window - 1):
-            raise ValueError(f"Base adres IP'nin adres penceresine ({self.window:#x}) hizalı olmalı")
+            raise ValueError(tr("Base address must be aligned to the IP's window ({0:#x})").format(self.window))
         return v
 
 
@@ -512,20 +511,20 @@ class SlaveDialog(FormDialog):
     def build(self):
         s = self.s
         self.name = QLineEdit(s.name)
-        self.form.addRow("Ad", self.name)
-        self.base = self.row("Base adres", mono_edit(f"0x{s.base:08X}"))
+        self.form.addRow(tr("Name"), self.name)
+        self.base = self.row(tr("Base address"), mono_edit(f"0x{s.base:08X}"))
         self.span = mono_edit(f"0x{s.span:X}" if s.span else "0x1000")
         self.span.setEnabled(s.external)
-        self.form.addRow("Kullanılan alan", self.span)
+        self.form.addRow(tr("Used space"), self.span)
         self.window = QComboBox()
-        self.form.addRow("Pencere", self.window)
-        self.fixed = QCheckBox("Sabit adres (işaretli değilse sıraya göre otomatik verilir)")
+        self.form.addRow(tr("Window"), self.window)
+        self.fixed = QCheckBox(tr("Fixed address (otherwise given automatically in port order)"))
         self.fixed.setChecked(s.fixed)
         self.form.addRow("", self.fixed)
         self.fixed.toggled.connect(self._sync_base)
         self._sync_base()
         if not s.external:
-            self.extra.addWidget(ui.label("Kullanılan alan IP'nin register haritasından gelir.", "muted"))
+            self.extra.addWidget(ui.label(tr("The used space comes from the IP's register map."), "muted"))
         self.span.textChanged.connect(self._fill_windows)
         self._fill_windows()
         self.name.setFocus()
@@ -534,8 +533,7 @@ class SlaveDialog(FormDialog):
         """With auto addressing on, only fixed slaves take a hand-entered base."""
         self.base.setEnabled(not self.auto or self.fixed.isChecked())
         self.base.setToolTip("" if self.base.isEnabled() else
-                             "Otomatik adresleme açık: adres port sırasına göre verilir. Elle girmek için "
-                             "Sabit adres'i işaretle.")
+                             tr("Automatic addressing: the address follows the port order. Check Fixed address to type one."))
 
     def _need(self):
         try:
@@ -559,20 +557,20 @@ class SlaveDialog(FormDialog):
         from axil_studio.core import xbargen as X
         name = self.name.text().strip()
         if not name:
-            raise ValueError("Ad boş olamaz")
+            raise ValueError(tr("Name cannot be empty"))
         try:
             base = parse_int(self.base.text())
             span = parse_int(self.span.text())
         except ValueError:
-            raise ValueError("Base adres ve kullanılan alan sayı olmalı") from None
+            raise ValueError(tr("Base address and used space must be numbers")) from None
         w = self.window.currentData()
         if not self.base.isEnabled():
             base = self.s.base & ~(w - 1)     # re-addressed by the page anyway
         fixed = self.fixed.isChecked() or (self.base.isEnabled() and base != self.s.base and not self.auto)
         if base & (w - 1):
-            raise ValueError(f"Base adres pencereye ({w:#x}) hizalı olmalı")
+            raise ValueError(tr("Base address must be aligned to the window ({0:#x})").format(w))
         if not 0 <= base <= 0xFFFFFFFF:
-            raise ValueError("Base adres 32 bite sığmalı")
+            raise ValueError(tr("Base address must fit in 32 bits"))
         return X.XbarSlave(name, base, (~(w - 1)) & 0xFFFFFFFF, span, self.s.external,
                            fixed)
 
@@ -589,27 +587,24 @@ class BridgeDialog(FormDialog):
     def build(self):
         name, base, self_window, window, fixed = self.v
         self.name = QLineEdit(name)
-        self.form.addRow("Ad", self.name)
+        self.form.addRow(tr("Name"), self.name)
         self.own = QComboBox()
-        self.own.addItem("yok", 0)
+        self.own.addItem(tr("none"), 0)
         for w in window_choices(0x100):
             self.own.addItem(f"{size_text(w)}  ({w:#x})", w)
         self.own.setCurrentIndex(max(0, self.own.findData(self_window)))
-        self.own.setToolTip("Pencerenin başında köprünün kendisine ayrılan alan; alt bus'taki slave'ler "
-                            "bundan sonra yerleşir")
-        self.form.addRow("Kendi penceresi", self.own)
+        self.own.setToolTip(tr("Space at the start of the window for the bridge itself; the slaves behind it are placed after it"))
+        self.form.addRow(tr("Own window"), self.own)
         self.window = QComboBox()
-        self.form.addRow("Pencere", self.window)
-        self.base = self.row("Base adres", mono_edit(f"0x{base:08X}"))
-        self.fixed = QCheckBox("Sabit adres (işaretli değilse sıraya göre otomatik verilir)")
+        self.form.addRow(tr("Window"), self.window)
+        self.base = self.row(tr("Base address"), mono_edit(f"0x{base:08X}"))
+        self.fixed = QCheckBox(tr("Fixed address (otherwise given automatically in port order)"))
         self.fixed.setChecked(fixed)
         self.form.addRow("", self.fixed)
         self.fixed.toggled.connect(lambda on: self.base.setEnabled(on))
         self.base.setEnabled(fixed)
-        self.extra.addWidget(ui.label("Sub-bus Bridge'in penceresindeki adresler (kendi penceresi dışında kalanlar) "
-                                      "değiştirilmeden alt bus'ın interconnect'ine iletilir. Otomatik pencere "
-                                      "içerik büyüdükçe büyür; elle seçilen pencereye sığmayan slave eklenemez.",
-                                      "muted", wrap=True))
+        self.extra.addWidget(ui.note(tr("The rest of the window is forwarded to the interconnect behind the bridge."),
+                                     tr("Addresses in the window (outside its own part) are forwarded unchanged to the interconnect behind the bridge. An automatic window grows with its contents; a slave that does not fit in a fixed window cannot be added.")))
         self.own.currentIndexChanged.connect(self._fill)
         self._fill()
         self.name.setFocus()
@@ -619,25 +614,25 @@ class BridgeDialog(FormDialog):
         rest = max(0, self.need - self.v[2])            # the children's part keeps its size
         need = self.own.currentData() + rest
         self.window.clear()
-        self.window.addItem("otomatik (içeriğe göre büyür)", 0)
+        self.window.addItem(tr("automatic (grows with its contents)"), 0)
         first = 4
         while first < need:
             first <<= 1                         # windows are powers of two
         for w in window_choices(first):
-            self.window.addItem(f"{size_text(w)}  ({w:#x}) · kilitli", w)
+            self.window.addItem(tr("{0}  ({1:#x}) · locked").format(size_text(w), w), w)
         self.window.setCurrentIndex(max(0, self.window.findData(cur or 0)))
 
     def apply(self):
         name = self.name.text().strip()
         if not name:
-            raise ValueError("Ad boş olamaz")
+            raise ValueError(tr("Name cannot be empty"))
         try:
             base = parse_int(self.base.text()) & 0xFFFFFFFF
         except ValueError:
-            raise ValueError("Base adres sayı olmalı") from None
+            raise ValueError(tr("Base address must be a number")) from None
         w = self.window.currentData() or 0
         if self.fixed.isChecked() and w and base & (w - 1):
-            raise ValueError(f"Base adres pencereye ({w:#x}) hizalı olmalı")
+            raise ValueError(tr("Base address must be aligned to the window ({0:#x})").format(w))
         return name, base, self.own.currentData(), w, self.fixed.isChecked()
 
 
@@ -649,25 +644,25 @@ class CustomValueDialog(FormDialog):
     def __init__(self, parent, f, value, readable=True, writable=True, command=False, can_keep=True):
         self.f, self.v0, self.readable, self.writable, self.is_command = f, value, readable, writable, command
         self.can_keep = can_keep    # project IPs: value descriptions are edited in the Register Map Editor
-        super().__init__(parent, f"Özel değer: {f.name} {f.bits}", 500)
+        super().__init__(parent, tr("Custom value: {0} {1}").format(f.name, f.bits), 500)
 
     def build(self):
         f = self.f
         self.fmt = FormatPicker(f.fmt if N.split(f.fmt, f.width)[0] != "enum" else "hex", lambda: f.width,
                                 allow_auto=False)
-        self.form.addRow("Veri tipi", self.fmt)
+        self.form.addRow(tr("Data type"), self.fmt)
         self._shown = self.fmt.value()
-        self.val = self.row("Değer", mono_edit(N.format_value(self.v0, f.width, self._shown)), "")
+        self.val = self.row(tr("Value"), mono_edit(N.format_value(self.v0, f.width, self._shown)), "")
         self.preview = ui.label("", "muted")
         self.form.addRow("", self.preview)
-        self.now = QCheckBox("Hemen yaz (register read-modify-write)")
+        self.now = QCheckBox(tr("Write now (register read-modify-write)"))
         self.now.setChecked(self.is_command)
         self.now.setEnabled(not self.is_command)
         self.form.addRow("", self.now)
-        self.keep = QCheckBox("Bu değeri register haritasına değer açıklaması olarak ekle")
+        self.keep = QCheckBox(tr("Add this value to the register map as a value meaning"))
         self.form.addRow("", self.keep)
-        self.read = self.row("Okunursa anlamı", QLineEdit())
-        self.write = self.row("Yazılırsa etkisi", QLineEdit())
+        self.read = self.row(tr("Meaning when read"), QLineEdit())
+        self.write = self.row(tr("Effect when written"), QLineEdit())
         for w in (self.read, self.write):
             w.setEnabled(False)
         self.keep.toggled.connect(lambda on: (self.read.setEnabled(on and self.readable),
@@ -698,7 +693,7 @@ class CustomValueDialog(FormDialog):
     def _update(self, *_):
         hl = self.val.property("hintLabel")
         if hl:
-            hl.setText(f"{N.label(self.fmt.value(), self.f.width)}, {self.f.width} bit")
+            hl.setText(tr("{0}, {1} bits").format(N.label(self.fmt.value(), self.f.width), self.f.width))
         try:
             v = N.parse_value(self.val.text(), self.f.width, self.fmt.value())
             self.preview.setText("  ·  ".join(N.triple(v, self.f.width, "udec")))
@@ -713,7 +708,7 @@ class CustomValueDialog(FormDialog):
         if self.keep.isChecked():
             meaning = EnumValue(v, self.read.text().strip(), self.write.text().strip())
             if not (meaning.read or meaning.write):
-                raise ValueError("Değer açıklaması için okunursa ya da yazılırsa metni gir")
+                raise ValueError(tr("Type the meaning when read or the effect when written"))
         return {"value": v, "now": self.now.isChecked(), "meaning": meaning}
 
 
@@ -722,12 +717,12 @@ class FieldMapDialog(FormDialog):
 
     def __init__(self, parent, f, kind):
         self.f, self.kind = f, kind
-        super().__init__(parent, f"Register haritası: {f.name} {f.bits}", 620)
+        super().__init__(parent, tr("Register map: {0} {1}").format(f.name, f.bits), 620)
 
     def build(self):
         f = self.f
-        self.fmt = FormatPicker(f.fmt, lambda: f.width, auto_text="Otomatik (1 bit: bool, diğer: hex)")
-        self.form.addRow("Veri tipi", self.fmt)
+        self.fmt = FormatPicker(f.fmt, lambda: f.width, auto_text=tr("Automatic (1 bit: bool, else: hex)"))
+        self.form.addRow(tr("Data type"), self.fmt)
         self.values = ValuesEditor(f.values, self.kind, lambda: f.width, self.fmt.value)
         self.fmt.combo.currentIndexChanged.connect(lambda *_: self.values.refresh())
         self.extra.addWidget(self.values, 1)

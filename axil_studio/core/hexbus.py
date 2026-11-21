@@ -17,6 +17,7 @@ Protocol (as implemented in dbgbus/hexbus/rtl):
 import queue
 import threading
 import time
+from axil_studio.i18n import tr
 
 try:
     import serial
@@ -110,7 +111,7 @@ class HexbusLink:
                 data = self.ser.read(256)
             except Exception as exc:  # port removed, etc.
                 self._running = False           # `connected` is False before anyone hears about it
-                self.log_cb("ERR", f"Serial read failed: {exc}")
+                self.log_cb("ERR", tr("Serial read failed: {0}").format(exc))
                 break
             for b in data:
                 self._feed(chr(b & 0x7F))
@@ -158,9 +159,9 @@ class HexbusLink:
     # ------------------------------------------------------------ transactions
     def _transact(self, text, count):
         if self.ser is None:
-            raise HexbusError("Not connected")
+            raise HexbusError(tr("Not connected"))
         if not self._running:
-            raise HexbusError("Connection lost (serial port read failed); reconnect")
+            raise HexbusError(tr("Connection lost (serial port read failed); reconnect"))
         with self._lock:
             while not self._rx.empty():
                 self._rx.get_nowait()
@@ -172,21 +173,21 @@ class HexbusLink:
             while len(tokens) < count:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise HexbusError(f"Timeout waiting for response to '{text.strip()}'")
+                    raise HexbusError(tr("Timeout waiting for the response to '{0}'").format(text.strip()))
                 try:
                     tok = self._rx.get(timeout=remaining)
                 except queue.Empty:
                     continue
                 tokens.append(tok)
                 if tok[0] == "E":
-                    raise HexbusError(f"AXI bus error on '{text.strip()}'")
+                    raise HexbusError(tr("AXI bus error on '{0}'").format(text.strip()))
             return tokens
 
     def reset(self):
         self._cur_addr = None
         tokens = self._transact("T\n", 1)
         if tokens[0][0] != "T":
-            raise HexbusError(f"Unexpected reset response {tokens[0]}")
+            raise HexbusError(tr("Unexpected reset response {0}").format(tokens[0]))
 
     def _access(self, addr, cmd, expect):
         """Run one bus access. The address (no auto-increment) is only sent
@@ -200,7 +201,7 @@ class HexbusLink:
             raise
         if (prefix and tokens[0][0] != "A") or tokens[-1][0] != expect:
             self._cur_addr = None
-            raise HexbusError(f"Unexpected response {tokens}")
+            raise HexbusError(tr("Unexpected response {0}").format(tokens))
         self._cur_addr = target
         return tokens[-1][1]
 

@@ -29,6 +29,7 @@ from typing import List
 
 from . import axilpack as PK
 from .model import hex32, parse_int, write_json
+from axil_studio.i18n import tr
 
 # (suffix, direction at the wrapper's MASTER<i> ports, width key)
 AXIL_SIGNALS = (
@@ -41,9 +42,8 @@ AXIL_SIGNALS = (
 WIDTH_EXPR = {"AW": "C_AXI_ADDR_WIDTH", "DW": "C_AXI_DATA_WIDTH", "SW": "C_AXI_DATA_WIDTH/8"}
 IDENT = re.compile(r"^[A-Za-z][A-Za-z0-9_]*$")
 STYLES = {
-    "packed": "Ayrık AXI portlu wrapper + HDL Designer için paketli wrapper (<ad>_pk.v: MASTER0_AXI_REQ/RSP, "
-              "SLAVE0_AXI_REQ/RSP)",
-    "signals": "Yalnızca ayrık AXI portlu wrapper (MASTER0_AXI_AWADDR …, 19 sinyal/port)",
+    "packed": tr("Separate AXI ports + packed wrapper for HDL Designer (<name>_pk.v: MASTER0_AXI_REQ/RSP, SLAVE0_AXI_REQ/RSP)"),
+    "signals": tr("Separate AXI ports only (MASTER0_AXI_AWADDR …, 19 signals per port)"),
 }
 
 
@@ -90,26 +90,26 @@ class XbarSpec:
     def validate(self):
         errs = []
         if self.style not in STYLES:
-            errs.append(f"Bilinmeyen port stili: {self.style}")
+            errs.append(tr("Unknown port style: {0}").format(self.style))
         if not IDENT.match(self.module or ""):
-            errs.append("Modül adı geçerli bir Verilog tanımlayıcısı değil")
+            errs.append(tr("Module name is not a valid Verilog identifier"))
         if not 1 <= self.nm <= 16:
-            errs.append("Master kapasitesi 1..16 olmalı")
+            errs.append(tr("Masters must be 1..16"))
         if not 1 <= self.ns <= 64:
-            errs.append("Slave kapasitesi 1..64 olmalı")
+            errs.append(tr("Slaves must be 1..64"))
         for i, s in enumerate(self.slaves):
             inv = (~s.mask) & 0xFFFFFFFF
             tag = f"SLAVE{i} ({s.name})"
             if inv & (inv + 1):
-                errs.append(f"{tag}: maske bitişik olmalı (ör. 0xFFFFF000)")
+                errs.append(tr("{0}: mask must be contiguous (e.g. 0xFFFFF000)").format(tag))
             if s.base & inv:
-                errs.append(f"{tag}: base {hex32(s.base)} pencereye ({s.window:#x}) hizalı değil")
+                errs.append(tr("{0}: base {1} is not aligned to its window ({2:#x})").format(tag, hex32(s.base), s.window))
             if s.span > s.window:
-                errs.append(f"{tag}: IP {s.span:#x} byte kullanıyor, pencere {s.window:#x}")
+                errs.append(tr("{0}: the IP uses {1:#x} bytes, the window is {2:#x}").format(tag, s.span, s.window))
             for j in range(i):
                 o = self.slaves[j]
                 if not ((s.base ^ o.base) & s.mask & o.mask):
-                    errs.append(f"{tag} ile SLAVE{j} ({o.name}) adres aralıkları çakışıyor")
+                    errs.append(tr("{0} overlaps SLAVE{1} ({2})").format(tag, j, o.name))
         return errs
 
     # ------------------------------------------------------------ persistence
@@ -165,7 +165,7 @@ def auto_address(spec, start=0x00000000):
                     base = (hi + w - 1) & ~(w - 1)
                     moved = True
         if base + w > 1 << 32:
-            raise ValueError(f"SLAVE{j} ({s.name}) 32 bit adres alanına sığmıyor")
+            raise ValueError(tr("SLAVE{0} ({1}) does not fit in the 32-bit address space").format(j, s.name))
         if base != s.base:
             changed.append((j, s.base, base))
             s.base = base

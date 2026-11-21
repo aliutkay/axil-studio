@@ -35,6 +35,7 @@ from . import axilgen as G
 from . import axilpack
 from . import xbargen as X
 from .model import hex32, parse_int, write_json
+from axil_studio.i18n import tr
 
 IP_FORMAT = "axil-ip-hdlspec"
 XBAR_FORMAT = "axil-xbar-hdlspec"
@@ -97,7 +98,7 @@ def kind_of(d):
         return "ip"
     if d.get("format") == XBAR_FORMAT:
         return "xbar"
-    raise HdlSpecError("Bu dosya bir HDL spec değil (axil-ip-hdlspec / axil-xbar-hdlspec)")
+    raise HdlSpecError(tr("This file is not an HDL spec (axil-ip-hdlspec / axil-xbar-hdlspec)"))
 
 
 def load(path):
@@ -148,10 +149,10 @@ def validate(d):
         errs = _xbar_spec(d).validate()
         p = dict(XBAR_PARAMETERS, **d.get("parameters", {}))
         if set(p) != set(XBAR_PARAMETERS):
-            errs.append(f"Bilinmeyen parametre: {', '.join(sorted(set(p) - set(XBAR_PARAMETERS)))}")
+            errs.append(tr("Unknown parameter: {0}").format(', '.join(sorted(set(p) - set(XBAR_PARAMETERS)))))
         return errs
     except (KeyError, TypeError, ValueError) as exc:
-        return [f"HDL spec okunamadı: {exc}"]
+        return [tr("Cannot read the HDL spec: {0}").format(exc)]
 
 
 def verilog_names(d):

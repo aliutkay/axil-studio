@@ -13,13 +13,15 @@ import os
 import re
 
 from axil_studio.core import addrmap
+from axil_studio.history import History
 
 from PySide6.QtCore import QObject, QSettings, Signal
 
 from axil_studio.core.library import IPLibrary, LibEntry
 from axil_studio.core.model import Project
+from axil_studio.i18n import tr
 
-PROJECT_FILTER = "AXIL proje (*.axproj.json);;JSON (*.json);;Tüm dosyalar (*)"
+PROJECT_FILTER = tr("AXIL project (*.axproj.json);;JSON (*.json);;All files (*)")
 MAX_RECENT = 8
 
 
@@ -35,8 +37,10 @@ class ProjectContext(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.project = Project("Adsız proje")
+        self.project = Project(tr("Untitled project"))
         self.dirty = False
+        self.history = History()            # undo / redo of the project
+        self.history.reset(self._snapshot())
         self.libraries = []          # open IPLibrary objects (shared by every project)
         self.library_errors = []
         for path in QSettings().value("libraries/open", []) or []:
@@ -52,15 +56,17 @@ class ProjectContext(QObject):
         return self.project.name + (" •" if self.dirty else "")
 
     # ------------------------------------------------------------ file ops
-    def new(self, name="Adsız proje"):
+    def new(self, name=tr("Untitled project")):
         self.project = Project(name)
         self.dirty = False
+        self.history.reset(self._snapshot())
         self.replaced.emit()
         self.state_changed.emit()
 
     def open(self, path):
         self.project = Project.load(path)
         self.dirty = False
+        self.history.reset(self._snapshot())
         self._push_recent(path)
         for rel in self.project.libraries:          # libraries this project uses
             self._open_library_quiet(self._abs(rel))
@@ -82,6 +88,7 @@ class ProjectContext(QObject):
             self.project.path, self.project.libraries = old_path, old_libs    # still the old file
             raise
         self.dirty = False
+        self.history.mark_saved()
         self._push_recent(self.project.path)
         self.state_changed.emit()
 
@@ -93,9 +100,42 @@ class ProjectContext(QObject):
             addrmap.readdress(self.project)
         except ValueError:
             pass                    # reported by the Address Map Editor
-        self.dirty = True
+        self.history.push(self._snapshot())
+        self.dirty = not self.history.is_saved()
         self.modified.emit(source)
         self.state_changed.emit()
+
+    # ------------------------------------------------------------ undo / redo
+    def _snapshot(self):
+        """The project's contents (not its file name, library paths or generator tag)."""
+        data = self.project.to_data()
+        for k in ("generator", "libraries"):
+            data.pop(k, None)
+        return data
+
+    def can_undo(self):
+        return self.history.can_undo()
+
+    def can_redo(self):
+        return self.history.can_redo()
+
+    def undo(self):
+        return self._restore(self.history.undo())
+
+    def redo(self):
+        return self._restore(self.history.redo())
+
+    def _restore(self, state):
+        if state is None:
+            return False
+        old = self.project
+        proj = Project.from_data(dict(state, format=state.get("format")), old.path)
+        proj.libraries, proj.generator = old.libraries, old.generator
+        self.project = proj
+        self.dirty = not self.history.is_saved()
+        self.modified.emit("undo")
+        self.state_changed.emit()
+        return True
 
     # ------------------------------------------------------------ IP definitions
     def put_ip(self, ip, source="", old_name=None):

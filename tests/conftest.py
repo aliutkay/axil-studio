@@ -23,6 +23,7 @@ GOLDEN = os.path.join(ROOT, "tests", "golden")
 HDL = os.path.join(ROOT, "hdl")
 sys.path.insert(0, ROOT)
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+os.environ["AXIL_STUDIO_LANG"] = os.environ.get("AXIL_TEST_LANG", "en")          # messages checked by the tests are the English ones
 
 HAS_IVERILOG = bool(shutil.which("iverilog") and shutil.which("vvp"))
 needs_iverilog = pytest.mark.skipif(not HAS_IVERILOG, reason="iverilog / vvp not installed")

@@ -1,14 +1,38 @@
 # Değişiklik günlüğü
 
-Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL Studio (hub) ve her aracın
-kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracın `version` alanı).
+Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL Studio'nun tek bir sürümü vardır
+(`axil_studio/__init__.py` → `APP_VERSION`). Eski bölümlerdeki araç sürümü tabloları tarihçe olarak duruyor.
 
 **Sürüm kuralı**
-- Her commit AXIL Studio'nun (hub) sürümünü 0.0.1 artırır; `.githooks/pre-commit` bunu kendiliğinden yapar
-  (`git config core.hooksPath .githooks` ile etkinleştir). Bir aracı değiştiren commit o aracın sürümünü de artırır.
+- Uygulamanın tek bir sürümü vardır (0.1.19'dan itibaren araçların ayrı sürümü yok).
+- Her commit sürümü 0.0.1 artırır; `.githooks/pre-commit` bunu kendiliğinden yapar
+  (`git config core.hooksPath .githooks` ile etkinleştir).
 - `0.0.x`: düzeltme ve küçük değişiklik · `0.x.0`: yeni özellik · aşama değişimi (alpha, beta …) ayrıca duyurulur.
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
+
+## early-alpha 0.1.19 — İngilizce arayüz, çeviri altyapısı, geri al / yinele, simge
+
+- **Tek sürüm:** araçların ayrı sürümleri kaldırıldı (hub kartları, araç başlıkları, Hakkında); yalnızca uygulama
+  sürümü gösterilir.
+- **Arayüz dili:** varsayılan İngilizce. Çeviri altyapısı (`axil_studio/i18n/`): koddaki metinler `tr()` ile çevrilir,
+  diller JSON kataloglarıdır; Türkçe katalog (`tr.json`) mevcut Türkçe metinlerle eklendi. **View → Language** dili
+  seçer (yeniden başlatmayı önerir); Qt'nin kendi pencereleri de dile uyar. `AXIL_STUDIO_LANG` ortam değişkeni
+  seçimi geçersiz kılar. `scripts/i18n_check.py` eksik / kullanılmayan çevirileri ve yer tutucu uyuşmazlıklarını bulur.
+  Üretilen Excel, C header ve doküman da arayüz dilini izler; Verilog'un içeriği dilden bağımsızdır.
+- **Uygulama simgesi:** bir crossbar (master'lardan slave'lere) çizen yeni simge; pencere başlıklarında, görev
+  çubuğunda ve hub'da. `assets/` altında SVG, PNG ve Windows için ICO.
+- **Yardım metinleri:** panellerdeki uzun paragraflar kaldırıldı; başlıkların yanında **?** düğmesi açıklamayı
+  gösterir. Notlar tek satıra indi (Address Map Editor, Interconnect Configurator, port içe aktarma, Sub-bus Bridge
+  penceresi).
+- **Düğmeler:** ikincil (yalnızca metinli) düğmelerin ince bir çerçevesi var, düz metinden ayırt ediliyor; devre dışı
+  düğmeler kesikli çerçeveyle soluk. Debug Bridge'deki bağlantı durumu düğmeye benzemeyen bir durum etiketi oldu.
+- **Geri al / yinele:** Düzen menüsü (Ctrl+Z, Ctrl+Y / Ctrl+Shift+Z). Projede her değişiklik geri alınır; Register
+  Map Editor'da kaydedilmemiş register haritasının kendi geçmişi vardır. Kaydedilen noktaya dönülünce "kaydedilmemiş"
+  işareti kalkar.
+- **Hata yakalayıcı:** beklenmeyen hatalar (arayüz olayları ve arka plan işleri) pencerede gösterilir ve
+  `logs/axil_studio.log`'a yazılır; **Yardım → Log klasörünü aç**.
+- Testler: çeviri denetimi, iki dilde tüm pencerelerin açılması, geri al / yinele, hata yakalayıcı, simge.
 
 ## early-alpha 0.1.18 — HDL spec: Verilog'un tek girdisi
 

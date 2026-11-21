@@ -4,6 +4,7 @@ from PySide6.QtWidgets import QMessageBox, QVBoxLayout, QWidget
 
 from axil_studio import theme, ui
 from axil_studio.project import ProjectContext
+from axil_studio.i18n import tr
 
 
 class ToolPage(QWidget):
@@ -13,7 +14,6 @@ class ToolPage(QWidget):
     subtitle = ""
     description = ""        # home page card text
     icon_name = "file"
-    version = "0.0.1"       # each tool has its own version (stage: axil_studio.RELEASE_STAGE)
 
     def __init__(self, ctx: ProjectContext, parent=None):
         super().__init__(parent)
@@ -22,10 +22,9 @@ class ToolPage(QWidget):
         self.outer = QVBoxLayout(self)
         self.outer.setContentsMargins(16, 12, 16, 12)
         self.outer.setSpacing(12)
-        from axil_studio import version_text
         # one bar: icon, name, version, then the tool's commands (pages add them with header.add /
         # header.sep), status and the main action on the right (header.add_right)
-        self.header = ui.ToolHeader(self.title, self.icon_name, "", f"{self.subtitle}\n{version_text(self.version)}")
+        self.header = ui.ToolHeader(self.title, self.icon_name, "", self.subtitle)
         self.outer.addWidget(self.header)
         self.body = QVBoxLayout()
         self.body.setSpacing(14)
@@ -88,7 +87,7 @@ class ToolPage(QWidget):
             w.page.select_instance(instance)
         return w
 
-    def pick_ip(self, title="IP seç", note=""):
+    def pick_ip(self, title=tr("Select IP"), note=""):
         """Choose an IP in the IP Library (project IPs or any open library). A library IP is
         brought into the project first. Returns the project IP definition name or None."""
         from axil_studio.tools.ip_library import IPPickerDialog

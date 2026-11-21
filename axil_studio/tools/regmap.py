@@ -22,12 +22,14 @@ from axil_studio.core import axilgen as G
 from axil_studio.core import numfmt as N
 from axil_studio.core import portparse as PP
 from axil_studio.core import hdlspec as H
+from axil_studio.history import History
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import KIND_SHORT, FieldDialog, RegDialog, ValueDialog
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import KIND_READS, KIND_WRITES, EnumValue, single_line
+from axil_studio.i18n import tr
 
-SPEC_FILTER = "Register spesifikasyonu (*.regspec.json);;JSON (*.json);;Tüm dosyalar (*)"
+SPEC_FILTER = tr("Register spec (*.regspec.json);;JSON (*.json);;All files (*)")
 ROLE = Qt.ItemDataRole.UserRole
 UNPLACED_MIME = "application/x-axil-unplaced-fields"     # drag data: indexes into spec.unplaced
 PLACED_MIME = "application/x-axil-placed-field"          # drag data: "<register>\n<field>"
@@ -39,7 +41,7 @@ C_NAME, C_BITS, C_KIND, C_TYPE, C_RESET, C_VALUES, C_PORT, C_DESC, C_ACT = range
 def regmap_tree():
     """Register / bit field overview (IP Library, Slave Interface Wrapper)."""
     tree = QTreeWidget()
-    tree.setHeaderLabels(["Register / bit alanı", "Offset / bitler", "Tip", "Veri tipi", "Açıklama"])
+    tree.setHeaderLabels([tr("Register / bit field"), tr("Offset / bits"), tr("Type"), tr("Data type"), tr("Description")])
     tree.setUniformRowHeights(True)
     tree.header().setStretchLastSection(True)
     return tree
@@ -59,7 +61,7 @@ def fill_regmap_tree(tree, ip):
         it.setFont(0, bf)
         for f in sorted(reg.fields, key=lambda f: -f.lsb):
             ch = QTreeWidgetItem([f.name, f.bits, f.kind or reg.access, N.label(f.fmt, f.width),
-                                  single_line(f.desc) + (f"  ({len(f.values)} değer açıklaması)" if f.values else "")])
+                                  single_line(f.desc) + (tr("  ({0} value meanings)").format(len(f.values)) if f.values else "")])
             ch.setFont(1, mono)
             ch.setForeground(3, muted)
             it.addChild(ch)
@@ -180,7 +182,7 @@ class BitMap(QWidget):
         p.setPen(QColor(t["muted"]))
         free = 32 - len(used)
         p.drawText(QRectF(r.left(), r.bottom() + 2, r.width(), self.BOTTOM - 2), Qt.AlignmentFlag.AlignRight,
-                   f"{free} bit kullanılmıyor")
+                   tr("{0} bits unused").format(free))
 
     def mouseMoveEvent(self, ev):
         if self._press and ev.buttons() & Qt.MouseButton.LeftButton:
@@ -194,9 +196,8 @@ class BitMap(QWidget):
         if bit is None:
             QToolTip.hideText()
             return
-        tip = (f"{f.name} {f.bits} · {f.kind} · {N.label(f.fmt, f.width)}\n{single_line(f.desc)}\n"
-               "Sürükle: başka bitlere taşı ya da yerleştirilmemişlere bırak" if f
-               else f"Bit {bit} kullanılmıyor\nÇift tık: bu bitte yeni bit alanı")
+        tip = (tr("{0} {1} · {2} · {3}\n{4}\nDrag: move to other bits or drop on the unplaced list").format(f.name, f.bits, f.kind, N.label(f.fmt, f.width), single_line(f.desc)) if f
+               else tr("Bit {0} unused\nDouble-click: new bit field at this bit").format(bit))
         QToolTip.showText(ev.globalPosition().toPoint(), tip.strip(), self)
         self.setCursor(Qt.CursorShape.PointingHandCursor)
 
@@ -424,7 +425,7 @@ class UnplacedTree(TailRowTree):
 
     def __init__(self):
         super().__init__()
-        self.setHeaderLabels(["Bit alanı", "Bit", "Tip", "Kaynak", ""])
+        self.setHeaderLabels([tr("Bit field"), "Bit", tr("Type"), tr("Source"), ""])
         self.setRootIsDecorated(False)
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
@@ -438,8 +439,7 @@ class UnplacedTree(TailRowTree):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
         ui.actions_column(h, 4)
-        self.setToolTip("Bit haritasına ya da bir registera sürükle (birden çok seçilebilir); "
-                        "register listesinin boş alanına bırakmak yeni register açar. Delete: sil")
+        self.setToolTip(tr("Drag onto the bit map or a register (several can be selected); dropping on the empty part of the register list makes a new register. Delete: delete"))
 
     def mimeTypes(self):
         return [UNPLACED_MIME]
@@ -478,7 +478,7 @@ class UnplacedTree(TailRowTree):
 
 
 # ============================================================================ port import
-DIR_TEXT = {"in": "giriş", "out": "çıkış", "inout": "çift yönlü"}
+DIR_TEXT = {"in": tr("input"), "out": tr("output"), "inout": tr("bidirectional")}
 KIND_OF_DIR = {"in": "RW", "out": "RO", "inout": "RW"}     # seen from the IP core behind the registers
 
 
@@ -492,40 +492,37 @@ class PortImportDialog(QDialog):
 
     def __init__(self, parent):
         super().__init__(parent)
-        self.setWindowTitle("Port içe aktar (Verilog / VHDL)")
+        self.setWindowTitle(tr("Import ports (Verilog / VHDL)"))
         self.resize(1040, 760)
         self.ports, self.block, self.over = [], "", {}
         lay = QVBoxLayout(self)
         lay.setContentsMargins(18, 16, 18, 14)
         lay.setSpacing(10)
-        lay.addWidget(ui.label("Register haritasının arkasındaki IP çekirdeğinin portlarını yapıştır: modülün / "
-                               "entity'nin tamamı, yalnızca port listesi ya da port satırları. Seçilen her port "
-                               "yerleştirilmemiş bir bit alanı olur. Çekirdeğin girişleri RW (registerdan sürülür), "
-                               "çıkışları RO (registerdan okunur) olur; 32 bitten geniş sinyaller 32 bitlik "
-                               "parçalara bölünür. Saat ve reset portları baştan seçili gelmez.", "muted", wrap=True))
+        lay.addWidget(ui.note(tr("Paste the IP core's ports; each selected port becomes an unplaced bit field."),
+                              tr("Paste the ports of the IP core behind the register map: the whole module / entity, only its port list, or port lines. Every selected port becomes an unplaced bit field: the core's inputs become RW (driven from a register), its outputs RO (read through a register); signals wider than 32 bits are split into 32-bit parts. Clock and reset ports start unselected.")))
         row = QHBoxLayout()
         row.setSpacing(8)
-        row.addWidget(ui.label("Dil", "muted"))
+        row.addWidget(ui.label(tr("Language"), "muted"))
         self.lang = QComboBox()
-        for text, key in (("Otomatik", None), ("Verilog / SystemVerilog", "verilog"), ("VHDL", "vhdl")):
+        for text, key in ((tr("Automatic"), None), ("Verilog / SystemVerilog", "verilog"), ("VHDL", "vhdl")):
             self.lang.addItem(text, key)
         row.addWidget(self.lang)
         row.addSpacing(10)
-        row.addWidget(ui.label("Blok", "muted"))
+        row.addWidget(ui.label(tr("Block"), "muted"))
         self.block_ed = QLineEdit()
-        self.block_ed.setPlaceholderText("modül / entity adı")
-        self.block_ed.setToolTip("Bit alanı açıklamasına kaynak olarak yazılır (blok.port[bitler])")
+        self.block_ed.setPlaceholderText(tr("module / entity name"))
+        self.block_ed.setToolTip(tr("Written into the bit field description as its source (block.port[bits])"))
         row.addWidget(self.block_ed)
         row.addSpacing(10)
-        row.addWidget(ui.label("Alan adı öneki", "muted"))
+        row.addWidget(ui.label(tr("Field name prefix"), "muted"))
         self.prefix_ed = QLineEdit()
-        self.prefix_ed.setPlaceholderText("isteğe bağlı")
-        self.prefix_ed.setToolTip("Birden çok bloğun aynı adlı portları için, ör. RX → RX_DATA")
+        self.prefix_ed.setPlaceholderText(tr("optional"))
+        self.prefix_ed.setToolTip(tr("For ports with the same name in several blocks, e.g. RX → RX_DATA"))
         self.prefix_ed.setMaximumWidth(140)
         row.addWidget(self.prefix_ed)
-        self.strip_cb = QCheckBox("i_ / o_ öneklerini at")
+        self.strip_cb = QCheckBox(tr("Drop the i_ / o_ prefixes"))
         self.strip_cb.setChecked(True)
-        self.strip_cb.setToolTip("i_threshold → THRESHOLD (wrapper portu o_<reg>_threshold olur)")
+        self.strip_cb.setToolTip(tr("i_threshold → THRESHOLD (the wrapper port becomes o_<reg>_threshold)"))
         row.addWidget(self.strip_cb)
         row.addStretch(1)
         lay.addLayout(row)
@@ -534,19 +531,10 @@ class PortImportDialog(QDialog):
         self.text = QPlainTextEdit()
         self.text.setProperty("mono", "true")
         self.text.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
-        self.text.setPlaceholderText("module my_core #(parameter W = 12) (\n"
-                                     "    input  wire         clk,\n"
-                                     "    input  wire [W-1:0] threshold,\n"
-                                     "    output wire [63:0]  timestamp\n"
-                                     ");\n\nya da\n\n"
-                                     "entity my_core is\n"
-                                     "  port ( clk       : in  std_logic;\n"
-                                     "         threshold : in  std_logic_vector(11 downto 0);\n"
-                                     "         timestamp : out unsigned(63 downto 0) );\n"
-                                     "end entity;")
+        self.text.setPlaceholderText(tr("module my_core #(parameter W = 12) (\n    input  wire         clk,\n    input  wire [W-1:0] threshold,\n    output wire [63:0]  timestamp\n);\n\nor\n\nentity my_core is\n  port ( clk       : in  std_logic;\n         threshold : in  std_logic_vector(11 downto 0);\n         timestamp : out unsigned(63 downto 0) );\nend entity;"))
         split.addWidget(self.text)
         self.table = QTableWidget(0, 7)
-        self.table.setHorizontalHeaderLabels(["", "Port", "Yön", "Tip", "Genişlik", "Alan tipi", "Bit alanları"])
+        self.table.setHorizontalHeaderLabels(["", "Port", tr("Direction"), tr("Type"), tr("Width"), tr("Field type"), tr("Bit fields")])
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
@@ -564,12 +552,12 @@ class PortImportDialog(QDialog):
         brow = QHBoxLayout()
         self.summary = ui.label("", "muted")
         brow.addWidget(self.summary, 1)
-        brow.addWidget(ui.button("Tümünü seç", None, "ghost", lambda: self._check_all(True)))
-        brow.addWidget(ui.button("Hiçbirini seçme", None, "ghost", lambda: self._check_all(False)))
+        brow.addWidget(ui.button(tr("Select all"), None, "ghost", lambda: self._check_all(True)))
+        brow.addWidget(ui.button(tr("Select none"), None, "ghost", lambda: self._check_all(False)))
         lay.addLayout(brow)
         box = QDialogButtonBox()
-        self.ok = box.addButton("Yerleştirilmemişlere ekle", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        self.ok = box.addButton(tr("Add to unplaced"), QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QDialogButtonBox.ButtonRole.RejectRole)
         box.accepted.connect(self.accept)
         box.rejected.connect(self.reject)
         lay.addWidget(box)
@@ -657,7 +645,7 @@ class PortImportDialog(QDialog):
             wi = QTableWidgetItem("?" if width is None else str(width))
             wi.setFont(mono)
             wi.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsEditable | Qt.ItemFlag.ItemIsSelectable)
-            wi.setToolTip((p.error + "\n" if p.error else "") + "Çift tık: genişliği değiştir")
+            wi.setToolTip((p.error + "\n" if p.error else "") + tr("Double-click: change the width"))
             if width is None:
                 wi.setForeground(QColor(t["danger"]))
             self.table.setItem(row, self.C_WIDTH, wi)
@@ -665,7 +653,7 @@ class PortImportDialog(QDialog):
             for k in G.KINDS:
                 cb.addItem(k, k)
             cb.setCurrentIndex(max(0, cb.findData(self._kind(p))))
-            cb.setToolTip(f"Çekirdeğin {DIR_TEXT[p.direction]}i → varsayılan {KIND_OF_DIR[p.direction]}")
+            cb.setToolTip(tr("Core {0} → default {1}").format(DIR_TEXT[p.direction], KIND_OF_DIR[p.direction]))
             cb.currentIndexChanged.connect(lambda _i, n=p.name, cb=cb: self._set(n, "kind", cb.currentData()))
             self.table.setCellWidget(row, self.C_KIND, cb)
             pieces = self._pieces(p)
@@ -678,10 +666,9 @@ class PortImportDialog(QDialog):
         self._loading = False
         fields = self.fields()
         bad = sum(1 for p in self.ports if self._width(p) is None)
-        self.summary.setText(f"{len(self.ports)} port bulundu · {sum(1 for p in self.ports if self._checked(p))} "
-                             f"seçili → {len(fields)} bit alanı"
-                             + (f" · {bad} portun genişliği çözülemedi (Genişlik hücresine yaz)" if bad else "")
-                             if self.ports else "Port bulunamadı: Verilog ya da VHDL port tanımlarını yapıştır.")
+        self.summary.setText(tr("{0} ports found · {1} selected → {2} bit fields").format(len(self.ports), sum(1 for p in self.ports if self._checked(p)), len(fields))
+                             + (tr(" · width of {0} ports could not be resolved (type it in the Width cell)").format(bad) if bad else "")
+                             if self.ports else tr("No ports found: paste Verilog or VHDL port declarations."))
         self.ok.setEnabled(bool(fields))
 
     def _set(self, name, key, value):
@@ -730,12 +717,12 @@ class ValueTable(QTableWidget):
         self.reads = KIND_READS.get(f.kind, True)
         self.writes = KIND_WRITES.get(f.kind, True)
         extra = N.typed_extra(f.fmt, f.width)
-        cols = ["Hex", "Binary"] + ([N.label(f.fmt, f.width).replace(" (oto)", "")] if extra else [])
+        cols = ["Hex", "Binary"] + ([N.label(f.fmt, f.width).replace(tr(" (auto)"), "")] if extra else [])
         self.n_val_cols = len(cols)
         if self.reads:
-            cols.append("Okunursa anlamı")
+            cols.append(tr("Meaning when read"))
         if self.writes:
-            cols.append("Yazılırsa etkisi")
+            cols.append(tr("Effect when written"))
         cols.append("")                         # row icons
         self.act_col = len(cols) - 1
         self.setColumnCount(len(cols))
@@ -771,12 +758,12 @@ class ValueTable(QTableWidget):
                     it.setFont(mono)
                 if text == "—":
                     it.setForeground(muted)
-                it.setToolTip("Çift tık: düzenle · Delete: sil")
+                it.setToolTip(tr("Double-click: edit · Delete: delete"))
                 self.setItem(row, col, it)
             ui.table_row_actions(self, row, self.act_col, lambda *_, v=e.value: self.editRequested.emit(v),
                                  lambda *_, v=e.value: self.deleteRequested.emit(v),
-                                 edit_tip="Değer açıklamasını düzenle", delete_tip="Değer açıklamasını sil")
-        add = QTableWidgetItem("+ değer açıklaması ekle")
+                                 edit_tip=tr("Edit value meaning"), delete_tip=tr("Delete value meaning"))
+        add = QTableWidgetItem(tr("+ add value meaning"))
         add.setForeground(theme.manager().color("accent"))
         add.setFlags(Qt.ItemFlag.ItemIsEnabled)
         self.setItem(len(self.values), 0, add)
@@ -818,10 +805,10 @@ class ValueTable(QTableWidget):
         v = self._value_at(row)
         m = QMenu(self)
         if v is not None:
-            m.addAction("Düzenle", lambda: self.editRequested.emit(v))
-            m.addAction("Sil", lambda: self.deleteRequested.emit(v))
+            m.addAction(tr("Edit"), lambda: self.editRequested.emit(v))
+            m.addAction(tr("Delete"), lambda: self.deleteRequested.emit(v))
             m.addSeparator()
-        m.addAction("Değer açıklaması ekle", self.addRequested.emit)
+        m.addAction(tr("Add value meaning"), self.addRequested.emit)
         m.exec(self.viewport().mapToGlobal(pos))
 
     def wheelEvent(self, ev):
@@ -841,16 +828,15 @@ class RegMapEditorPage(ToolPage):
     tool_id = "regmap"
     title = "Register Map Editor"
     short_title = "Register Map Editor"
-    subtitle = "Bir IP'nin registerlarını, bit alanlarını, veri tiplerini ve değer anlamlarını tasarla."
-    description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
-                   "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
+    subtitle = tr("Design an IP's registers, bit fields, data types and value meanings.")
+    description = (tr("Designs the IP's register map: registers, bit fields, data types and value meanings. It has no address; the IP is placed in the Address Map Editor."))
     icon_name = "regmap"
-    version = "0.5.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self.spec = G.ModuleSpec()
         self._spec_win = None           # read-only Spec window (show_spec)
+        self.history = History()        # undo / redo of the register map being edited
         # where "Kaydet" writes: ("project", ip name) | ("library", library name) | ("file", path);
         # ("other", label) / None: not saved anywhere yet, "Kaydet" asks
         self.origin = None
@@ -861,23 +847,21 @@ class RegMapEditorPage(ToolPage):
 
         # ---- header: where the map lives + main action
         self.origin_pill = self.header.add_right(ui.Pill(""))
-        self.header.add_right(ui.button("Farklı kaydet…", "saveas", "ghost", lambda: self.save_as(),
-                                        "Kaydedilecek yeri seç: proje, IP kütüphanesi ya da .regspec.json dosyası"))
-        self.save_btn = self.header.add_right(ui.button("Kaydet", "save", "primary", self.save,
-                                                        "Son kaydedilen yere kaydet (proje / kütüphane / dosya); "
-                                                        "ilk kayıtta yeri sorar (Ctrl+Shift+S)"))
+        self.header.add_right(ui.button(tr("Save as…"), "saveas", "ghost", lambda: self.save_as(),
+                                        tr("Choose where to save: project, IP library or .regspec.json file")))
+        self.save_btn = self.header.add_right(ui.button(tr("Save"), "save", "primary", self.save,
+                                                        tr("Save to where it was last saved (project / library / file); asks the first time (Ctrl+Shift+S)")))
 
         # ---- action bar: every command visible
         bar = self.header       # the tool's commands sit in the top bar
-        bar.add("Yeni IP", "file", self.new_spec, "Boş register haritası")
-        bar.add("IP aç…", "library", self.choose_ip, "IP Library'den projedeki ya da bir kütüphanedeki IP'yi aç")
-        bar.add("İçe aktar…", "folder", self.open_spec, "Bir .regspec.json dosyasını aç")
+        bar.add(tr("New IP"), "file", self.new_spec, tr("Empty register map"))
+        bar.add(tr("Open IP…"), "library", self.choose_ip, tr("Open an IP of the project or of a library (IP Library)"))
+        bar.add(tr("Import…"), "folder", self.open_spec, tr("Open a .regspec.json file"))
         bar.sep()
-        bar.add("Adres haritasına ekle", "addrmap", self.add_to_address_map,
-                "IP'yi projeye kaydet ve Address Map Editor'da adres haritasına yerleştir")
-        bar.add("Wrapper'da aç", "wrapper", self.open_in_wrapper, "HDL'i Slave Interface Wrapper'da üret")
-        bar.add("Spec", "file", self.show_spec, "Bu register haritasından HDL'in üretileceği spesifikasyonu "
-                                                "(regspec) salt okunur göster; düzenledikçe güncellenir")
+        bar.add(tr("Add to address map"), "addrmap", self.add_to_address_map,
+                tr("Save the IP to the project and place it in the address map (Address Map Editor)"))
+        bar.add(tr("Open in Wrapper"), "wrapper", self.open_in_wrapper, tr("Generate the HDL in the Slave Interface Wrapper"))
+        bar.add("Spec", "file", self.show_spec, tr("Show the HDL spec of this register map (read-only); follows the edits"))
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -893,20 +877,20 @@ class RegMapEditorPage(ToolPage):
         form.setHorizontalSpacing(12)
         form.setVerticalSpacing(8)
         self.name_ed = QLineEdit()
-        self.name_ed.setToolTip("IP (modül) adı: projede ve üretilen HDL'de bu adla geçer")
+        self.name_ed.setToolTip(tr("IP (module) name: used in the project and in the generated HDL"))
         self.version_ed = QLineEdit()
         self.version_ed.setProperty("mono", "true")
         self.version_ed.setPlaceholderText("1.0.0")
-        self.version_ed.setToolTip("IP sürümü: üretilen dosyalara ve IP kütüphanesine yazılır (ör. 1.0.0, 2.1.0-beta)")
-        form.addRow("Ad", self.name_ed)
-        form.addRow("Sürüm", self.version_ed)
+        self.version_ed.setToolTip(tr("IP version: written into the generated files and the IP library (e.g. 1.0.0, 2.1.0-beta)"))
+        form.addRow(tr("Name"), self.name_ed)
+        form.addRow(tr("Version"), self.version_ed)
         drow = QHBoxLayout()
         drow.setSpacing(6)
         self.desc_lbl = ui.label("", "muted")
         self.desc_lbl.setMinimumWidth(60)
         drow.addWidget(self.desc_lbl, 1)
-        drow.addWidget(small_button("Düzenle…", self.edit_desc, "IP açıklamasını düzenle"))
-        form.addRow("Açıklama", drow)
+        drow.addWidget(small_button(tr("Edit…"), self.edit_desc, tr("Edit the IP description")))
+        form.addRow(tr("Description"), drow)
         ipcard.lay.addLayout(form)
         left_lay.addWidget(ipcard)
 
@@ -915,19 +899,18 @@ class RegMapEditorPage(ToolPage):
         rl.setContentsMargins(0, 0, 0, 0)
         rl.setSpacing(10)
         rhead = QHBoxLayout()
-        rhead.addWidget(ui.label("REGISTERLAR", "section"))
+        rhead.addWidget(ui.label(tr("REGISTERS"), "section"))
         rhead.addStretch(1)
-        rhead.addWidget(small_button("Register", self.add_reg, "Yeni register (Ctrl+R)", None, "plus"))
+        rhead.addWidget(small_button("Register", self.add_reg, tr("New register (Ctrl+R)"), None, "plus"))
         rl.addLayout(rhead)
         self.search_ed = QLineEdit()
-        self.search_ed.setPlaceholderText("Ara: register ya da bit alanı adı / açıklaması")
+        self.search_ed.setPlaceholderText(tr("Search: register or bit field name / description"))
         self.search_ed.setClearButtonEnabled(True)
-        self.search_ed.setToolTip("Bit alanında bulunanlar register satırında gösterilir ve alan listesinde "
-                                  "vurgulanır (Ctrl+K)")
+        self.search_ed.setToolTip(tr("Matches in bit fields are shown on the register row and highlighted in the field list (Ctrl+K)"))
         self.search_ed.textChanged.connect(lambda *_: self._refresh_regs())
         rl.addWidget(self.search_ed)
         self.reg_tree = RegTree()
-        self.reg_tree.setHeaderLabels(["Ad", "Offset", "Erişim", "Strobe", ""])
+        self.reg_tree.setHeaderLabels([tr("Name"), "Offset", tr("Access"), "Strobe", ""])
         self.reg_tree.setRootIsDecorated(False)
         self.reg_tree.setUniformRowHeights(True)
         self.reg_tree.setAlternatingRowColors(True)
@@ -946,9 +929,9 @@ class RegMapEditorPage(ToolPage):
         rl.addWidget(self.reg_tree, 1)
         rbar = QHBoxLayout()
         rbar.setSpacing(4)
-        rbar.addWidget(small_button("↑", lambda: self.move_reg(-1), "Yukarı taşı (offset'leri değiştirir)"))
-        rbar.addWidget(small_button("↓", lambda: self.move_reg(1), "Aşağı taşı (offset'leri değiştirir)"))
-        rbar.addWidget(small_button("Sırala", self.repack, "Offset'leri 0x00'dan itibaren 4'er artır"))
+        rbar.addWidget(small_button("↑", lambda: self.move_reg(-1), tr("Move up (changes the offsets)")))
+        rbar.addWidget(small_button("↓", lambda: self.move_reg(1), tr("Move down (changes the offsets)")))
+        rbar.addWidget(small_button(tr("Renumber"), self.repack, tr("Set the offsets from 0x00 in steps of 4")))
         rbar.addStretch(1)
         rl.addLayout(rbar)
         regcard = ui.Card(margins=16, spacing=10)
@@ -968,7 +951,7 @@ class RegMapEditorPage(ToolPage):
         col.addWidget(self.reg_title)
         col.addWidget(self.reg_sub)
         th.addLayout(col, 1)
-        self.add_field_btn = small_button("Bit alanı", lambda: self.add_field(), "Yeni bit alanı (Ctrl+F)", None, "plus")
+        self.add_field_btn = small_button(tr("Bit field"), lambda: self.add_field(), tr("New bit field (Ctrl+F)"), None, "plus")
         th.addWidget(self.add_field_btn, 0, Qt.AlignmentFlag.AlignTop)
         fl.addLayout(th)
         self.bitmap = BitMap()
@@ -983,8 +966,8 @@ class RegMapEditorPage(ToolPage):
         self.fields = FieldsTree()
         self.fields.unplacedDropped.connect(lambda idx: self._place(idx, self._sel_reg()))
         self.fields.dragStarted.connect(self._list_drag_started)
-        self.fields.setHeaderLabels(["Bit alanı", "Bitler", "Tip", "Veri tipi", "Reset", "Değer açıklamaları", "Port",
-                                     "Açıklama", ""])
+        self.fields.setHeaderLabels([tr("Bit field"), tr("Bits"), tr("Type"), tr("Data type"), "Reset", tr("Value meanings"), "Port",
+                                     tr("Description"), ""])
         self.fields.setAlternatingRowColors(True)
         self.fields.setUniformRowHeights(False)
         self.fields.setIndentation(18)
@@ -1014,18 +997,16 @@ class RegMapEditorPage(ToolPage):
         unp_box = ui.Card(margins=14, spacing=8)
         ul = unp_box.lay
         uhead = QHBoxLayout()
-        self.unp_title = ui.label("YERLEŞTİRİLMEMİŞ BİT ALANLARI", "section")
-        self.unp_title.setToolTip("Henüz hiçbir registerda olmayan bit alanları (HDL'e girmez).\n"
-                                  "Bit haritasına ya da bir registera sürükle; yerleşmiş bir alanı buraya "
-                                  "sürüklemek onu geri alır.")
+        self.unp_title = ui.label(tr("UNPLACED BIT FIELDS"), "section")
+        self.unp_title.setToolTip(tr("Bit fields not in any register yet (not part of the HDL).\nDrag onto the bit map or a register; dragging a placed field here takes it back."))
         uhead.addWidget(self.unp_title)
         uhead.addStretch(1)
-        hint = ui.label("sürükle: bit haritasına / registera", "muted")
+        hint = ui.label(tr("drag: onto the bit map / a register"), "muted")
         hint.setToolTip(self.unp_title.toolTip())
         uhead.addWidget(hint)
         uhead.addSpacing(8)
-        uhead.addWidget(small_button("Port içe aktar…", self.import_ports,
-                                     "IP çekirdeğinin Verilog / VHDL port listesinden bit alanları oluştur (Ctrl+I)",
+        uhead.addWidget(small_button(tr("Import ports…"), self.import_ports,
+                                     tr("Make bit fields from the IP core's Verilog / VHDL port list (Ctrl+I)"),
                                      None, "plus"))
         ul.addLayout(uhead)
         self.unplaced = UnplacedTree()
@@ -1037,15 +1018,14 @@ class RegMapEditorPage(ToolPage):
         ul.addWidget(self.unplaced, 1)
         ubar = QHBoxLayout()
         ubar.setSpacing(4)
-        self.place_btn = small_button("Bit alanına yerleştir", self.place_selected,
-                                      "Seçilenleri seçili registerın boş bitlerine koy (çift tık da olur)")
-        self.place_new_btn = small_button("Yeni registera yerleştir", lambda: self.place_selected(new_register=True),
-                                          "Seçilenleri yeni registerlara koy; bir registera sığmayanlar için "
-                                          "yenileri açılır")
+        self.place_btn = small_button(tr("Place in bit field"), self.place_selected,
+                                      tr("Put the selected ones on the free bits of the selected register (double-click works too)"))
+        self.place_new_btn = small_button(tr("Place in new register"), lambda: self.place_selected(new_register=True),
+                                          tr("Put the selected ones in new registers; more are added for those that do not fit"))
         ubar.addWidget(self.place_btn)
         ubar.addWidget(self.place_new_btn)
         ubar.addStretch(1)
-        ubar.addWidget(small_button("Tümünü sil", self.clear_unplaced))
+        ubar.addWidget(small_button(tr("Delete all"), self.clear_unplaced))
         ul.addLayout(ubar)
         self.unplaced.itemSelectionChanged.connect(self._update_place_buttons)
         right = QSplitter(Qt.Orientation.Vertical)
@@ -1090,19 +1070,19 @@ class RegMapEditorPage(ToolPage):
                 a.setShortcutContext(Qt.ShortcutContext.WindowShortcut)
             m.addAction(a)
             return a
-        act("Yeni IP", self.new_spec)
-        act("IP aç (IP Library)…", self.choose_ip, "Ctrl+Shift+O")
+        act(tr("New IP"), self.new_spec)
+        act(tr("Open IP (IP Library)…"), self.choose_ip, "Ctrl+Shift+O")
         m.addSeparator()
-        act("Kaydet", self.save, "Ctrl+Shift+S")
-        act("Farklı kaydet (proje / kütüphane / dosya)…", lambda: self.save_as())
-        act("İçe aktar (.regspec.json)…", self.open_spec)
+        act(tr("Save"), self.save, "Ctrl+Shift+S")
+        act(tr("Save as (project / library / file)…"), lambda: self.save_as())
+        act(tr("Import (.regspec.json)…"), self.open_spec)
         m.addSeparator()
-        act("Yeni register", self.add_reg)
-        act("Yeni bit alanı", lambda: self.add_field())
-        act("Port içe aktar (Verilog / VHDL)…", self.import_ports, "Ctrl+I")
+        act(tr("New register"), self.add_reg)
+        act(tr("New bit field"), lambda: self.add_field())
+        act(tr("Import ports (Verilog / VHDL)…"), self.import_ports, "Ctrl+I")
         m.addSeparator()
-        act("Adres haritasına ekle", self.add_to_address_map)
-        act("Slave Interface Wrapper'da aç", self.open_in_wrapper)
+        act(tr("Add to address map"), self.add_to_address_map)
+        act(tr("Open in Slave Interface Wrapper"), self.open_in_wrapper)
 
     # ================================================================ state
     def _start(self):
@@ -1113,37 +1093,74 @@ class RegMapEditorPage(ToolPage):
             self._load_spec()
 
     def _mark(self):
-        self.dirty = True
+        self.history.push(self.spec.to_dict())
+        self.dirty = not self.history.is_saved()
         self._show_origin()
         self._validate()
 
     def _set_clean(self):
         self.dirty = False
+        self.history.mark_saved()
         self._show_origin()
+
+    # ------------------------------------------------------------ undo / redo (Edit menu)
+    def history_target(self):
+        return self
+
+    def can_undo(self):
+        return self.history.can_undo()
+
+    def can_redo(self):
+        return self.history.can_redo()
+
+    def undo(self):
+        return self._apply_snapshot(self.history.undo())
+
+    def redo(self):
+        return self._apply_snapshot(self.history.redo())
+
+    def _apply_snapshot(self, state):
+        if state is None:
+            return False
+        reg, fld = self._sel_reg(), self._selected_field_name()
+        self.spec = G.ModuleSpec.from_dict(state)
+        self.dirty = not self.history.is_saved()
+        self._show_spec_widgets()
+        names = {r.name for r in self.spec.registers}
+        if reg and reg.name in names:
+            self._refresh_regs(reg.name)
+            if fld:
+                self._select_field(fld)
+        return True
 
     def _show_origin(self):
         """One pill: where "Kaydet" writes, with a dot (and the warning colour) while there are
         unsaved changes."""
         o = self.origin
         if o is None or o[0] == "other":
-            text, state = ("kayıt yeri seçilmedi" if o is None else o[1]), ""
-            tip = "Henüz bir yere kaydedilmedi: Kaydet, yeri sorar"
+            text, state = (tr("no save location yet") if o is None else o[1]), ""
+            tip = tr("Not saved anywhere yet: Save asks where")
         elif o[0] == "project":
             n = len(self.ctx.project.instances_of(o[1]))
-            text, state = f"projede: {o[1]}", "ok"
-            tip = f"Projedeki IP tanımı · adres haritasında {n} kez"
+            text, state = tr("in project: {0}").format(o[1]), "ok"
+            tip = tr("Project IP definition · {0}× in the address map").format(n)
         elif o[0] == "file":
-            text, state = f"dosya: {os.path.basename(o[1])}", ""
-            tip = f"{o[1]}\nKaydet bu dosyaya yazar"
+            text, state = tr("file: {0}").format(os.path.basename(o[1])), ""
+            tip = tr("{0}\nSave writes to this file").format(o[1])
         else:
-            text, state = f"kütüphane: {o[1]}", "ok"
-            tip = f"Kaydet, {o[1]} kütüphanesine {self.spec.version} sürümü olarak yazar"
+            text, state = tr("library: {0}").format(o[1]), "ok"
+            tip = tr("Save writes it to the library {0} as version {1}").format(o[1], self.spec.version)
         if self.dirty:
-            text, state, tip = f"● {text}", "warn", tip + "\nKaydedilmemiş değişiklikler var"
+            text, state, tip = f"● {text}", "warn", tip + tr("\nThere are unsaved changes")
         self.origin_pill.set(text, state)
         self.origin_pill.setToolTip(tip)
 
     def _load_spec(self):
+        """Show a register map that was just opened (its undo history starts here)."""
+        self.history.reset(self.spec.to_dict(), saved=not self.dirty)
+        self._show_spec_widgets()
+
+    def _show_spec_widgets(self):
         self._loading = True
         self.search_ed.blockSignals(True)       # another register map: start without a filter
         self.search_ed.clear()
@@ -1168,22 +1185,22 @@ class RegMapEditorPage(ToolPage):
     def _show_desc(self):
         first = single_line(self.spec.desc)
         self.desc_lbl.setText(first or "—")
-        self.desc_lbl.setToolTip(self.spec.desc or "Açıklama yok")
+        self.desc_lbl.setToolTip(self.spec.desc or tr("No description"))
 
     def edit_desc(self):
         """IP description in its own window: the first line goes into the HDL / C headers."""
         d = QDialog(self)
-        d.setWindowTitle(f"IP açıklaması: {self.spec.module}")
+        d.setWindowTitle(tr("IP description: {0}").format(self.spec.module))
         d.resize(620, 420)
         lay = QVBoxLayout(d)
-        lay.addWidget(ui.label("İlk satır, üretilen HDL ve C dosyalarında başlık açıklaması olarak kullanılır.",
+        lay.addWidget(ui.label(tr("The first line is the header description in the generated HDL and C files."),
                                "muted", wrap=True))
         ed = QPlainTextEdit(self.spec.desc)
-        ed.setPlaceholderText("IP'nin işlevi, kullanım sırası, dikkat edilmesi gerekenler…")
+        ed.setPlaceholderText(tr("What the IP does, the order of use, things to watch out for…"))
         lay.addWidget(ed, 1)
         box = QDialogButtonBox()
-        box.addButton("Tamam", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        box.addButton(tr("OK"), QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton(tr("Cancel"), QDialogButtonBox.ButtonRole.RejectRole)
         box.accepted.connect(d.accept)
         box.rejected.connect(d.reject)
         lay.addWidget(box)
@@ -1199,12 +1216,11 @@ class RegMapEditorPage(ToolPage):
         errs = self.spec.validate()
         if not errs:
             n = sum(len(r.fields) for r in self.spec.registers)
-            self.issues.ok_text = (f"Hata yok · {len(self.spec.registers)} register, {n} bit alanı · adres bitleri "
-                                   f"[{self.spec.reg_aw + 1}:2] · IP'nin kullandığı alan 0x{self.spec.span:X} byte"
-                                   + (" · kesme çıkışı (o_irq) var" if self.spec.has_irq() else ""))
+            self.issues.ok_text = (tr("No errors · {0} registers, {1} bit fields · address bits [{2}:2] · the IP uses 0x{3:X} bytes").format(len(self.spec.registers), n, self.spec.reg_aw + 1, self.spec.span)
+                                   + (tr(" · has an interrupt output (o_irq)") if self.spec.has_irq() else ""))
         n_unp = len(self.spec.unplaced)
         if n_unp:
-            self.issues.ok_text += f" · {n_unp} yerleştirilmemiş bit alanı (HDL'e girmez)"
+            self.issues.ok_text += tr(" · {0} unplaced bit fields (not part of the HDL)").format(n_unp)
         self.issues.set_issues(errs)
         self._refresh_spec_window()
         return errs
@@ -1220,9 +1236,7 @@ class RegMapEditorPage(ToolPage):
             w.setWindowTitle(f"{self.title}: Spec")
             lay = QVBoxLayout(w)
             lay.setContentsMargins(0, 0, 0, 0)
-            w.view = ui.SpecView("HDL spec (salt okunur): bu register haritasından Verilog'a giden veri, yalnızca kodu "
-                                 "etkileyenler (registerlar, bit alanları, türleri, strobe'lar, reset değerleri). "
-                                 "Düzenledikçe güncellenir.")
+            w.view = ui.SpecView(tr("HDL spec (read-only): the data that goes from this register map to the Verilog, only what changes the code (registers, bit fields, their types, strobes, reset values). Follows the edits."))
             lay.addWidget(w.view)
             w.resize(640, 720)
         self._spec_win.show()
@@ -1237,7 +1251,7 @@ class RegMapEditorPage(ToolPage):
 
     def _name_taken(self, names, name, old=None):
         if name != old and name in names:
-            QMessageBox.warning(self, self.title, f"“{name}” adı bu registerda zaten kullanılıyor.")
+            QMessageBox.warning(self, self.title, tr("The name “{0}” is already used in this register.").format(name))
             return True
         return False
 
@@ -1271,12 +1285,12 @@ class RegMapEditorPage(ToolPage):
             it = QTreeWidgetItem([label, f"0x{r.offset:02X}", r.access, strobe])
             it.setData(0, ROLE, r.name)
             it.setFont(1, mono)
-            it.setToolTip(0, single_line(r.desc) + (f"\nAramada bulunan bit alanları: {', '.join(hits)}" if hits else ""))
+            it.setToolTip(0, single_line(r.desc) + (tr("\nBit fields matching the search: {0}").format(', '.join(hits)) if hits else ""))
             if hits:
                 it.setForeground(0, accent)
             self.reg_tree.addTopLevelItem(it)
             ui.tree_row_actions(self.reg_tree, it, 4, self.edit_reg, self.del_reg,
-                                edit_tip="Registerı düzenle", delete_tip="Registerı sil")
+                                edit_tip=tr("Edit register"), delete_tip=tr("Delete register"))
             if r.name == keep:
                 target = it
         regs = real_items(self.reg_tree)
@@ -1300,18 +1314,18 @@ class RegMapEditorPage(ToolPage):
 
     def _reg_menu(self, pos):
         m = QMenu(self)
-        m.addAction("Yeni register", self.add_reg)
+        m.addAction(tr("New register"), self.add_reg)
         if self._sel_reg():
-            m.addAction("Düzenle", self.edit_reg)
-            m.addAction("Çoğalt", self.dup_reg)
-            m.addAction("Yeni bit alanı", lambda: self.add_field())
+            m.addAction(tr("Edit"), self.edit_reg)
+            m.addAction(tr("Duplicate"), self.dup_reg)
+            m.addAction(tr("New bit field"), lambda: self.add_field())
             m.addSeparator()
-            m.addAction("Sil", self.del_reg)
+            m.addAction(tr("Delete"), self.del_reg)
         m.exec(self.reg_tree.viewport().mapToGlobal(pos))
 
     def add_reg(self):
         off = max((r.offset for r in self.spec.registers), default=-4) + 4
-        new = RegDialog.ask(self, G.RegSpec(f"REG{off // 4}", off), "Yeni register")
+        new = RegDialog.ask(self, G.RegSpec(f"REG{off // 4}", off), tr("New register"))
         if not new or self._name_taken({r.name for r in self.spec.registers}, new.name):
             return
         new.fields = []
@@ -1348,7 +1362,7 @@ class RegMapEditorPage(ToolPage):
 
     def del_reg(self):
         r = self._sel_reg()
-        if r and ui.confirm(self, "Register sil", f"{r.name} registerı ve {len(r.fields)} bit alanı silinecek."):
+        if r and ui.confirm(self, tr("Delete register"), tr("Register {0} and its {1} bit fields will be deleted.").format(r.name, len(r.fields))):
             self.spec.registers.remove(r)
             self._refresh_regs()
             self._mark()
@@ -1420,8 +1434,8 @@ class RegMapEditorPage(ToolPage):
         self.fields.clear()
         if not r:
             self.fields.blockSignals(False)
-            self.reg_title.setText("Register yok")
-            self.reg_sub.setText("Soldan bir register ekle (Ctrl+R).")
+            self.reg_title.setText(tr("No register"))
+            self.reg_sub.setText(tr("Add a register on the left (Ctrl+R)."))
             self.bitmap.set_register(None)
             return
         self.reg_title.setText(f"{r.name}   ·   0x{r.offset:02X}   ·   {r.access}")
@@ -1433,7 +1447,7 @@ class RegMapEditorPage(ToolPage):
             kind = f.kind + "".join(f" · {s}" for s, on in (("irq", f.irq), ("sync", f.sync)) if on)
             reset = N.format_value(f.reset, f.width, f.fmt) if f.kind in ("RW", "CONST") else ""
             ports = ", ".join(G.port_names(r, f)) or "—"
-            nval = f"{len(f.values)} tanım  ▾" if f.values else "ekle  ▸"
+            nval = tr("{0} defined  ▾").format(len(f.values)) if f.values else tr("add  ▸")
             it = QTreeWidgetItem([f.name, f.bits, kind, N.label(f.fmt, f.width), reset, nval, ports,
                                   single_line(f.desc)])
             it.setData(0, ROLE, ("field", f.name))
@@ -1447,7 +1461,7 @@ class RegMapEditorPage(ToolPage):
             it.setForeground(C_TYPE, QColor(t["muted"]))
             it.setForeground(C_VALUES, QColor(t["muted"] if not f.values else t["accent"]))
             it.setToolTip(C_KIND, G.KIND_HELP.get(f.kind, ""))
-            it.setToolTip(C_VALUES, "Tıkla: değer açıklamalarını aç / kapat")
+            it.setToolTip(C_VALUES, tr("Click: show / hide the value meanings"))
             if self._field_hit(f, self._search()):           # found by the register search
                 for c in (C_NAME, C_DESC):
                     it.setBackground(c, theme.manager().color("selection"))
@@ -1456,7 +1470,7 @@ class RegMapEditorPage(ToolPage):
                 it.setToolTip(C_RESET, "\n".join(f"{a}: {b}" for a, b in N.all_views(f.reset, f.width)))
             self.fields.addTopLevelItem(it)
             ui.tree_row_actions(self.fields, it, C_ACT, self.edit_field, self.del_field,
-                                edit_tip="Bit alanını düzenle", delete_tip="Bit alanını sil")
+                                edit_tip=tr("Edit bit field"), delete_tip=tr("Delete bit field"))
             if f.name == select:
                 target = it
         # size the columns from the field rows only, then hang the value rows under them
@@ -1515,12 +1529,12 @@ class RegMapEditorPage(ToolPage):
         k = self._key(it)
         m = QMenu(self)
         if k:
-            m.addAction("Değer açıklaması ekle", lambda: self.add_value(k[1]))
-            m.addAction("Bit alanını düzenle", self.edit_field)
-            m.addAction("Bit alanını sil", self.del_field)
-            m.addAction("Yerleştirilmemişlere geri al", self.unplace_field)
+            m.addAction(tr("Add value meaning"), lambda: self.add_value(k[1]))
+            m.addAction(tr("Edit bit field"), self.edit_field)
+            m.addAction(tr("Delete bit field"), self.del_field)
+            m.addAction(tr("Move back to unplaced"), self.unplace_field)
             m.addSeparator()
-        m.addAction("Yeni bit alanı", lambda: self.add_field())
+        m.addAction(tr("New bit field"), lambda: self.add_field())
         m.exec(self.fields.viewport().mapToGlobal(pos))
 
     # ================================================================ field edits
@@ -1538,7 +1552,7 @@ class RegMapEditorPage(ToolPage):
         if lsb is None:
             lsb = next((b for b in range(32) if not used >> b & 1), 0)
         proto = G.FieldSpec(r.name, 0, 32) if not r.fields else G.FieldSpec(f"BIT{lsb}", lsb)
-        new = FieldDialog.ask(self, proto, f"{r.name}: yeni bit alanı")
+        new = FieldDialog.ask(self, proto, tr("{0}: new bit field").format(r.name))
         if not new or self._name_taken({f.name for f in r.fields}, new.name):
             return
         r.fields.append(new)
@@ -1563,14 +1577,14 @@ class RegMapEditorPage(ToolPage):
 
     def del_field(self):
         r, f = self._sel_field()
-        if f and ui.confirm(self, "Bit alanı sil", f"{r.name}.{f.name} bit alanı silinecek."):
+        if f and ui.confirm(self, tr("Delete bit field"), tr("Bit field {0}.{1} will be deleted.").format(r.name, f.name)):
             r.fields.remove(f)
             self._refresh_regs(r.name)
             self._mark()
 
     def _store_value(self, f, new, old=None):
         if any(e.value == new.value and e is not old for e in f.values):
-            QMessageBox.warning(self, self.title, f"{N.format_value(new.value, f.width, value_fmt(f))} zaten tanımlı")
+            QMessageBox.warning(self, self.title, tr("{0} is already defined").format(N.format_value(new.value, f.width, value_fmt(f))))
             return False
         if old is None:
             f.values.append(new)
@@ -1623,16 +1637,16 @@ class RegMapEditorPage(ToolPage):
             it.setFont(1, mono)
             it.setForeground(2, QColor(theme.kind_color(f.kind)))
             it.setForeground(3, QColor(t["muted"]))
-            it.setToolTip(0, f"{f.name}: {f.width} bit {f.kind}\n{f.desc}\nSürükle: bit haritasına ya da bir registera")
+            it.setToolTip(0, tr("{0}: {1} bits {2}\n{3}\nDrag: onto the bit map or a register").format(f.name, f.width, f.kind, f.desc))
             self.unplaced.addTopLevelItem(it)
             ui.tree_row_actions(self.unplaced, it, 4, self.edit_unplaced, self.delete_unplaced,
-                                edit_tip="Bit alanını düzenle", delete_tip="Bit alanını sil")
+                                edit_tip=tr("Edit bit field"), delete_tip=tr("Delete bit field"))
             if i in select:
                 it.setSelected(True)
         add_tail_space(self.unplaced)
         self._update_place_buttons()
         n = len(self.spec.unplaced)
-        self.unp_title.setText(f"YERLEŞTİRİLMEMİŞ BİT ALANLARI ({n})" if n else "YERLEŞTİRİLMEMİŞ BİT ALANLARI")
+        self.unp_title.setText(tr("UNPLACED BIT FIELDS ({0})").format(n) if n else tr("UNPLACED BIT FIELDS"))
 
     def _sel_unplaced(self):
         return sorted(it.data(0, ROLE) for it in self.unplaced.selectedItems())
@@ -1642,14 +1656,14 @@ class RegMapEditorPage(ToolPage):
         if self._sel_unplaced():
             r = self._sel_reg()
             if r:
-                m.addAction(f"{r.name} registerına yerleştir", self.place_selected)
-            m.addAction("Yeni registera yerleştir", lambda: self.place_selected(new_register=True))
+                m.addAction(tr("Place in register {0}").format(r.name), self.place_selected)
+            m.addAction(tr("Place in new register"), lambda: self.place_selected(new_register=True))
             if len(self._sel_unplaced()) == 1:
-                m.addAction("Düzenle…", self.edit_unplaced)
-            m.addAction("Tipini değiştir…", self.retype_unplaced)
+                m.addAction(tr("Edit…"), self.edit_unplaced)
+            m.addAction(tr("Change type…"), self.retype_unplaced)
             m.addSeparator()
-            m.addAction("Sil", self.delete_unplaced)
-        m.addAction("Port içe aktar…", self.import_ports)
+            m.addAction(tr("Delete"), self.delete_unplaced)
+        m.addAction(tr("Import ports…"), self.import_ports)
         m.exec(self.unplaced.viewport().mapToGlobal(pos))
 
     def import_ports(self):
@@ -1660,7 +1674,7 @@ class RegMapEditorPage(ToolPage):
         self.spec.unplaced.extend(new)
         self._refresh_unplaced(set(range(start, len(self.spec.unplaced))))
         self._mark()
-        self.status(f"{len(new)} bit alanı yerleştirilmemişlere eklendi; bit haritasına ya da registerlara sürükle")
+        self.status(tr("{0} bit fields added to unplaced; drag them onto the bit map or the registers").format(len(new)))
 
     def delete_unplaced(self):
         idx = self._sel_unplaced()
@@ -1677,11 +1691,11 @@ class RegMapEditorPage(ToolPage):
             return
         i = idx[0]
         f = self.spec.unplaced[i]
-        new = FieldDialog.ask(self, f, f"Yerleştirilmemiş: {f.name}")
+        new = FieldDialog.ask(self, f, tr("Unplaced: {0}").format(f.name))
         if not new:
             return
         if new.name != f.name and any(x.name == new.name for j, x in enumerate(self.spec.unplaced) if j != i):
-            QMessageBox.warning(self, self.title, f"“{new.name}” adı yerleştirilmemişlerde zaten var.")
+            QMessageBox.warning(self, self.title, tr("The name “{0}” is already in the unplaced list.").format(new.name))
             return
         new.lsb = 0
         self.spec.unplaced[i] = new
@@ -1689,8 +1703,8 @@ class RegMapEditorPage(ToolPage):
         self._mark()
 
     def clear_unplaced(self):
-        if self.spec.unplaced and ui.confirm(self, "Yerleştirilmemişleri sil",
-                                             f"{len(self.spec.unplaced)} yerleştirilmemiş bit alanı silinecek."):
+        if self.spec.unplaced and ui.confirm(self, tr("Delete unplaced"),
+                                             tr("{0} unplaced bit fields will be deleted.").format(len(self.spec.unplaced))):
             self.spec.unplaced = []
             self._refresh_unplaced()
             self._mark()
@@ -1699,7 +1713,7 @@ class RegMapEditorPage(ToolPage):
         idx = self._sel_unplaced()
         if not idx:
             return
-        kind, ok = QInputDialog.getItem(self, "Bit alanı tipi", "Tip:", list(G.KINDS),
+        kind, ok = QInputDialog.getItem(self, tr("Bit field type"), tr("Type:"), list(G.KINDS),
                                         G.KINDS.index(self.spec.unplaced[idx[0]].kind), False)
         if ok:
             for i in idx:
@@ -1711,12 +1725,12 @@ class RegMapEditorPage(ToolPage):
         """The place buttons say what they will do: how many fields, into which register."""
         n, r = len(self._sel_unplaced()), self._sel_reg()
         if n:
-            self.place_btn.setText(f"{n} bit alanını {r.name} registerındaki boş bitlere yerleştir" if r
-                                   else "Bit alanına yerleştir (register seç)")
-            self.place_new_btn.setText(f"{n} bit alanını yeni registera yerleştir")
+            self.place_btn.setText(tr("Place {0} bit fields on the free bits of register {1}").format(n, r.name) if r
+                                   else tr("Place in bit field (select a register)"))
+            self.place_new_btn.setText(tr("Place {0} bit fields in a new register").format(n))
         else:
-            self.place_btn.setText("Bit alanına yerleştir")
-            self.place_new_btn.setText("Yeni registera yerleştir")
+            self.place_btn.setText(tr("Place in bit field"))
+            self.place_new_btn.setText(tr("Place in new register"))
         self.place_btn.setEnabled(bool(n and r))
         self.place_new_btn.setEnabled(bool(n))
 
@@ -1780,7 +1794,7 @@ class RegMapEditorPage(ToolPage):
         self._refresh_regs(made[-1].name if made else None)
         self._refresh_unplaced()
         self._mark()
-        self.status(f"{len(fields)} bit alanı {len(made)} yeni registera yerleştirildi: "
+        self.status(tr("{0} bit fields placed in {1} new registers:").format(len(fields), len(made))
                     + ", ".join(r.name for r in made))
 
     def _place(self, indexes, reg, lsb=None):
@@ -1829,16 +1843,16 @@ class RegMapEditorPage(ToolPage):
             self._refresh_fields(placed[-1].name if not renamed else None)
         self._refresh_unplaced()
         self._mark()
-        msg = f"{len(placed)} bit alanı {reg.name} registerına yerleştirildi" if placed else ""
+        msg = tr("{0} bit fields placed in register {1}").format(len(placed), reg.name) if placed else ""
         if renamed:
-            msg += " · yeniden adlandırıldı: " + ", ".join(renamed)
+            msg += tr(" · renamed:") + ", ".join(renamed)
         if msg:
             self.status(msg)
         if failed:
-            QMessageBox.information(self, self.title, f"{reg.name} registerında "
-                                    + ("bırakılan bitler dolu: " if lsb is not None else "yer yok: ")
+            QMessageBox.information(self, self.title, tr("in register {0}").format(reg.name)
+                                    + (tr("the bits dropped on are in use:") if lsb is not None else tr("no room:"))
                                     + ", ".join(f"{f.name} ({f.width} bit)" for f in failed)
-                                    + ". Yerleştirilmemişlerde kaldı.")
+                                    + tr(". They stay in the unplaced list."))
 
     def unplace_field(self, reg_name=None, field_name=None):
         """Take a placed field (the selected one, or reg_name.field_name) back to the unplaced list."""
@@ -1856,7 +1870,7 @@ class RegMapEditorPage(ToolPage):
         self._refresh_regs(r.name)
         self._refresh_unplaced({len(self.spec.unplaced) - 1})
         self._mark()
-        self.status(f"{r.name}.{f.name} yerleştirilmemişlere alındı")
+        self.status(tr("{0}.{1} moved to unplaced").format(r.name, f.name))
 
     def _list_drag_started(self, name):
         """A field dragged from the list lands centred on the cursor on the bit map."""
@@ -1875,8 +1889,7 @@ class RegMapEditorPage(ToolPage):
             for x in dst.fields:
                 used |= x.mask
             if not any(not used & (((1 << f.width) - 1) << b) for b in range(33 - f.width)):
-                QMessageBox.information(self, self.title, f"{dst.name} registerında {f.name} ({f.width} bit) için "
-                                                          f"yer yok; alan {src.name} registerında kaldı.")
+                QMessageBox.information(self, self.title, tr("No room for {1} ({2} bits) in register {0}; the field stays in register {3}.").format(dst.name, f.name, f.width, src.name))
                 return
         src.fields.remove(f)
         moved = copy.deepcopy(f)
@@ -1946,7 +1959,7 @@ class RegMapEditorPage(ToolPage):
     def _confirm_discard(self):
         if not self.dirty:
             return True
-        r = ui.ask_save(self, self.title, f"“{self.spec.module}” register haritasında kaydedilmemiş değişiklikler var.")
+        r = ui.ask_save(self, self.title, tr("The register map “{0}” has unsaved changes.").format(self.spec.module))
         if r == "save":
             return self.save()
         return r == "discard"
@@ -1974,7 +1987,7 @@ class RegMapEditorPage(ToolPage):
             if not self._confirm_discard():
                 return False
             if not self._open_ip(name):
-                QMessageBox.warning(self, self.title, f"“{name}” projede bir IP tanımı değil.")
+                QMessageBox.warning(self, self.title, tr("“{0}” is not an IP definition of the project.").format(name))
                 return False
         if reg:
             if self._search():
@@ -1983,7 +1996,7 @@ class RegMapEditorPage(ToolPage):
             if field:
                 self._select_field(field)
         self._raise()
-        self.status(f"{name} açıldı")
+        self.status(tr("{0} opened").format(name))
         return True
 
     def load_spec(self, spec, origin="", library=""):
@@ -1998,17 +2011,16 @@ class RegMapEditorPage(ToolPage):
         self._set_clean()
         self._load_spec()
         self._raise()
-        self.status(f"{spec.module} açıldı" + (f" ({origin})" if origin else ""))
+        self.status(tr("{0} opened").format(spec.module) + (f" ({origin})" if origin else ""))
         return True
 
     def choose_ip(self):
         if not self._confirm_discard():
             return
-        name = self.pick_ip("Register haritası açılacak IP", "Projedeki ya da açık kütüphanelerdeki bir IP'yi seç. "
-                                                             "Kütüphane IP'si önce projeye alınır.")
+        name = self.pick_ip(tr("IP whose register map to open"), tr("Select an IP of the project or of an open library. A library IP is brought into the project first."))
         if name:
             self._open_ip(name)
-            self.status(f"{name} açıldı")
+            self.status(tr("{0} opened").format(name))
 
     def new_spec(self):
         if self._confirm_discard():
@@ -2020,18 +2032,18 @@ class RegMapEditorPage(ToolPage):
         if not self._confirm_discard():
             return
         start = self.origin[1] if self.origin and self.origin[0] == "file" else (self.outdir or ROOT)
-        path, _ = QFileDialog.getOpenFileName(self, "Register spesifikasyonu aç", os.path.dirname(start)
+        path, _ = QFileDialog.getOpenFileName(self, tr("Open register spec"), os.path.dirname(start)
                                               if os.path.isfile(start) else start, SPEC_FILTER)
         if not path:
             return
         try:
             self.spec = G.ModuleSpec.load(path)
         except Exception as exc:  # noqa: BLE001 - shown to the user
-            return self.error("Açılamadı", exc)
+            return self.error(tr("Could not open"), exc)
         self.origin, self.outdir = ("file", path), os.path.dirname(path)
         self._set_clean()
         self._load_spec()
-        self.status(f"Açıldı: {path}")
+        self.status(tr("Opened: {0}").format(path))
 
     # ================================================================ saving
     # The register map remembers where it was saved (self.origin): the project, an IP library or a
@@ -2068,9 +2080,7 @@ class RegMapEditorPage(ToolPage):
 
     def _errors_ok(self, where):
         errs = self._validate()
-        return not errs or ui.confirm(self, self.title, f"Register haritasında {len(errs)} hata var (alt çubuk). "
-                                                        f"Yine de {where} kaydedilsin mi? HDL ancak hatalar "
-                                                        "düzeltildikten sonra üretilebilir.", ok="Kaydet")
+        return not errs or ui.confirm(self, self.title, tr("The register map has {0} errors (status bar). Save it {1} anyway? HDL can only be generated once the errors are fixed.").format(len(errs), where), ok=tr("Save"))
 
     def _set_name(self, name):
         """The name chosen in a save dialog is the IP's name."""
@@ -2082,7 +2092,7 @@ class RegMapEditorPage(ToolPage):
 
     def _save_project(self, name, ask=False):
         """Store the register map as a project IP definition (instances in the address map follow it)."""
-        if not self._errors_ok("projeye"):
+        if not self._errors_ok(tr("to the project")):
             return False
         old = self.origin[1] if self.origin and self.origin[0] == "project" else None
         if old and not self.ctx.project.get_ip(old):
@@ -2100,7 +2110,7 @@ class RegMapEditorPage(ToolPage):
         self.origin = ("project", name)
         self._set_clean()
         self._show_origin()
-        self.status(f"{name} projede {'güncellendi' if replaced else 'eklendi'}"
+        self.status(tr("{0} {1} in the project").format(name, tr("updated") if replaced else tr("added"))
                     + (f" ({old} → {name})" if old and old != name else ""))
         return True
 
@@ -2109,14 +2119,14 @@ class RegMapEditorPage(ToolPage):
         return self._save_project(self.spec.module, ask=True)
 
     def _save_library(self, lib, version):
-        if not self._errors_ok("kütüphaneye"):
+        if not self._errors_ok(tr("to the library")):
             return False
         spec = copy.deepcopy(self.spec)
         spec.version = version                    # the version chosen there is the IP's version
         try:
             replaced = self.ctx.store_in_library(lib, G.to_ipblock(copy.deepcopy(spec), 0), spec.to_dict())
         except OSError as exc:
-            self.error("Kütüphaneye kaydedilemedi", exc)
+            self.error(tr("Could not store in the library"), exc)
             return False
         if version != self.spec.version:
             self.spec.version = version
@@ -2126,21 +2136,20 @@ class RegMapEditorPage(ToolPage):
         self.origin, self.source_lib = ("library", lib.name), lib.name
         self._set_clean()
         self._show_origin()
-        self.status(f"{self.spec.module} {version} {lib.name} kütüphanesine "
-                    f"{'güncellendi' if replaced else 'kaydedildi'}")
+        self.status(tr("{0} {1}: {3} in the library {2}").format(self.spec.module, version, lib.name, tr("updated") if replaced else 'kaydedildi'))
         return True
 
     def _save_file(self, path):
         try:
             self.spec.save(path)
         except OSError as exc:
-            self.error("Kaydedilemedi", exc)
+            self.error(tr("Could not save"), exc)
             return False
         self.outdir = os.path.dirname(path)
         self.origin = ("file", path)
         self._set_clean()
         self._show_origin()
-        self.status(f"Kaydedildi: {path}")
+        self.status(tr("Saved: {0}").format(path))
         return True
 
     def _ensure_in_project(self):
@@ -2155,11 +2164,11 @@ class RegMapEditorPage(ToolPage):
         inst = self.ctx.add_instance(self.spec.module, source=self.tool_id)
         self._show_origin()
         self.edit_address_map(inst.name)
-        self.status(f"{inst.name} adres haritasına eklendi")
+        self.status(tr("{0} added to the address map").format(inst.name))
 
     def open_in_wrapper(self):
         w = self.open_tool("wrapper")
         if self.origin and self.origin[0] == "project" and not self.dirty:
             w.page.load_project_ip(self.origin[1])
         else:
-            w.page.load_spec(copy.deepcopy(self.spec), "Register Map Editor'dan, projeye kaydedilmemiş")
+            w.page.load_spec(copy.deepcopy(self.spec), tr("From the Register Map Editor, not saved to the project"))

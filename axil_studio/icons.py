@@ -1,5 +1,7 @@
 """Small line icons drawn from inline SVG and tinted with the current theme colour."""
 
+import os
+
 from PySide6.QtCore import QByteArray, QRectF, Qt
 from PySide6.QtGui import QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtSvg import QSvgRenderer
@@ -87,4 +89,22 @@ def icon(name, color_token="text", size=18):
     ic.addPixmap(pixmap(name, size, t[color_token]), QIcon.Mode.Normal, QIcon.State.Off)
     ic.addPixmap(pixmap(name, size, t["accent"]), QIcon.Mode.Normal, QIcon.State.On)
     ic.addPixmap(pixmap(name, size, t["muted"]), QIcon.Mode.Disabled, QIcon.State.Off)
+    return ic
+
+
+APP_ICON_SVG = os.path.join(os.path.dirname(__file__), "assets", "axil_studio.svg")
+
+
+def app_icon():
+    """The application icon (title bars, task bar, dialogs), drawn from assets/axil_studio.svg."""
+    renderer = QSvgRenderer(APP_ICON_SVG)
+    ic = QIcon()
+    for s in (16, 20, 24, 32, 40, 48, 64, 128, 256):
+        pm = QPixmap(s, s)
+        pm.fill(Qt.GlobalColor.transparent)
+        p = QPainter(pm)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        renderer.render(p, QRectF(0, 0, s, s))
+        p.end()
+        ic.addPixmap(pm)
     return ic

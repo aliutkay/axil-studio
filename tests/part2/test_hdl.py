@@ -48,13 +48,13 @@ def test_output_depends_on_the_hdl_spec_only(name):
 
 
 @pytest.mark.parametrize("change, message", [
-    (lambda d: d["slaves"][0].update(mask="0xFFFF0F00"), "bitişik"),
-    (lambda d: d["slaves"][1].update(addr=d["slaves"][0]["addr"]), "çakışıyor"),
-    (lambda d: d["slaves"][0].update(addr="0x40000010"), "hizalı"),
-    (lambda d: d.update(masters=0), "Master"),
-    (lambda d: d.update(masters=17), "Master"),
-    (lambda d: d.update(module="1bad"), "Modül adı"),
-    (lambda d: d["parameters"].update(EXTRA=1), "parametre"),
+    (lambda d: d["slaves"][0].update(mask="0xFFFF0F00"), "contiguous"),
+    (lambda d: d["slaves"][1].update(addr=d["slaves"][0]["addr"]), "overlaps"),
+    (lambda d: d["slaves"][0].update(addr="0x40000010"), "aligned"),
+    (lambda d: d.update(masters=0), "Masters"),
+    (lambda d: d.update(masters=17), "Masters"),
+    (lambda d: d.update(module="1bad"), "Module name"),
+    (lambda d: d["parameters"].update(EXTRA=1), "parameter"),
 ])
 def test_invalid_xbar_hdl_spec_is_refused(change, message):
     d = load("xb_3x4.hdlspec.json")

@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import List, Optional
 
 from .model import IPBlock, write_json
+from axil_studio.i18n import tr
 
 LIBRARY_FORMAT = "axil-ip-library"
 
@@ -61,7 +62,7 @@ class LibEntry:
 
 @dataclass
 class IPLibrary:
-    name: str = "Yeni kütüphane"
+    name: str = tr("New library")
     path: Optional[str] = None
     desc: str = ""
     entries: List[LibEntry] = field(default_factory=list)
@@ -109,6 +110,6 @@ class IPLibrary:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if data.get("format") != LIBRARY_FORMAT:
-            raise ValueError("Bu dosya bir IP kütüphanesi değil")
+            raise ValueError(tr("This file is not an IP library"))
         return IPLibrary(data.get("name") or os.path.basename(path).split(".")[0], path, data.get("desc", ""),
                          [LibEntry.from_dict(e) for e in data.get("entries", [])])
