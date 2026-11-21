@@ -20,7 +20,7 @@ from . import xbargen as X
 from .model import IPInstance, hex32, parse_int
 
 MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it (changeable per project)
-DEFAULT_START = 0x40000000
+DEFAULT_START = 0x00000000
 BRIDGE_STEM = "SBB"          # Sub-bus Bridge names: SBB_0, SBB_1 …
 BRIDGE_LABEL = "Sub-bus Bridge"
 

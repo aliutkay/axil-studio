@@ -10,6 +10,24 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.14 — kilitler başlıkta, başlangıç adresi 0
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.14 |
+| Register Map Editor | early-alpha 0.5.2 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.3.3 |
+| Interconnect Configurator | early-alpha 0.3.2 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.4 |
+| IP Library | early-alpha 0.2.1 |
+
+- Address Map Editor: alttaki *Tüm adresleri kilitle* / *Tüm boyutları kilitle* düğmeleri kalktı; yerlerine tablo
+  başlığında *Adres* ve *Boyut* yazılarının önünde yalnızca ikon (üzerine gelince açıklama, tıklayınca hepsi).
+  Boyut kilidi de boyutun önünde; kilitler dar sütunda, değerlerinin hemen yanında.
+- Varsayılan başlangıç adresi `0x00000000` (adres haritasında başlangıç adresi kaydedilmiş projeler kendi
+  değerini korur). Debug Bridge'de ham adres erişimi ve ek IP adresi de 0'dan başlar.
+
 ## early-alpha 0.1.13 — kilit düğmesi düzeltmesi
 
 | Bileşen | Sürüm |

@@ -266,7 +266,7 @@ class Project:
     libraries: List[str] = field(default_factory=list)   # IP library files used (relative to the project)
     generator: str = ""                   # program and version that wrote the file
     instances: List[IPInstance] = field(default_factory=list)   # address map, in slave port order
-    address_map: Optional[dict] = None    # Address Map Editor settings ({"start": "0x40000000"})
+    address_map: Optional[dict] = None    # Address Map Editor settings ({"start": "0x00000000"})
 
     def get_ip(self, name) -> Optional[IPBlock]:
         """IP definition by name."""

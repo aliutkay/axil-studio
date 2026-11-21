@@ -147,7 +147,7 @@ def slaves_from_project(project, min_window=0x1000):
     return addrmap.xbar_slaves(project)
 
 
-def auto_address(spec, start=0x40000000):
+def auto_address(spec, start=0x00000000):
     """Give every non-fixed slave a base address in port order: SLAVE0 first, each
     window aligned to its size, skipping the windows of fixed slaves. Returns the list of
     (port, old_base, new_base) that changed."""

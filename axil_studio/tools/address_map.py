@@ -29,7 +29,8 @@ from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # tree columns
-C_PORT, C_NAME, C_IP, C_ALOCK, C_ADDR, C_SIZE, C_SLOCK, C_ACT = range(8)
+C_PORT, C_NAME, C_IP, C_ALOCK, C_ADDR, C_SLOCK, C_SIZE, C_ACT = range(8)
+LOCK_W = 26                              # lock columns: the lock sits right next to its value
 ROLE = Qt.ItemDataRole.UserRole          # instance name ("" for a bridge's own-window row)
 BRIDGE = A.BRIDGE_LABEL
 
@@ -281,7 +282,7 @@ class AddressMapPage(ToolPage):
                    "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
                    "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.3.2"
+    version = "0.3.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -343,7 +344,11 @@ class AddressMapPage(ToolPage):
         self.map.slaveActivated.connect(lambda n: self.edit_slave(self.proj.get_instance(n)))
         right.lay.addWidget(self.map)
         self.tree = AddressTree()
-        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "", "Adres", "Boyut", "", ""])
+        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "", "Adres", "", "Boyut", ""])
+        hdr = self.tree.header()
+        hdr.setSectionsClickable(True)
+        hdr.sectionClicked.connect(self._header_clicked)
+        hdr.setMinimumSectionSize(LOCK_W)         # the lock columns stay narrow: lock right next to its value
         self.tree.setUniformRowHeights(True)
         self.tree.setIndentation(18)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -370,14 +375,6 @@ class AddressMapPage(ToolPage):
         sbar.addStretch(1)
         sbar.addWidget(ui.button("Adrese göre sırala", None, "ghost", self.sort_slaves,
                                  "Her bus'taki listeyi (port numaralarını) adres sırasına diz"))
-        self.alock_btn = ui.button("Tüm adresleri kilitle", "lock", "ghost", self.toggle_all_addr_locks,
-                                   "Tüm adres kilitlerini kapat / aç (kilitli adres sabit kalır, açık olan "
-                                   "otomatik verilir)")
-        self.slock_btn = ui.button("Tüm boyutları kilitle", "lock", "ghost", self.toggle_all_size_locks,
-                                   "Tüm pencere boyutu kilitlerini kapat / aç (kilitli boyut sabit kalır, açık olan "
-                                   "varsayılanı izler ya da içerikle büyür)")
-        sbar.addWidget(self.alock_btn)
-        sbar.addWidget(self.slock_btn)
         sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), "Bus içinde yukarı taşı"))
         sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), "Bus içinde aşağı taşı"))
         right.lay.addLayout(sbar)
@@ -470,17 +467,18 @@ class AddressMapPage(ToolPage):
         self.tree.setColumnWidth(C_SIZE, 140)
         for c in (C_ALOCK, C_SLOCK):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
-            self.tree.setColumnWidth(c, 30)
+            self.tree.setColumnWidth(c, LOCK_W)
         ui.actions_column(hdr, C_ACT)
         insts = self.proj.all_instances()
         all_a = bool(insts) and all(i.fixed for i in insts)
         all_s = bool(insts) and all(i.window for i in insts)
-        self.alock_btn.setText("Tüm adres kilitlerini aç" if all_a else "Tüm adresleri kilitle")
-        self.alock_btn.setProperty("iconName", "unlock" if all_a else "lock")
-        self.alock_btn.setIcon(icons.icon("unlock" if all_a else "lock", "text", 16))
-        self.slock_btn.setText("Tüm boyut kilitlerini aç" if all_s else "Tüm boyutları kilitle")
-        self.slock_btn.setProperty("iconName", "unlock" if all_s else "lock")
-        self.slock_btn.setIcon(icons.icon("unlock" if all_s else "lock", "text", 16))
+        head = self.tree.headerItem()
+        for col, on, what, more in ((C_ALOCK, all_a, "adres", "kilitli adres sabit kalır, açık olan otomatik verilir"),
+                                    (C_SLOCK, all_s, "boyut", "kilitli boyut sabit kalır, açık olan varsayılanı "
+                                                              "izler ya da içerikle büyür")):
+            head.setIcon(col, icons.icon("lock" if on else "unlock", "accent" if on else "muted", 14))
+            head.setToolTip(col, (f"Tıkla: tüm {what} kilitlerini aç" if on else f"Tıkla: tüm {what}ları kilitle")
+                            + f" ({more})")
         if sel in self._items:
             self.tree.setCurrentItem(self._items[sel])
         self._loading = False
@@ -506,8 +504,8 @@ class AddressMapPage(ToolPage):
         sl = A.xbar_slaves(self.proj, bridge)
         bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
         if bridge is not None and bridge.self_window:
-            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, "", hex32(bridge.base),
-                                   size_text(bridge.self_window), "", ""])
+            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, "", hex32(bridge.base), "",
+                                   size_text(bridge.self_window), ""])
             own.setData(0, ROLE, "")
             own.setFlags(Qt.ItemFlag.ItemIsEnabled)
             own.setFont(C_ADDR, mono)
@@ -582,7 +580,7 @@ class AddressMapPage(ToolPage):
         b = QToolButton()
         b.setAutoRaise(True)
         b.setObjectName("RowAction")
-        b.setFixedSize(26, 22)
+        b.setFixedSize(22, 22)
         b.setCursor(Qt.CursorShape.PointingHandCursor)
         b.setIcon(icons.icon("lock", "accent", 15) if locked else ui.row_icon("unlock", "text"))
         b.setToolTip(tip)
@@ -591,7 +589,7 @@ class AddressMapPage(ToolPage):
         box.setObjectName("RowActions")
         lay = QHBoxLayout(box)
         lay.setContentsMargins(0, 0, 0, 0)
-        lay.addWidget(b, 0, Qt.AlignmentFlag.AlignCenter)
+        lay.addWidget(b, 0, Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)   # next to its value
         return box
 
     def _size_combo(self, inst, s):
@@ -799,6 +797,12 @@ class AddressMapPage(ToolPage):
         else:
             w = A.window_of(self.proj, inst)
             self._guarded(lambda: setattr(inst, "window", w), inst)
+
+    def _header_clicked(self, col):
+        if col == C_ALOCK:
+            self.toggle_all_addr_locks()
+        elif col == C_SLOCK:
+            self.toggle_all_size_locks()
 
     def toggle_all_addr_locks(self):
         insts = self.proj.all_instances()

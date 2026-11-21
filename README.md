@@ -196,8 +196,8 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - **Varsayılan pencere** (başlangıç adresinin altında): boyutu elle seçilmemiş her slave'in adres aralığı, 4 KB ile
   başlar. **Boyut** hücresinden seçilen boyut ya da boyutun yanındaki **kilit düğmesi** o slave'in
   boyutunu kilitler, varsayılan değişse de değişmez; kilit açılınca (ya da *varsayılan* seçilince) yeniden bu ayarı
-  izler. Altta **Tüm adresleri kilitle / Tüm adres kilitlerini aç** ve **Tüm boyutları kilitle / Tüm boyut
-  kilitlerini aç** düğmeleri hepsini birden değiştirir. IP pencereden büyükse pencere kendiliğinden büyür.
+  izler. Tablo başlığında *Adres* ve *Boyut* yazılarının önündeki kilit ikonları tüm adres / tüm boyut
+  kilitlerini birden kapatır ya da açar (üzerine gelince açıklar). IP pencereden büyükse pencere kendiliğinden büyür.
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
 - **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (bridge içindeki IP'lerin
   bus'ı Özet sayfasında yazar).

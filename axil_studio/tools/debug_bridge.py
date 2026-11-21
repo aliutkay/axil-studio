@@ -68,7 +68,7 @@ class DebugBridgePage(ToolPage):
         self.read_value = None        # last value read from the board
         self.staged = None            # value that "Yaz" will write
         self.last_written = {}        # address -> value (base for write-only registers)
-        self.raw = raw_ip(0x40000000)
+        self.raw = raw_ip(0x00000000)
         self.group = None             # "project" | "extra" | "raw"
         self.reads = {}               # address -> (value, "HH:MM:SS", source): last value read, any screen
         self.watch = []               # live watch rows: dict(key, value, changed, read, count, flash)
@@ -488,7 +488,7 @@ class DebugBridgePage(ToolPage):
         w = 0x1000
         while w < spec.span:
             w <<= 1
-        base = BaseDialog.ask(self, f"{spec.module}: base adres", 0x40000000, w,
+        base = BaseDialog.ask(self, f"{spec.module}: base adres", 0x00000000, w,
                               "IP'nin donanımdaki adresi.")
         if base is None:
             return
@@ -532,7 +532,7 @@ class DebugBridgePage(ToolPage):
         span = max((r.offset for r in e.ip.registers), default=0) + 4
         while w < span:
             w <<= 1
-        base = BaseDialog.ask(self, f"{e.name}: base adres", 0x40000000, w, "IP'nin donanımdaki adresi.")
+        base = BaseDialog.ask(self, f"{e.name}: base adres", 0x00000000, w, "IP'nin donanımdaki adresi.")
         if base is None:
             return
         ip = e.definition()
