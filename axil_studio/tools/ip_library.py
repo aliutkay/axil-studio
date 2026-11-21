@@ -16,7 +16,8 @@ import os
 from PySide6.QtCore import Qt, Signal
 from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (QDialog, QDialogButtonBox, QFileDialog, QHBoxLayout, QHeaderView, QInputDialog,
-                               QLineEdit, QMessageBox, QSplitter, QTreeWidget, QTreeWidgetItem, QVBoxLayout)
+                               QLineEdit, QMessageBox, QSplitter, QTabWidget, QTreeWidget, QTreeWidgetItem,
+                               QVBoxLayout, QWidget)
 
 from axil_studio.core import axilgen as G
 from axil_studio import ROOT, theme, ui
@@ -37,17 +38,16 @@ class IPLibraryPage(ToolPage):
     description = ("Projedeki IP'leri ve adres haritasındaki örneklerini listeler; birden fazla IP kütüphanesi "
                    "(.axlib.json) açılır, IP'ler projeye alınır ya da projeden kütüphaneye kaydedilir.")
     icon_name = "library"
-    version = "0.2.0"
+    version = "0.2.1"
 
     picked = Signal()          # picker mode: an IP was double-clicked
 
     def __init__(self, ctx, parent=None, picker=False):
         self.picker = picker
         super().__init__(ctx, parent)
-        if picker:
-            self.header.hide()
+        if picker:      # inside the picker dialog: no outer margins; the bar keeps the library commands
             self.outer.setContentsMargins(0, 0, 0, 0)
-        bar = ui.ActionBar()
+        bar = self.header       # the tool's commands sit in the top bar
         bar.add("Yeni kütüphane…", "plus", self.new_library, "Yeni bir .axlib.json dosyası oluştur")
         bar.add("Kütüphane aç…", "folder", self.open_library)
         self.close_btn = bar.add("Kütüphaneyi kapat", None, self.close_library, "Listeden çıkar (dosya silinmez)")
@@ -56,8 +56,6 @@ class IPLibraryPage(ToolPage):
                 ".regspec.json dosyasını seçili kütüphaneye ekle")
         bar.add("İçe aktar: proje dosyası…", "file", self.import_project,
                 "Başka bir .axproj.json dosyasındaki IP'leri seçili kütüphaneye ekle")
-        bar.stretch()
-        self.body.addWidget(bar)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -631,17 +629,17 @@ def _new_library_file(parent, ctx):
         return None
 
 
-class LibrarySaveDialog(QDialog):
-    """Where an IP goes in the libraries: every open library with its IPs and their versions,
-    the version to store, and what will happen (new IP / new version / overwrite)."""
+class LibraryPane(QWidget):
+    """Where an IP goes in the libraries: every open library with its IPs and their versions, the
+    version to store, and what will happen (new IP / new version / overwrite)."""
 
-    def __init__(self, parent, ctx, ip_name, version, prefer=""):
-        super().__init__(parent)
+    changed = Signal()
+
+    def __init__(self, ctx, ip_name, version, prefer=""):
+        super().__init__()
         self.ctx, self.ip_name = ctx, ip_name
-        self.setWindowTitle(f"Kütüphaneye kaydet: {ip_name}")
-        self.resize(760, 560)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
         lay.addWidget(ui.label(f"{ip_name} IP'sinin kaydedileceği kütüphaneyi seç. Kütüphanelerdeki IP'ler ve "
                                "sürümleri listelenir; bu IP'nin kayıtları vurgulanır.", "muted", wrap=True))
@@ -668,13 +666,6 @@ class LibrarySaveDialog(QDialog):
         lay.addLayout(row)
         self.info = ui.label("", None, wrap=True)
         lay.addWidget(self.info)
-        box = QDialogButtonBox()
-        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
-        box.accepted.connect(self.accept)
-        box.rejected.connect(self.reject)
-        lay.addWidget(box)
-        self.result_value = None
         # preselect: the library that already holds this IP, then `prefer`, then the first one
         holder = next((lib for lib in ctx.libraries if lib.get(ip_name)), None) \
             or next((lib for lib in ctx.libraries if lib.name == prefer), None)
@@ -721,9 +712,18 @@ class LibrarySaveDialog(QDialog):
         it = self.tree.currentItem()
         return it.data(0, ROLE) if it else None
 
+    def version(self):
+        return self.version_ed.text().strip()
+
+    def valid(self):
+        return self.library() is not None and bool(G.VERSION_RE.match(self.version()))
+
+    def overwrites(self):
+        lib = self.library()
+        return bool(lib and lib.get(self.ip_name, self.version()))
+
     def _update(self):
-        lib, v = self.library(), self.version_ed.text().strip()
-        ok = lib is not None and bool(G.VERSION_RE.match(v))
+        lib, v = self.library(), self.version()
         t = theme.manager().tokens
         if lib is None:
             text, color = "Bir kütüphane seç ya da yeni bir kütüphane oluştur.", t["muted"]
@@ -740,8 +740,7 @@ class LibrarySaveDialog(QDialog):
                 text, color = f"{lib.name}: {self.ip_name} yeni IP olarak eklenecek ({v}).", t["success"]
         self.info.setText(text)
         self.info.setStyleSheet(f"color: {color};")
-        self.ok.setEnabled(ok)
-        self.ok.setText("Üzerine yaz" if ok and v in [e.version for e in lib.versions(self.ip_name)] else "Kaydet")
+        self.changed.emit()
 
     def _new_library(self):
         lib = _new_library_file(self, self.ctx)
@@ -759,29 +758,18 @@ class LibrarySaveDialog(QDialog):
             return QMessageBox.critical(self, "Açılamadı", str(exc))
         self._fill(lib)
 
-    def accept(self):
-        if self.library() is None or not G.VERSION_RE.match(self.version_ed.text().strip()):
-            return
-        self.result_value = (self.library(), self.version_ed.text().strip())
-        super().accept()
 
-    @classmethod
-    def ask(cls, parent, ctx, ip_name, version, prefer=""):
-        d = cls(parent, ctx, ip_name, version, prefer)
-        return d.result_value if d.exec() == QDialog.DialogCode.Accepted else None
-
-
-class ProjectSaveDialog(QDialog):
+class ProjectPane(QWidget):
     """Saving a register map into the project: every IP of the project is listed, the name decides
     whether the map is new, updates an IP or replaces another one."""
 
-    def __init__(self, parent, ctx, name, current=None):
-        super().__init__(parent)
+    changed = Signal()
+
+    def __init__(self, ctx, name, current=None):
+        super().__init__()
         self.ctx, self.current = ctx, current       # current: the project IP being edited (or None)
-        self.setWindowTitle("Projeye kaydet")
-        self.resize(700, 500)
         lay = QVBoxLayout(self)
-        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(10)
         lay.addWidget(ui.label("Projedeki IP'ler. Register haritası aşağıdaki adla kaydedilir; listeden bir IP "
                                "seçmek adını alır (o IP'nin haritası bununla değiştirilir).", "muted", wrap=True))
@@ -821,18 +809,20 @@ class ProjectSaveDialog(QDialog):
         lay.addLayout(row)
         self.info = ui.label("", None, wrap=True)
         lay.addWidget(self.info)
-        box = QDialogButtonBox()
-        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
-        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
-        box.accepted.connect(self.accept)
-        box.rejected.connect(self.reject)
-        lay.addWidget(box)
-        self.result_value = None
         self._update()
+
+    def name(self):
+        return self.name_ed.text().strip()
+
+    def valid(self):
+        return bool(self.name())
+
+    def overwrites(self):
+        return self.ctx.project.get_ip(self.name()) is not None and self.name() != self.current
 
     def _update(self):
         t = theme.manager().tokens
-        name = self.name_ed.text().strip()
+        name = self.name()
         proj = self.ctx.project
         other = proj.get_ip(name)
         if not name:
@@ -850,15 +840,151 @@ class ProjectSaveDialog(QDialog):
             text, color = f"“{name}” projeye yeni IP olarak eklenecek.", t["success"]
         self.info.setText(text)
         self.info.setStyleSheet(f"color: {color};")
-        self.ok.setEnabled(bool(name))
-        self.ok.setText("Değiştir" if other is not None and name != self.current else "Kaydet")
+        self.changed.emit()
+
+
+class FilePane(QWidget):
+    """Export the register map as a .regspec.json file."""
+
+    changed = Signal()
+
+    def __init__(self, path):
+        super().__init__()
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(10)
+        lay.addWidget(ui.label("Register haritası bir register spesifikasyonu dosyası (.regspec.json) olarak yazılır; "
+                               "başka bir projeye ya da komut satırına (axilgen) taşımak için.", "muted", wrap=True))
+        row = QHBoxLayout()
+        self.path_ed = QLineEdit(path)
+        self.path_ed.setProperty("mono", "true")
+        self.path_ed.textChanged.connect(lambda *_: self._update())
+        row.addWidget(self.path_ed, 1)
+        row.addWidget(ui.button("Gözat…", "folder", "ghost", self._browse))
+        lay.addLayout(row)
+        self.info = ui.label("", None, wrap=True)
+        lay.addWidget(self.info)
+        lay.addStretch(1)
+        self._update()
+
+    def path(self):
+        p = self.path_ed.text().strip()
+        return p if not p or p.endswith(".json") else p + ".regspec.json"
+
+    def valid(self):
+        p = self.path()
+        return bool(p) and os.path.isdir(os.path.dirname(os.path.abspath(p)))
+
+    def overwrites(self):
+        return bool(self.path()) and os.path.exists(self.path())
+
+    def _browse(self):
+        path, _ = QFileDialog.getSaveFileName(self, "Register spesifikasyonu", self.path() or ROOT,
+                                              "Register spesifikasyonu (*.regspec.json);;JSON (*.json)")
+        if path:
+            self.path_ed.setText(path)
+
+    def _update(self):
+        t = theme.manager().tokens
+        if not self.path():
+            text, color = "Dosya yolu yaz ya da Gözat.", t["muted"]
+        elif not self.valid():
+            text, color = "Klasör bulunamadı.", t["danger"]
+        elif self.overwrites():
+            text, color = "Dosya var, üzerine yazılacak.", t["warning"]
+        else:
+            text, color = "Yeni dosya olarak yazılacak.", t["success"]
+        self.info.setText(text)
+        self.info.setStyleSheet(f"color: {color};")
+        self.changed.emit()
+
+
+class _PaneDialog(QDialog):
+    """A dialog around one or more save panes (tabs); OK reflects the current pane."""
+
+    def __init__(self, parent, title, panes, select=0):
+        super().__init__(parent)
+        self.setWindowTitle(title)
+        self.resize(780, 560)
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(18, 16, 18, 14)
+        lay.setSpacing(10)
+        self.panes = panes                      # [(key, label, pane)]
+        if len(panes) == 1:
+            lay.addWidget(panes[0][2], 1)
+            self.tabs = None
+        else:
+            self.tabs = QTabWidget()
+            for _key, label, pane in panes:
+                w = QWidget()
+                wl = QVBoxLayout(w)
+                wl.setContentsMargins(12, 12, 12, 12)
+                wl.addWidget(pane)
+                self.tabs.addTab(w, label)
+            self.tabs.setCurrentIndex(select)
+            self.tabs.currentChanged.connect(lambda *_: self._update())
+            lay.addWidget(self.tabs, 1)
+        box = QDialogButtonBox()
+        self.ok = box.addButton("Kaydet", QDialogButtonBox.ButtonRole.AcceptRole)
+        box.addButton("Vazgeç", QDialogButtonBox.ButtonRole.RejectRole)
+        box.accepted.connect(self.accept)
+        box.rejected.connect(self.reject)
+        lay.addWidget(box)
+        for _k, _l, pane in panes:
+            pane.changed.connect(self._update)
+        self.result_value = None
+        self._update()
+
+    def current(self):
+        return self.panes[self.tabs.currentIndex() if self.tabs else 0]
+
+    def _update(self):
+        _key, _label, pane = self.current()
+        self.ok.setEnabled(pane.valid())
+        self.ok.setText("Üzerine yaz" if pane.valid() and pane.overwrites() else "Kaydet")
 
     def accept(self):
-        if self.name_ed.text().strip():
-            self.result_value = self.name_ed.text().strip()
-            super().accept()
+        key, _label, pane = self.current()
+        if not pane.valid():
+            return
+        if key == "project":
+            self.result_value = ("project", pane.name())
+        elif key == "library":
+            self.result_value = ("library", pane.library(), pane.version())
+        else:
+            self.result_value = ("file", pane.path())
+        super().accept()
 
-    @classmethod
-    def ask(cls, parent, ctx, name, current=None):
-        d = cls(parent, ctx, name, current)
-        return d.result_value if d.exec() == QDialog.DialogCode.Accepted else None
+    def ask(self):
+        return self.result_value if self.exec() == QDialog.DialogCode.Accepted else None
+
+
+class LibrarySaveDialog:
+    @staticmethod
+    def ask(parent, ctx, ip_name, version, prefer=""):
+        """(library, version) or None."""
+        r = _PaneDialog(parent, f"Kütüphaneye kaydet: {ip_name}",
+                        [("library", "Kütüphane", LibraryPane(ctx, ip_name, version, prefer))]).ask()
+        return (r[1], r[2]) if r else None
+
+
+class ProjectSaveDialog:
+    @staticmethod
+    def ask(parent, ctx, name, current=None):
+        """The project IP name or None."""
+        r = _PaneDialog(parent, "Projeye kaydet", [("project", "Proje", ProjectPane(ctx, name, current))]).ask()
+        return r[1] if r else None
+
+
+class SaveAsDialog:
+    """"Farklı kaydet" of a register map: the project, an IP library or a .regspec.json file.
+    Returns ("project", name) | ("library", library, version) | ("file", path) | None."""
+
+    ORDER = ("project", "library", "file")
+
+    @staticmethod
+    def ask(parent, ctx, name, version, current_project=None, prefer_lib="", path="", select="project"):
+        panes = [("project", "Proje", ProjectPane(ctx, name, current_project)),
+                 ("library", "Kütüphane", LibraryPane(ctx, name, version, prefer_lib)),
+                 ("file", "Dosya (.regspec.json)", FilePane(path))]
+        return _PaneDialog(parent, f"Farklı kaydet: {name}", panes, SaveAsDialog.ORDER.index(select)).ask()

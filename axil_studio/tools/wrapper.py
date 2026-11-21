@@ -51,7 +51,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.3"
+    version = "0.2.4"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -63,12 +63,12 @@ class WrapperPage(ToolPage):
         self._jobs = ui.Async(self)
         self.has_iverilog = bool(shutil.which("iverilog"))
 
-        self.gen_btn = self.header.add(ui.button("Üret…", "play", "primary", self.generate,
+        self.gen_btn = self.header.add_right(ui.button("Üret…", "play", "primary", self.generate,
                                                  "Wrapper, testbench, header, doküman ve Excel'i üret (Ctrl+G)"))
 
-        bar = ui.ActionBar()
+        bar = self.header       # the tool's commands sit in the top bar
         bar.add("IP seç…", "library", self.choose_ip, "IP Library'den projedeki ya da bir kütüphanedeki IP'yi seç")
-        bar.add("Dosyadan aç…", "folder", self.open_spec, ".regspec.json dosyası")
+        bar.add("İçe aktar…", "folder", self.open_spec, "Bir .regspec.json dosyasından HDL üret")
         bar.sep()
         self.edit_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regmap,
                                 "Register Map Editor'da aç")
@@ -80,8 +80,6 @@ class WrapperPage(ToolPage):
                               else "iverilog bulunamadı", self.has_iverilog)
         bar.add("Hazır IP için HDL Designer wrapper'ı…", "wrapper", self.pack_existing,
                 "Mevcut bir AXI4-Lite modülünün üstüne paketli REQ/RSP portlu <modül>_pk.v bloğu üretir")
-        bar.stretch()
-        self.body.addWidget(bar)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -169,7 +167,7 @@ class WrapperPage(ToolPage):
             m.addAction(a)
             return a
         act("IP seç (IP Library)…", self.choose_ip, "Ctrl+Shift+O")
-        act("Dosyadan aç…", self.open_spec)
+        act("İçe aktar (.regspec.json)…", self.open_spec)
         act("Register haritasını düzenle", self.edit_regmap)
         m.addSeparator()
         act("Üret…", self.generate, "Ctrl+G")

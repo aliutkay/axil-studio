@@ -3,7 +3,7 @@
 import concurrent.futures
 
 from PySide6.QtCore import QObject, QPoint, Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QToolButton,
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QToolBar, QToolButton,
                                QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
 from axil_studio import icons, theme
@@ -82,42 +82,6 @@ class Pill(QLabel):
         theme.repolish(self)
 
 
-class PageHeader(QWidget):
-    """Title + subtitle on the left, action buttons on the right."""
-
-    def __init__(self, title, subtitle="", icon_name=None):
-        super().__init__()
-        lay = QHBoxLayout(self)
-        lay.setContentsMargins(0, 0, 0, 0)
-        lay.setSpacing(14)
-        self.icon_name = icon_name
-        self.tile = None
-        if icon_name:
-            self.tile = QLabel()
-            self.tile.setObjectName("IconTile")
-            self.tile.setFixedSize(44, 44)
-            self.tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
-            lay.addWidget(self.tile, 0, Qt.AlignmentFlag.AlignTop)
-        col = QVBoxLayout()
-        col.setSpacing(2)
-        col.addWidget(label(title, "title"))
-        if subtitle:
-            col.addWidget(label(subtitle, "subtitle", wrap=True))
-        lay.addLayout(col, 1)
-        self.actions = QHBoxLayout()
-        self.actions.setSpacing(8)
-        lay.addLayout(self.actions)
-        self.retint()
-
-    def retint(self):
-        if self.tile:
-            self.tile.setPixmap(icons.pixmap(self.icon_name, 24, theme.manager().tokens["accent"]))
-
-    def add(self, widget):
-        self.actions.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
-        return widget
-
-
 class ActionBar(QFrame):
     """Row of flat command buttons under a page header."""
 
@@ -142,6 +106,76 @@ class ActionBar(QFrame):
 
     def stretch(self):
         self.lay.addStretch(1)
+
+
+class ToolHeader(ActionBar):
+    """The single bar on top of a tool: icon, name and version on the left, the tool's commands right
+    after them, status pills and the main action on the right. Leaves the window's height to the work."""
+
+    def __init__(self, title, icon_name=None, version_label="", tip=""):
+        super().__init__()
+        self.icon_name = icon_name
+        self.lay.setContentsMargins(10, 4, 8, 4)
+        self.tile = None
+        if icon_name:
+            self.tile = QLabel()
+            self.tile.setObjectName("IconTile")
+            self.tile.setFixedSize(30, 30)
+            self.tile.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.lay.addWidget(self.tile)
+            self.lay.addSpacing(6)
+        name = label(title, "cardTitle")
+        if tip:
+            name.setToolTip(tip)
+        self.lay.addWidget(name)
+        if version_label:
+            self.lay.addSpacing(6)
+            self.lay.addWidget(Pill(version_label))
+        self.lay.addSpacing(10)
+        # the commands live in a tool bar: when the window is narrow the ones that do not fit move
+        # into its » menu instead of forcing the window wider
+        self.cmds = QToolBar()
+        self.cmds.setObjectName("HeaderCommands")
+        self.cmds.setMovable(False)
+        self.cmds.setFloatable(False)
+        self.cmds.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
+        self.lay.addWidget(self.cmds, 1)
+        self.right = QHBoxLayout()
+        self.right.setSpacing(8)
+        self.lay.addLayout(self.right)
+        self._first_sep = True
+        self.retint()
+
+    def retint(self):
+        if self.tile:
+            self.tile.setPixmap(icons.pixmap(self.icon_name, 18, theme.manager().tokens["accent"]))
+
+    def add(self, text, icon=None, slot=None, tip=None, enabled=True):
+        if not self.cmds.actions():
+            self.cmds.addSeparator()           # a divider between the name and the first command
+        b = button(text, icon, None, slot, tip)
+        b.setEnabled(enabled)
+        self.cmds.addWidget(b)
+        return b
+
+    def sep(self):
+        self.cmds.addSeparator()
+
+    def resizeEvent(self, ev):
+        super().resizeEvent(ev)
+        # Qt's overflow button of the commands bar: give it a visible »
+        ext = self.cmds.findChild(QToolButton, "qt_toolbar_ext_button")
+        if ext is not None and ext.property("axilMore") is None:
+            ext.setProperty("axilMore", True)
+            ext.setIcon(icons.icon("more", "accent", 14))
+            ext.setToolTip("Sığmayan komutlar")
+
+    def stretch(self):
+        pass                                    # the bar has its own stretch before the right side
+
+    def add_right(self, widget):
+        self.right.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
+        return widget
 
 
 class Divider(QFrame):
@@ -183,7 +217,8 @@ class IssueList(QToolButton):
             text = text[:self.MAX_CHARS - 1] + "…"
         self.setText(text)
         self.setIcon(icon)
-        self.setStyleSheet(f"QToolButton {{ color: {color}; border: none; padding: 0 6px; }}")
+        self.setStyleSheet(f"QToolButton {{ color: {color}; border: none; background: transparent; padding: 0 6px; }}"
+                           f"QToolButton:hover {{ background: {t['hover']}; }}")
 
     def _show_list(self):
         if not self._issues:

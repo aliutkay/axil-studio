@@ -13,7 +13,9 @@ görünüm, açık/koyu tema):
 | **UART-to-AXI Debug Bridge** | Hexbus üzerinden karttaki registerları okur/yazar, bit alanlarını çözer |
 | **IP Library** | Projedeki tüm IP'leri gösterir; IP kütüphaneleri oluşturur, kütüphanelerden projeye IP alır |
 
-Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). IP Library, Proje kartındaki
+Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
+bir bar vardır: solda ikon, ad ve sürüm, hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
+ve ana düğme. Listelerde iki satır rengi de beyazdan farklıdır, kartların zemininden ayrılır. IP Library, Proje kartındaki
 **IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
 yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca liste). Araçlar aynı projeyi
 (`.axproj.json`) paylaşır ve birbirini açar:
@@ -57,15 +59,18 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 - Her alanın bir **veri tipi** vardır (`axil_studio/core/numfmt.py`): hex, unsigned, signed (2's complement), binary, octal,
   bool, ASCII, unsigned/signed fixed point (Q, kesir biti seçilir) ya da enum (değer anlamı). Reset ve değerler
   bu tipte gösterilir/girilir; Debug Bridge alanı varsayılan olarak bu tipte gösterir.
-- **Projeye kaydet** (Ctrl+Shift+S) projedeki tüm IP'leri gösteren bir pencere açar; ada göre yeni IP, güncelleme,
-  yeniden adlandırma ya da başka bir IP'nin yerine geçme açıkça yazılır; **IP aç** IP Library'den
-  bir IP açar. `.regspec.json` dosyasına kaydedip açmak da mümkündür. **Kütüphaneye kaydet** her zaman kütüphane seçme
-  penceresini açar: açık kütüphaneler, içlerindeki IP'ler ve sürümleri; sürüm orada değiştirilebilir, yeni kütüphane
-  oluşturulabilir ya da açılabilir (yeni IP / yeni sürüm / üzerine yazılacak bilgisi gösterilir).
+- **Kaydet** (Ctrl+Shift+S) register haritasını son kaydedildiği yere yazar: projeye, bir IP kütüphanesine ya da bir
+  `.regspec.json` dosyasına (üst bardaki etiket yeri gösterir, ● kaydedilmemiş değişiklik). İlk kayıtta ya da
+  **Farklı kaydet…** ile yer seçilir: *Proje* sekmesi projedeki tüm IP'leri, *Kütüphane* sekmesi kütüphaneleri, içlerindeki
+  IP'leri ve sürümleri, *Dosya* sekmesi dosya yolunu gösterir; ne olacağı (yeni / güncelleme / üzerine yazma) yazılır ve
+  seçilen yer sonraki Kaydet'lerde kullanılır. Kütüphaneden açılan IP'de Kaydet o kütüphaneye yazar. **İçe aktar…** bir
+  `.regspec.json` açar. (Eski *Projeye kaydet* / *Kütüphaneye kaydet* / *Dosyaya kaydet* düğmeleri bunlarla değişti.)
+- **IP aç** IP Library'den bir IP açar.
 - **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
-- **Bit alanları** sekmesinin altında **yerleştirilmemiş bit alanları** bölümü ve **Port içe aktar…** düğmesi vardır
-  (Ctrl+I). Sol panelde yalnızca registerlar listelenir.
+- Sağda üstte seçili registerın kartı (bit haritası ve bit alanları), altında ayrı, kesik çizgili ve renkli zeminli
+  **Yerleştirilmemiş bit alanları** kartı ve **Port içe aktar…** düğmesi (Ctrl+I). Sol panelde yalnızca registerlar
+  listelenir. Tüm listelerde düzenleme düğmeleri solda, *Sil* en sağdadır.
 - **Port içe aktar…**: register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
   ya da VHDL olarak yapıştırılır (modülün / entity'nin tamamı, yalnızca port listesi ya da port satırları; dil
   kendiliğinden anlaşılır; modülün içindeki `function` / `task` bildirimleri port sayılmaz). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
@@ -77,11 +82,14 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 - Seçilen portlar **yerleştirilmemiş bit alanları** listesine eklenir; içe aktarma istenildiği kadar, blok blok
   tekrarlanabilir. Alanlar bit haritasına sürüklenir (yeşil önizleme: yer uygun, kırmızı: dolu; birden çok alan yan
   yana yerleşir), bir registerın üstüne bırakılınca ilk boş bitlere, register listesinin boş alanına bırakılınca
-  yeni bir registera girer. *Yerleştir* / çift tık seçili registera, *Yeni registera* yeni registera koyar; *Sil* /
-  Delete istenmeyenleri siler.
-- Yerleşmiş bir alan bit haritasında **sürüklenerek taşınır** (tutulan bit imlecin altında kalır; önizleme yeşilse
-  yer boştur, kırmızıysa bırakılmaz). Yerleştirilmemiş listesine sürüklenince ya da sağ tık → *Yerleştirilmemişlere
-  geri al* ile registerdan çıkıp listeye döner.
+  yeni registerlara girer; bit alanı listesine de bırakılabilir. Düğmeler ne yapacaklarını yazar (ör. *5 bit alanını CTRL
+  registerındaki boş bitlere yerleştir*, *5 bit alanını yeni registera yerleştir*). Yeni registera yerleştirmede bir
+  registera sığmayanlar için sırayla yenileri açılır; tek alanlı register alanın adını alır (32 bitlik bir alan kendi
+  adlı registerına), diğerleri `REG<n>` olur. *Sil* / Delete istenmeyenleri siler.
+- Yerleşmiş bir alan bit haritasından ya da bit alanı listesinden **sürüklenir**: bit haritasında başka bitlere
+  (önizleme yeşilse yer boştur, kırmızıysa bırakılmaz), register listesinde başka bir registera (yer yoksa yerinde
+  kalır) ya da listenin boş alanına (yeni register), yerleştirilmemiş kartına (registerdan çıkar). Sağ tık →
+  *Yerleştirilmemişlere geri al* da aynısını yapar.
   Yerleştirilmemiş alanlar IP ile birlikte saklanır (proje, `.regspec.json`, kütüphane) ama HDL'e girmez.
 - Kısayollar: Ctrl+R yeni register, Ctrl+F yeni alan, Ctrl+I port içe aktar, Enter düzenle, Delete sil.
 

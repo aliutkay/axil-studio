@@ -195,13 +195,13 @@ class AddressMapPage(ToolPage):
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
                    "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.2.1"
+    version = "0.2.2"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         self._loading = False
 
-        bar = ui.ActionBar()
+        bar = self.header       # the tool's commands sit in the top bar
         self.regs_btn = bar.add("Register haritasını düzenle", "regmap", self.edit_regs,
                                 "Seçili IP'nin register haritasını Register Map Editor'da aç")
         bar.add("Excel'e aktar…", "file", self.export_xlsx, "Tüm adres haritası ve registerlar (.xlsx)",
@@ -209,8 +209,6 @@ class AddressMapPage(ToolPage):
         bar.sep()
         bar.add("Interconnect Configurator", "interconnect", lambda: self.open_tool("interconnect"),
                 "Bu adres haritasıyla crossbar'ı yapılandır ve üret")
-        bar.stretch()
-        self.body.addWidget(bar)
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)

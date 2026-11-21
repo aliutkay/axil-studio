@@ -10,6 +10,29 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.9 — tek üst bar, evrensel kayıt, bit alanı panelleri
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.9 |
+| Register Map Editor | early-alpha 0.5.0 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.2.2 |
+| Interconnect Configurator | early-alpha 0.2.4 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.3 |
+| IP Library | early-alpha 0.2.1 |
+
+- Tüm araçlar: başlık + açıklama satırı yerine tek üst bar (ikon, ad, sürüm, komutlar; sığmayanlar » menüsünde; sağda
+  durum ve ana düğme). Alt çubuktaki doğrulamanın beyaz zemini kaldırıldı. Listelerde iki satır rengi de beyaz değil;
+  listenin sonundaki boşluk satırı ayrı bir gri satır gibi görünmez.
+- Register Map Editor: **Kaydet** / **Farklı kaydet…** (proje / kütüphane / `.regspec.json`); yer hatırlanır, kütüphaneden
+  açılan IP kütüphaneye kaydedilir. *Projeye / Kütüphaneye / Dosyaya kaydet* düğmeleri kalktı, dosya açma *İçe aktar…*.
+- Register Map Editor: yerleştirilmemiş bit alanları ayrı, kesik çizgili kartta; bit alanı listesinden sürükle-bırak
+  (bit haritası, başka register, yerleştirilmemişler); düğmeler sayıyı ve hedefi yazar; toplu yeni registera
+  yerleştirmede taşanlar için yeni registerlar, tek alanlı register alan adını alır; Düzenle solda, Sil sağda.
+- Interconnect: *İçe aktar / Dışa aktar (.xbar.json)*; Wrapper: *İçe aktar…*; Debug Bridge config: *Kaydet* (son
+  dosyaya) ve *Farklı kaydet…*.
+
 ## early-alpha 0.1.8 — yerleşik örnek kaldırıldı
 
 - `axilgen.example_spec()` ve komut satırındaki `--example` seçeneği kaldırıldı; komut satırı bir `.regspec.json`

@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.2.3"
+    version = "0.2.4"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -45,16 +45,14 @@ class InterconnectPage(ToolPage):
         self.masters = [X.XbarMaster("hexbus")]
         self._loading = False
 
-        self.gen_btn = self.header.add(ui.button("Üret…", "play", "primary", self.generate,
+        self.gen_btn = self.header.add_right(ui.button("Üret…", "play", "primary", self.generate,
                                                  "axilxbar wrapper'ını ve dokümanını üret"))
-        bar = ui.ActionBar()
+        bar = self.header       # the tool's commands sit in the top bar
         bar.add("Adres haritasını düzenle…", "addrmap", lambda: self.edit_address_map(),
                 "Slave'ler, adresleri ve sıraları Address Map Editor'da düzenlenir")
         bar.sep()
-        bar.add("Ayar dosyası aç…", "folder", self.import_xbar, ".xbar.json dosyasından crossbar ayarlarını al")
-        bar.add("Ayar dosyası kaydet…", "save", self.export_xbar, "Ayarları ve slave portlarını .xbar.json olarak kaydet")
-        bar.stretch()
-        self.body.addWidget(bar)
+        bar.add("İçe aktar (.xbar.json)…", "folder", self.import_xbar, ".xbar.json dosyasından crossbar ayarlarını al (ayarlar projede saklanır)")
+        bar.add("Dışa aktar (.xbar.json)…", "save", self.export_xbar, "Ayarları ve slave portlarını .xbar.json olarak yaz (komut satırı için)")
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -206,7 +204,7 @@ class InterconnectPage(ToolPage):
                            ("Slave portları", lambda: self.tabs.show_page(self.sl_tab)),
                            ("Blok diyagramı", lambda: self.tabs.show_page(self.dia_tab)),
                            ("Verilog önizleme", lambda: self.tabs.show_page(self.pv_tab)), (None, None),
-                           ("Ayar dosyası aç…", self.import_xbar), ("Ayar dosyası kaydet…", self.export_xbar),
+                           ("İçe aktar (.xbar.json)…", self.import_xbar), ("Dışa aktar (.xbar.json)…", self.export_xbar),
                            (None, None), ("Üret…", self.generate)):
             if text is None:
                 m.addSeparator()

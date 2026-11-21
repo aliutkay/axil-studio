@@ -43,6 +43,8 @@ PATHS = {
     "alert": '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4.5M12 17.5v.01"/>',
     "arrow": '<path d="M5 12h14M13 6l6 6-6 6"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
+    # double chevron: commands that did not fit in the top bar
+    "more": '<path d="M5 6l6 6-6 6M13 6l6 6-6 6"/>',
     # stacked books: IP Library
     "library": '<rect x="4" y="4" width="4" height="16" rx="1"/><rect x="10" y="4" width="4" height="16" rx="1"/>'
                '<path d="M16.5 5.2l3.6-1 3 15.4-3.6 1z"/>',

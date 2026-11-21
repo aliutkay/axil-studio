@@ -22,6 +22,8 @@ LIGHT = {
     "primary": BLUE, "primary_hover": "#33599F",
     "hover": "#E6EAF2", "selection": "#CCD6E7", "danger": "#C62828", "success": "#2E7D32",
     "warning": ORANGE, "highlight": ORANGE, "input": "#FFFFFF",
+    # list rows: neither of the two is white, so a list stands out from the white cards
+    "row": "#F6F7FA", "row_alt": "#ECEFF5",
 }
 DARK = {   # black / graphite, not navy; the corporate blue stays on buttons and accents
     "bg": "#0B0B0D", "surface": "#151518", "surface2": "#1C1C20", "sidebar": "#111114",
@@ -30,6 +32,7 @@ DARK = {   # black / graphite, not navy; the corporate blue stays on buttons and
     "primary": "#1F4C9C", "primary_hover": "#33599F",
     "hover": "#232328", "selection": "#2C3A57", "danger": "#EF6B6B", "success": "#5CBF73",
     "warning": ORANGE, "highlight": ORANGE, "input": "#101013",
+    "row": "#18181C", "row_alt": "#202025",
 }
 # Field-kind colours are their own signal colours (not the corporate palette, which is for
 # menus and buttons): blue control, green status, amber pulse, red event flag, grey constant.
@@ -89,12 +92,19 @@ QLabel[role="pill"][state="warn"] {{ background: transparent; color: {highlight}
 /* ---------------------------------------------------------------- action bar */
 #ActionBar {{ background: {surface}; border: 1px solid {border}; border-radius: 10px; }}
 #ActionBar QPushButton {{ background: transparent; border-color: transparent; padding: 5px 10px; }}
+#HeaderCommands {{ background: transparent; border: none; spacing: 2px; padding: 0; }}
+#HeaderCommands::separator {{ background: {border}; width: 1px; margin: 6px 6px; }}
+#HeaderCommands QToolButton {{ background: transparent; border: none; }}
+#HeaderCommands QToolButton#qt_toolbar_ext_button {{ padding: 0; }}
+#HeaderCommands QToolButton#qt_toolbar_ext_button:hover {{ background: {hover}; border-radius: 4px; }}
 #ActionBar QPushButton:hover {{ background: {hover}; }}
 #ActionSep {{ background: {border}; min-width: 1px; max-width: 1px; margin: 6px 4px; }}
 
 /* ---------------------------------------------------------------- cards */
 #Card {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}
 #Card[hover="true"]:hover {{ border-color: {accent}; }}
+/* bit fields not in a register yet: a dashed, tinted card so they never look like placed ones */
+#Card[unplaced="true"] {{ background: {accent_soft}; border: 1px dashed {warning}; }}
 #IconTile {{ background: {accent_soft}; border-radius: 10px; }}
 #Divider {{ background: {border}; max-height: 1px; min-height: 1px; border: none; }}
 
@@ -131,7 +141,7 @@ QCheckBox {{ spacing: 7px; }}
 
 /* ---------------------------------------------------------------- views */
 QTreeView, QTableView, QListView {{
-    background: {surface}; alternate-background-color: {surface2}; border: 1px solid {border};
+    background: {row}; alternate-background-color: {row_alt}; border: 1px solid {border};
     border-radius: 8px; gridline-color: {border};
     selection-background-color: {selection}; selection-color: {text};
 }}

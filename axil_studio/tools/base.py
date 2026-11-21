@@ -20,11 +20,12 @@ class ToolPage(QWidget):
         self.setObjectName("Page")
         self.ctx = ctx
         self.outer = QVBoxLayout(self)
-        self.outer.setContentsMargins(28, 24, 28, 20)
-        self.outer.setSpacing(18)
-        self.header = ui.PageHeader(self.title, self.subtitle, self.icon_name)
+        self.outer.setContentsMargins(16, 12, 16, 12)
+        self.outer.setSpacing(12)
         from axil_studio import version_text
-        self.header.add(ui.Pill(version_text(self.version)))
+        # one bar: icon, name, version, then the tool's commands (pages add them with header.add /
+        # header.sep), status and the main action on the right (header.add_right)
+        self.header = ui.ToolHeader(self.title, self.icon_name, version_text(self.version), self.subtitle)
         self.outer.addWidget(self.header)
         self.body = QVBoxLayout()
         self.body.setSpacing(14)

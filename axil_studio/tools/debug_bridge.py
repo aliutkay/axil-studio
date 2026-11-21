@@ -56,7 +56,7 @@ class DebugBridgePage(ToolPage):
     description = ("UART üzerindeki hexbus köprüsüyle donanımdaki registerları okur ve yazar. Donanım yoksa "
                    "SIMULATOR portu kullanılabilir.")
     icon_name = "debug"
-    version = "0.0.2"
+    version = "0.0.3"
 
     _log = Signal(str, str)
 
@@ -1345,7 +1345,9 @@ class DebugBridgePage(ToolPage):
         row.addWidget(self.compare_btn)
         row.addSpacing(8)
         row.addWidget(ui.button("Aç…", "folder", "ghost", self.open_config))
-        row.addWidget(ui.button("Kaydet…", "save", "ghost", self.save_config_file))
+        row.addWidget(ui.button("Kaydet", "save", "ghost", self.save_config_file,
+                                "Config dosyasına kaydet (ilk kayıtta yeri sorar)"))
+        row.addWidget(ui.button("Farklı kaydet…", None, "ghost", lambda: self.save_config_file(True)))
         row.addStretch(1)
         self.cfg_info = ui.label("", "muted")
         row.addWidget(self.cfg_info)
@@ -1527,13 +1529,16 @@ class DebugBridgePage(ToolPage):
         self._fill_config(rebuild=True)
         self.rtabs.show_page(self.cfg_tab)
 
-    def save_config_file(self):
-        path, _ = QFileDialog.getSaveFileName(self, "Config dosyası",
-                                              self.cfg_path or os.path.join(os.path.dirname(self.ctx.path or ROOT),
-                                                                            "config.axcfg.json"),
-                                              "Config (*.axcfg.json)")
-        if not path:
-            return
+    def save_config_file(self, as_new=False):
+        """Kaydet: the config's file (asks only the first time); Farklı kaydet: another file."""
+        path = self.cfg_path
+        if as_new or not path:
+            path, _ = QFileDialog.getSaveFileName(self, "Config dosyası",
+                                                  self.cfg_path or os.path.join(os.path.dirname(self.ctx.path or ROOT),
+                                                                                "config.axcfg.json"),
+                                                  "Config (*.axcfg.json)")
+            if not path:
+                return
         writes = [(row["key"][1], row["key"][2], row["value"]) for row in self.config if row["key"][0] != "raw"]
         try:
             save_config(path, writes)
