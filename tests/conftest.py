@@ -1,11 +1,11 @@
 """Shared settings of the test suite.
 
-The suite is split along the boundary described in axil_studio/core/specs.py:
+The suite is split at the HDL spec (axil_studio/core/hdlspec.py), the only input of the Verilog generators:
 
-    tests/part1   input -> spec     tools and command line build the right spec
-    tests/part2   spec  -> HDL      a spec gives the expected files, and they work in simulation
+    tests/part1   input -> HDL spec   tools and command line build the right HDL spec (tests/data/hdl)
+    tests/part2   HDL spec -> Verilog  the expected files (tests/golden), and they work in simulation
 
-Golden files: tests/golden holds the files generated from the specs in tests/data. A change of the
+Golden files: tests/golden holds the Verilog generated from the HDL specs in tests/data/hdl. A change of the
 generators shows up as a difference; when it is intended, refresh them with
     pytest --update-golden
 and review the diff in git.

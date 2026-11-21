@@ -1,6 +1,6 @@
 # Runs the test suite (tests/) on every push and pull request:
-#   part 1  input -> spec   (address map, tools, command line)
-#   part 2  spec  -> HDL    (golden files, iverilog simulations)
+#   part 1  input -> HDL spec     (address map, tools, command line)
+#   part 2  HDL spec -> Verilog   (golden files, iverilog simulations)
 name: tests
 
 on:

@@ -12,7 +12,7 @@ from PySide6.QtTest import QTest
 
 from axil_studio.core import addrmap as A
 from axil_studio.core import axilgen as G
-from axil_studio.core import specs
+from axil_studio.core import hdlspec as H
 from axil_studio.core.model import Project
 from tests.conftest import DATA, ROOT
 from tests.helpers import hier_project
@@ -59,7 +59,9 @@ def test_register_map_editor_builds_the_expected_regspec(ctx, monkeypatch):
     assert ctx.project.get_ip("uart_lite").regspec == want            # what the project keeps
     page.show_spec()
     shown = json.loads(page._spec_win.view.text.toPlainText())
-    assert shown == specs.ip_view(G.ModuleSpec.from_dict(want), 0)    # not placed yet: base 0
+    assert shown == H.ip_hdlspec(G.ModuleSpec.from_dict(want))
+    assert [f["name"] for f in shown["registers"][0]["fields"]] == ["EN", "DIV"]
+    assert shown["registers"][0]["wr_strobe"] and shown["registers"][1]["fields"][0]["sync"]
 
 
 def test_register_map_editor_spec_window_follows_edits(ctx, monkeypatch):
@@ -68,10 +70,10 @@ def test_register_map_editor_spec_window_follows_edits(ctx, monkeypatch):
     page.edit_project_ip("tst_reg")
     page.show_spec()
     view = page._spec_win.view
-    assert json.loads(view.text.toPlainText())["generation"]["base"] == "0x%08X" % ctx.project.get_instance("ip_0").base
+    assert json.loads(view.text.toPlainText()) == H.project_hdlspecs(ctx.project)["ips"][0]
     page.name_ed.selectAll()
     QTest.keyClicks(page.name_ed, "renamed_ip")
-    assert json.loads(view.text.toPlainText())["regspec"]["module"] == "renamed_ip"
+    assert json.loads(view.text.toPlainText())["module"] == "renamed_ip"
     assert view.text.isReadOnly()
 
 
@@ -83,14 +85,12 @@ def test_wrapper_spec_view_and_generation(ctx, tmp_path, monkeypatch):
     page.load_project_ip("tst_reg", quiet=True)
     page.tabs.show_page(page.spec_view)
     shown = json.loads(page.spec_view.text.toPlainText())
-    assert shown == {k: v for k, v in specs.project_view(ctx.project)["ips"][0].items() if k != "instances"}
+    assert shown == H.project_hdlspecs(ctx.project)["ips"][0]
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path / "gui")))
     page.generate()
-    spec = G.ModuleSpec.from_dict(shown["regspec"])
-    G.generate_all(spec, str(tmp_path / "ref"), int(shown["generation"]["base"], 16))
+    assert H.load(str(tmp_path / "gui" / "tst_reg.hdlspec.json")) == shown
+    H.generate(shown, str(tmp_path / "ref"), with_spec=False)    # Verilog from the shown HDL spec alone
     for name in sorted(os.listdir(tmp_path / "ref")):
-        if name.endswith(".xlsx"):
-            continue                                   # holds a time stamp
         assert (tmp_path / "gui" / name).read_bytes() == (tmp_path / "ref" / name).read_bytes(), name
 
 
@@ -111,17 +111,18 @@ def test_address_map_edits_reach_the_crossbar_specs(ctx, monkeypatch):
     page.edit_slave(b1)
     b1, k = p.get_instance("SBB_1"), p.get_instance("ip_3")
     assert (b1.base, k.base - b1.base, k.fixed) == (new_base, old_off, True)
-    top, s0, s1 = specs.project_xbar_specs(p)
-    assert next(s.base for s in s0.slaves if s.name == "SBB_1") == new_base
-    assert [s.base for s in s1.slaves] == [k.base]
-    # a refused edit leaves the specs unchanged (name included)
-    before = specs.project_view(p)
+    top, s0, s1 = [H.xbar_hdlspec(s) for s in H.project_xbar_specs(p)]
+    assert s0["slaves"][2]["addr"] == "0x%08X" % new_base                        # SBB_1 is SLAVE2 of SBB_0
+    assert [s["addr"] for s in s1["slaves"]] == ["0x%08X" % k.base]
+    # a refused edit leaves everything unchanged (the name too)
+    before = H.project_hdlspecs(p)
+    names = [i.name for i in p.all_instances()]
     queue(monkeypatch, AM.BridgeDialog, [("OTHER", b1.base, 0, 0x100, False)])   # window too small
     page.edit_slave(b1)
-    assert specs.project_view(p) == before
-    # moving an entry to another bus
+    assert H.project_hdlspecs(p) == before and [i.name for i in p.all_instances()] == names
+    # moving an entry to another bus: SBB_1's interconnect gets a second slave
     page._move_to(p.get_instance("ip_4"), p.get_instance("SBB_1"), None)
-    assert [s.name for s in specs.project_xbar_specs(p)[2].slaves] == ["ip_3", "ip_4"]
+    assert len(H.xbar_hdlspec(H.project_xbar_specs(p)[2])["slaves"]) == 2
 
 
 # ------------------------------------------------------------------ Interconnect Configurator
@@ -136,6 +137,7 @@ def test_interconnect_spec_view_and_generation_match_the_command_line(ctx, tmp_p
     dump = json.loads(subprocess.run([sys.executable, "-m", "axil_studio.core.axilgen", "--dump-spec", str(path)],
                                      cwd=ROOT, capture_output=True, text=True, check=True).stdout)
     assert json.loads(page.spec_view.text.toPlainText()) == {"interconnects": dump["interconnects"]}
+    assert "name" not in page.spec_view.text.toPlainText()                    # port names are not HDL data
     page.select_level("SBB_0")
     page.spec_scope.setCurrentIndex(page.spec_scope.findData("level"))
     assert json.loads(page.spec_view.text.toPlainText()) == dump["interconnects"][1]
@@ -151,13 +153,13 @@ def test_interconnect_spec_view_and_generation_match_the_command_line(ctx, tmp_p
 
 
 def test_project_round_trip_through_the_tools(ctx, tmp_path):
-    """Saving and reopening a project in the hub gives the same specs."""
-    before = specs.project_view(ctx.project)
+    """Saving and reopening a project in the hub gives the same HDL specs."""
+    before = H.project_hdlspecs(ctx.project)
     path = str(tmp_path / "p.axproj.json")
     ctx.save(path)
     ctx.open(path)
-    assert specs.project_view(ctx.project) == before
-    assert specs.project_view(Project.load(path)) == before
+    assert H.project_hdlspecs(ctx.project) == before
+    assert H.project_hdlspecs(Project.load(path)) == before
 
 
 def test_data_specs_load_in_the_wrapper(ctx):
@@ -166,4 +168,4 @@ def test_data_specs_load_in_the_wrapper(ctx):
     for name in sorted(os.listdir(os.path.join(DATA, "ip"))):
         spec = G.ModuleSpec.load(os.path.join(DATA, "ip", name))
         page.load_spec(copy.deepcopy(spec), "test")
-        assert page.spec_data()["regspec"] == spec.to_dict()
+        assert page.spec_data() == H.ip_hdlspec(spec)

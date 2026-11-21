@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QApplication, QCheckBox, QComb
 from axil_studio.core import axilgen as G
 from axil_studio.core import numfmt as N
 from axil_studio.core import portparse as PP
-from axil_studio.core import specs
+from axil_studio.core import hdlspec as H
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import KIND_SHORT, FieldDialog, RegDialog, ValueDialog
 from axil_studio.tools.base import ToolPage
@@ -845,7 +845,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.5.4"
+    version = "0.5.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -1211,12 +1211,8 @@ class RegMapEditorPage(ToolPage):
 
     # ================================================================ spec view
     def spec_data(self):
-        """The generation input of the register map being edited (core/specs.py): the regspec
-        (no address) and the address the outputs would use (its first place in the address map)."""
-        base = 0
-        if self.origin and self.origin[0] == "project":
-            base = specs.ip_base(self.ctx.project, self.origin[1])
-        return specs.ip_view(self.spec, base)
+        """The HDL spec of the register map being edited (core/hdlspec.py)."""
+        return H.ip_hdlspec(self.spec)
 
     def show_spec(self):
         if self._spec_win is None:
@@ -1224,9 +1220,9 @@ class RegMapEditorPage(ToolPage):
             w.setWindowTitle(f"{self.title}: Spec")
             lay = QVBoxLayout(w)
             lay.setContentsMargins(0, 0, 0, 0)
-            w.view = ui.SpecView("Salt okunur: Slave Interface Wrapper bu register spesifikasyonundan (regspec, adres "
-                                 "içermez) HDL üretir; base, dosyaların kullandığı adrestir. Düzenledikçe güncellenir; "
-                                 "komut satırında: axilgen --dump-spec.")
+            w.view = ui.SpecView("HDL spec (salt okunur): bu register haritasından Verilog'a giden veri, yalnızca kodu "
+                                 "etkileyenler (registerlar, bit alanları, türleri, strobe'lar, reset değerleri). "
+                                 "Düzenledikçe güncellenir.")
             lay.addWidget(w.view)
             w.resize(640, 720)
         self._spec_win.show()

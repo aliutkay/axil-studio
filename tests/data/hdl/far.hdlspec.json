@@ -1,0 +1,42 @@
+{
+  "format": "axil-ip-hdlspec",
+  "version": 1,
+  "module": "far",
+  "hdl_designer_wrapper": true,
+  "registers": [
+    {
+      "name": "A",
+      "offset": "0x00",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "A",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RW",
+          "reset": "0x1",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "B",
+      "offset": "0x3C",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "B",
+          "lsb": 0,
+          "width": 8,
+          "kind": "RW",
+          "reset": "0x5",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,141 @@
+////////////////////////////////////////////////////////////////////////////////
+// Module: axil_xbar_SBB_1_pk
+//
+// HDL Designer block around axil_xbar_SBB_1 (AXI4-Lite crossbar on ZipCPU axilxbar). Every
+// port is one packed request/response pair; the block only packs and unpacks
+// signals:
+//   MASTER<i>_AXI_REQ/RSP  connect to a master's MASTER_AXI_REQ/RSP
+//   SLAVE<j>_AXI_REQ/RSP   connect to a slave's  SLAVE_AXI_REQ/RSP
+// Packed bus: 32-bit address and data.
+//   REQ [110:0] = AWADDR[110:79] AWPROT[78:76] AWVALID[75] WDATA[74:43] WSTRB[42:39] WVALID[38]
+//                 BREADY[37] ARADDR[36:5] ARPROT[4:2] ARVALID[1] RREADY[0]
+//   RSP [40:0] = AWREADY[40] WREADY[39] BRESP[38:37] BVALID[36] ARREADY[35] RDATA[34:3]
+//                RRESP[2:1] RVALID[0]
+//
+// 1 master port(s), 1 slave port(s). Address map
+// (SLAVE<j>_ADDR / SLAVE<j>_MASK defaults):
+//   Port     Base        Mask        Window
+//   SLAVE0   0x00006000  0xFFFFF000     0x1000
+//
+// Requires axil_xbar_SBB_1.v, axilxbar.v, addrdecode.v, skidbuffer.v.
+////////////////////////////////////////////////////////////////////////////////
+
+`default_nettype none
+
+module axil_xbar_SBB_1_pk #(
+    parameter [32-1:0] SLAVE0_ADDR = 32'h0000_6000,
+    parameter [32-1:0] SLAVE0_MASK = 32'hFFFF_F000,
+    parameter [0:0]   OPT_LOWPOWER = 1'b1,
+    parameter integer OPT_LINGER   = 4,
+    parameter integer LGMAXBURST   = 5
+) (
+    input  wire ACLK,
+    input  wire ARESETN,
+    // Master port 0
+    input  wire [110:0] MASTER0_AXI_REQ,
+    output wire [40:0]  MASTER0_AXI_RSP,
+    // Slave port 0
+    output wire [110:0] SLAVE0_AXI_REQ,
+    input  wire [40:0]  SLAVE0_AXI_RSP
+);
+
+    // MASTER0: packed <-> signals
+    wire [31:0]  MASTER0_AXI_AWADDR;
+    wire [2:0]   MASTER0_AXI_AWPROT;
+    wire         MASTER0_AXI_AWVALID;
+    wire         MASTER0_AXI_AWREADY;
+    wire [31:0]  MASTER0_AXI_WDATA;
+    wire [3:0]   MASTER0_AXI_WSTRB;
+    wire         MASTER0_AXI_WVALID;
+    wire         MASTER0_AXI_WREADY;
+    wire [1:0]   MASTER0_AXI_BRESP;
+    wire         MASTER0_AXI_BVALID;
+    wire         MASTER0_AXI_BREADY;
+    wire [31:0]  MASTER0_AXI_ARADDR;
+    wire [2:0]   MASTER0_AXI_ARPROT;
+    wire         MASTER0_AXI_ARVALID;
+    wire         MASTER0_AXI_ARREADY;
+    wire [31:0]  MASTER0_AXI_RDATA;
+    wire [1:0]   MASTER0_AXI_RRESP;
+    wire         MASTER0_AXI_RVALID;
+    wire         MASTER0_AXI_RREADY;
+    assign {MASTER0_AXI_AWADDR, MASTER0_AXI_AWPROT, MASTER0_AXI_AWVALID, MASTER0_AXI_WDATA, MASTER0_AXI_WSTRB, MASTER0_AXI_WVALID, MASTER0_AXI_BREADY, MASTER0_AXI_ARADDR, MASTER0_AXI_ARPROT, MASTER0_AXI_ARVALID, MASTER0_AXI_RREADY} = MASTER0_AXI_REQ;
+    assign MASTER0_AXI_RSP = {MASTER0_AXI_AWREADY, MASTER0_AXI_WREADY, MASTER0_AXI_BRESP, MASTER0_AXI_BVALID, MASTER0_AXI_ARREADY, MASTER0_AXI_RDATA, MASTER0_AXI_RRESP, MASTER0_AXI_RVALID};
+
+    // SLAVE0: packed <-> signals
+    wire [31:0]  SLAVE0_AXI_AWADDR;
+    wire [2:0]   SLAVE0_AXI_AWPROT;
+    wire         SLAVE0_AXI_AWVALID;
+    wire         SLAVE0_AXI_AWREADY;
+    wire [31:0]  SLAVE0_AXI_WDATA;
+    wire [3:0]   SLAVE0_AXI_WSTRB;
+    wire         SLAVE0_AXI_WVALID;
+    wire         SLAVE0_AXI_WREADY;
+    wire [1:0]   SLAVE0_AXI_BRESP;
+    wire         SLAVE0_AXI_BVALID;
+    wire         SLAVE0_AXI_BREADY;
+    wire [31:0]  SLAVE0_AXI_ARADDR;
+    wire [2:0]   SLAVE0_AXI_ARPROT;
+    wire         SLAVE0_AXI_ARVALID;
+    wire         SLAVE0_AXI_ARREADY;
+    wire [31:0]  SLAVE0_AXI_RDATA;
+    wire [1:0]   SLAVE0_AXI_RRESP;
+    wire         SLAVE0_AXI_RVALID;
+    wire         SLAVE0_AXI_RREADY;
+    assign SLAVE0_AXI_REQ = {SLAVE0_AXI_AWADDR, SLAVE0_AXI_AWPROT, SLAVE0_AXI_AWVALID, SLAVE0_AXI_WDATA, SLAVE0_AXI_WSTRB, SLAVE0_AXI_WVALID, SLAVE0_AXI_BREADY, SLAVE0_AXI_ARADDR, SLAVE0_AXI_ARPROT, SLAVE0_AXI_ARVALID, SLAVE0_AXI_RREADY};
+    assign {SLAVE0_AXI_AWREADY, SLAVE0_AXI_WREADY, SLAVE0_AXI_BRESP, SLAVE0_AXI_BVALID, SLAVE0_AXI_ARREADY, SLAVE0_AXI_RDATA, SLAVE0_AXI_RRESP, SLAVE0_AXI_RVALID} = SLAVE0_AXI_RSP;
+
+    axil_xbar_SBB_1 #(
+        .C_AXI_ADDR_WIDTH (32),
+        .C_AXI_DATA_WIDTH (32),
+        .SLAVE0_ADDR      (SLAVE0_ADDR),
+        .SLAVE0_MASK      (SLAVE0_MASK),
+        .OPT_LOWPOWER     (OPT_LOWPOWER),
+        .OPT_LINGER       (OPT_LINGER),
+        .LGMAXBURST       (LGMAXBURST)
+    ) u_xbar (
+        .ACLK    (ACLK),
+        .ARESETN (ARESETN),
+        .MASTER0_AXI_AWADDR  (MASTER0_AXI_AWADDR),
+        .MASTER0_AXI_AWPROT  (MASTER0_AXI_AWPROT),
+        .MASTER0_AXI_AWVALID (MASTER0_AXI_AWVALID),
+        .MASTER0_AXI_AWREADY (MASTER0_AXI_AWREADY),
+        .MASTER0_AXI_WDATA   (MASTER0_AXI_WDATA),
+        .MASTER0_AXI_WSTRB   (MASTER0_AXI_WSTRB),
+        .MASTER0_AXI_WVALID  (MASTER0_AXI_WVALID),
+        .MASTER0_AXI_WREADY  (MASTER0_AXI_WREADY),
+        .MASTER0_AXI_BRESP   (MASTER0_AXI_BRESP),
+        .MASTER0_AXI_BVALID  (MASTER0_AXI_BVALID),
+        .MASTER0_AXI_BREADY  (MASTER0_AXI_BREADY),
+        .MASTER0_AXI_ARADDR  (MASTER0_AXI_ARADDR),
+        .MASTER0_AXI_ARPROT  (MASTER0_AXI_ARPROT),
+        .MASTER0_AXI_ARVALID (MASTER0_AXI_ARVALID),
+        .MASTER0_AXI_ARREADY (MASTER0_AXI_ARREADY),
+        .MASTER0_AXI_RDATA   (MASTER0_AXI_RDATA),
+        .MASTER0_AXI_RRESP   (MASTER0_AXI_RRESP),
+        .MASTER0_AXI_RVALID  (MASTER0_AXI_RVALID),
+        .MASTER0_AXI_RREADY  (MASTER0_AXI_RREADY),
+        .SLAVE0_AXI_AWADDR  (SLAVE0_AXI_AWADDR),
+        .SLAVE0_AXI_AWPROT  (SLAVE0_AXI_AWPROT),
+        .SLAVE0_AXI_AWVALID (SLAVE0_AXI_AWVALID),
+        .SLAVE0_AXI_AWREADY (SLAVE0_AXI_AWREADY),
+        .SLAVE0_AXI_WDATA   (SLAVE0_AXI_WDATA),
+        .SLAVE0_AXI_WSTRB   (SLAVE0_AXI_WSTRB),
+        .SLAVE0_AXI_WVALID  (SLAVE0_AXI_WVALID),
+        .SLAVE0_AXI_WREADY  (SLAVE0_AXI_WREADY),
+        .SLAVE0_AXI_BRESP   (SLAVE0_AXI_BRESP),
+        .SLAVE0_AXI_BVALID  (SLAVE0_AXI_BVALID),
+        .SLAVE0_AXI_BREADY  (SLAVE0_AXI_BREADY),
+        .SLAVE0_AXI_ARADDR  (SLAVE0_AXI_ARADDR),
+        .SLAVE0_AXI_ARPROT  (SLAVE0_AXI_ARPROT),
+        .SLAVE0_AXI_ARVALID (SLAVE0_AXI_ARVALID),
+        .SLAVE0_AXI_ARREADY (SLAVE0_AXI_ARREADY),
+        .SLAVE0_AXI_RDATA   (SLAVE0_AXI_RDATA),
+        .SLAVE0_AXI_RRESP   (SLAVE0_AXI_RRESP),
+        .SLAVE0_AXI_RVALID  (SLAVE0_AXI_RVALID),
+        .SLAVE0_AXI_RREADY  (SLAVE0_AXI_RREADY)
+    );
+
+endmodule
+
+`default_nettype wire

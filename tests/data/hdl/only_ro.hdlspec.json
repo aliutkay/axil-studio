@@ -1,0 +1,25 @@
+{
+  "format": "axil-ip-hdlspec",
+  "version": 1,
+  "module": "only_ro",
+  "hdl_designer_wrapper": true,
+  "registers": [
+    {
+      "name": "STAT",
+      "offset": "0x00",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "V",
+          "lsb": 0,
+          "width": 32,
+          "kind": "RO",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    }
+  ]
+}

@@ -448,8 +448,8 @@ def confirm(parent, title, text, ok="Sil", cancel="Vazgeç"):
 
 
 class SpecView(QWidget):
-    """Read-only view of the spec a generator gets (JSON, see core/specs.py): exactly what the
-    HDL is made from, nothing can be edited here. Copy to the clipboard; save via `save_cb`."""
+    """Read-only view of an HDL spec (JSON, see core/hdlspec.py): exactly what the Verilog is made
+    from, nothing can be edited here. Copy to the clipboard; save via `save_cb`."""
 
     def __init__(self, note, save_cb=None, save_text="Kaydet…", save_tip=None, parent=None):
         super().__init__(parent)

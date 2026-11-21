@@ -217,19 +217,18 @@ def _h32(v):
 def _header(spec, title, lines):
     L = ["////////////////////////////////////////////////////////////////////////////////",
          f"// Module: {title}", "//"] + [f"// {x}" if x else "//" for x in lines]
-    L += ["//", "// Address map (SLAVE<j>_ADDR / SLAVE<j>_MASK defaults):",
-          "//   Port     Base        Mask        Window    Name"]
-    for i, m in enumerate(spec.masters):
-        L.append(f"//   {'MASTER' + str(i):<9}{'':34}{m.name}")
+    L += ["//", f"// {spec.nm} master port(s), {spec.ns} slave port(s). Address map",
+          "// (SLAVE<j>_ADDR / SLAVE<j>_MASK defaults):",
+          "//   Port     Base        Mask        Window"]
     for j, s in enumerate(spec.slaves):
-        L.append(f"//   {'SLAVE' + str(j):<9}{hex32(s.base)}  {hex32(s.mask)}  {s.window:#9x}  {s.name}")
+        L.append(f"//   {'SLAVE' + str(j):<9}{hex32(s.base)}  {hex32(s.mask)}  {s.window:#9x}")
     return L
 
 
 def _slave_generics(spec, width):
     out = []
     for j, s in enumerate(spec.slaves):
-        out.append(f"    parameter [{width}-1:0] SLAVE{j}_ADDR = {_h32(s.base)},   // {s.name}")
+        out.append(f"    parameter [{width}-1:0] SLAVE{j}_ADDR = {_h32(s.base)},")
         out.append(f"    parameter [{width}-1:0] SLAVE{j}_MASK = {_h32(s.mask)},")
     return out
 
@@ -267,11 +266,11 @@ def gen_xbar(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
           "    input  wire ARESETN,"]
     ports = []
     for i, m in enumerate(spec.masters):
-        ports.append(f"    // Master port {i}: {m.name}")
+        ports.append(f"    // Master port {i}")
         for sig, d, wk in AXIL_SIGNALS:
             ports.append(f"    {'input ' if d == 'in' else 'output'} wire {_w(wk):<26}MASTER{i}_AXI_{sig},")
     for j, s in enumerate(spec.slaves):
-        ports.append(f"    // Slave port {j}: {s.name}")
+        ports.append(f"    // Slave port {j}")
         for sig, d, wk in AXIL_SIGNALS:
             ports.append(f"    {'output' if d == 'in' else 'input '} wire {_w(wk):<26}SLAVE{j}_AXI_{sig},")
     ports[-1] = ports[-1].rstrip(",")
@@ -294,7 +293,7 @@ def gen_xbar(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
         return f"[{idx}*{w} +: {w}]" if w != "1" else f"[{idx}]"
 
     for i, m in enumerate(spec.masters):
-        L.append(f"    // MASTER{i}: {m.name}")
+        L.append(f"    // MASTER{i}")
         for sig, d, wk in AXIL_SIGNALS:
             if d == "in":
                 L.append(f"    assign s_{sig.lower()}{sl(i, wk)} = MASTER{i}_AXI_{sig};")
@@ -302,7 +301,7 @@ def gen_xbar(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
                 L.append(f"    assign MASTER{i}_AXI_{sig} = s_{sig.lower()}{sl(i, wk)};")
         L.append("")
     for j, s in enumerate(spec.slaves):
-        L.append(f"    // SLAVE{j}: {s.name}")
+        L.append(f"    // SLAVE{j}")
         for sig, d, wk in AXIL_SIGNALS:
             if d == "in":
                 L.append(f"    assign SLAVE{j}_AXI_{sig} = m_{sig.lower()}{sl(j, wk)};")
@@ -363,11 +362,11 @@ def gen_xbar_pk(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
           "    input  wire ARESETN,"]
     ports = []
     for i, m in enumerate(spec.masters):
-        ports.append(f"    // Master port {i}: {m.name}")
+        ports.append(f"    // Master port {i}")
         ports.append(f"    input  wire [{PK.REQ_W - 1}:0] MASTER{i}_AXI_REQ,")
         ports.append(f"    output wire [{PK.RSP_W - 1}:0]  MASTER{i}_AXI_RSP,")
     for j, s in enumerate(spec.slaves):
-        ports.append(f"    // Slave port {j}: {s.name}")
+        ports.append(f"    // Slave port {j}")
         ports.append(f"    output wire [{PK.REQ_W - 1}:0] SLAVE{j}_AXI_REQ,")
         ports.append(f"    input  wire [{PK.RSP_W - 1}:0]  SLAVE{j}_AXI_RSP,")
     ports[-1] = ports[-1].rstrip(",")
@@ -426,22 +425,24 @@ def gen_xbar_markdown(spec: XbarSpec):
 def output_names(spec: XbarSpec):
     """Names of the files write_xbar() writes, in order."""
     m = spec.module
-    return [f"{m}.v"] + ([f"{m}_pk.v"] if spec.packed else []) + [f"{m}.md", f"{m}.xbar.json"]
+    return [f"{m}.v"] + ([f"{m}_pk.v"] if spec.packed else []) + [f"{m}.md", f"{m}.hdlspec.json"]
 
 
 def write_xbar(spec: XbarSpec, outdir):
-    """<module>.v, <module>_pk.v (packed style), <module>.md and <module>.xbar.json."""
-    os.makedirs(outdir, exist_ok=True)
-    files = {f"{spec.module}.v": gen_xbar(spec)}
-    if spec.packed:
-        files[f"{spec.module}_pk.v"] = gen_xbar_pk(spec)
+    """<module>.v and <module>_pk.v (packed style), made from the HDL spec alone (hdlspec.py:
+    port counts, slave addresses and masks); <module>.md (with the port names) and
+    <module>.hdlspec.json, the HDL spec itself."""
+    from . import hdlspec as H
+    d = H.xbar_hdlspec(spec)
+    files = dict(H.verilog(d))
     files[f"{spec.module}.md"] = gen_xbar_markdown(spec)
+    os.makedirs(outdir, exist_ok=True)
     paths = []
     for name, text in files.items():
         p = os.path.join(outdir, name)
         with open(p, "w", encoding="utf-8", newline="\n") as fh:
             fh.write(text)
         paths.append(p)
-    js = os.path.join(outdir, f"{spec.module}.xbar.json")
-    spec.save(js)
-    return paths + [js]
+    p = os.path.join(outdir, H.file_name(d))
+    H.save(d, p)
+    return paths + [p]

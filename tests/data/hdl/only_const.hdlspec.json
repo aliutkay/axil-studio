@@ -1,0 +1,25 @@
+{
+  "format": "axil-ip-hdlspec",
+  "version": 1,
+  "module": "only_const",
+  "hdl_designer_wrapper": true,
+  "registers": [
+    {
+      "name": "ID",
+      "offset": "0x00",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "ID",
+          "lsb": 0,
+          "width": 32,
+          "kind": "CONST",
+          "reset": "0x1234",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    }
+  ]
+}

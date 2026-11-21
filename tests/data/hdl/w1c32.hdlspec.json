@@ -1,0 +1,42 @@
+{
+  "format": "axil-ip-hdlspec",
+  "version": 1,
+  "module": "w1c32",
+  "hdl_designer_wrapper": true,
+  "registers": [
+    {
+      "name": "EV",
+      "offset": "0x00",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "E",
+          "lsb": 0,
+          "width": 32,
+          "kind": "W1C",
+          "reset": "0x0",
+          "irq": true,
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "P",
+      "offset": "0x04",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "GO",
+          "lsb": 0,
+          "width": 32,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    }
+  ]
+}

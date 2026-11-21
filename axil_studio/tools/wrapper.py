@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, Q
 from axil_studio.core import axilgen as G
 from axil_studio.core import axilpack
 from axil_studio.core import regmap_xlsx
-from axil_studio.core import specs
+from axil_studio.core import hdlspec as H
 from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
 from axil_studio.tools.regmap import SPEC_FILTER, fill_regmap_tree, regmap_tree
@@ -48,7 +48,7 @@ class WrapperPage(ToolPage):
     description = ("Register Map Editor'da tasarlanan IP'den AXI4-Lite slave HDL, testbench, C header, doküman "
                    "ve Excel kütük haritası üretir; hazır IP'ler için HDL Designer wrapper'ı çıkarır.")
     icon_name = "wrapper"
-    version = "0.2.6"
+    version = "0.2.7"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -138,10 +138,10 @@ class WrapperPage(ToolPage):
             self.tabs.addTab(tab, title)
             self.previews[key] = (tab, ed)
         self.spec_view = ui.SpecView(
-            "Üretimin girdisi, salt okunur: register spesifikasyonu (regspec; adres içermez) ve üretim girdileri "
-            "(base: IP'nin adres haritasındaki ilk yeri; C header ve testbench bunu kullanır). Aynı girdi her zaman "
-            "aynı dosyaları verir; komut satırında: axilgen --dump-spec.",
-            self.save_regspec, "Kaydet (.regspec.json)…", "Register spesifikasyonunu dosyaya yaz (adres içermez)")
+            "HDL spec (salt okunur): Verilog dosyaları yalnızca bundan üretilir. Sadece kodu etkileyen veri var: "
+            "registerlar, bit alanları ve türleri, strobe'lar, reset değerleri; açıklamalar, değer anlamları, sürüm ve "
+            "adres yok. Komut satırında: python -m axil_studio.core.hdlspec <dosya> -o out",
+            self.save_hdlspec, "Kaydet (.hdlspec.json)…", "HDL spec'i dosyaya yaz")
         self.tabs.addTab(self.spec_view, "Spec")
         self.tabs.currentChanged.connect(lambda *_: self._refresh_preview())
         split.addWidget(right)
@@ -315,19 +315,19 @@ class WrapperPage(ToolPage):
         self.vfile_cb.blockSignals(False)
 
     def spec_data(self):
-        """What the Spec tab shows: the generation input (core/specs.py), or None without an IP."""
-        return None if self.spec is None else specs.ip_view(self.spec, self._project_base())
+        """What the Spec tab shows: the HDL spec (core/hdlspec.py), or None without an IP."""
+        return None if self.spec is None else H.ip_hdlspec(self.spec)
 
-    def save_regspec(self):
+    def save_hdlspec(self):
         if self.spec is None:
             return
-        path, _ = QFileDialog.getSaveFileName(self, "Register spesifikasyonu",
-                                              os.path.join(self.outdir or ROOT, f"{self.spec.module}.regspec.json"),
-                                              SPEC_FILTER)
+        d = H.ip_hdlspec(self.spec)
+        path, _ = QFileDialog.getSaveFileName(self, "HDL spec", os.path.join(self.outdir or ROOT, H.file_name(d)),
+                                              "HDL spec (*.hdlspec.json);;JSON (*.json)")
         if not path:
             return
         try:
-            self.spec.save(path)
+            H.save(d, path)
         except OSError as exc:
             return self.error("Kaydedilemedi", exc)
         self.status(f"Kaydedildi: {path}")
@@ -380,7 +380,7 @@ class WrapperPage(ToolPage):
         """Generation address: the IP's first address-map instance; 0 when it is not placed (or not
         a project IP)."""
         if self.origin and self.origin[0] == "project":
-            return specs.ip_base(self.ctx.project, self.origin[1])
+            return H.ip_base(self.ctx.project, self.origin[1])
         return 0
 
     def generate(self):

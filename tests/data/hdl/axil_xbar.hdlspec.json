@@ -1,0 +1,26 @@
+{
+  "format": "axil-xbar-hdlspec",
+  "version": 1,
+  "module": "axil_xbar",
+  "hdl_designer_wrapper": true,
+  "masters": 1,
+  "slaves": [
+    {
+      "addr": "0x00000000",
+      "mask": "0xFFFFF000"
+    },
+    {
+      "addr": "0x00004000",
+      "mask": "0xFFFFC000"
+    },
+    {
+      "addr": "0x00008000",
+      "mask": "0xFFFFF000"
+    }
+  ],
+  "parameters": {
+    "OPT_LOWPOWER": 1,
+    "OPT_LINGER": 4,
+    "LGMAXBURST": 5
+  }
+}

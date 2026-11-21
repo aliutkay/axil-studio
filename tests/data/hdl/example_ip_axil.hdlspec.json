@@ -1,0 +1,183 @@
+{
+  "format": "axil-ip-hdlspec",
+  "version": 1,
+  "module": "example_ip_axil",
+  "hdl_designer_wrapper": true,
+  "registers": [
+    {
+      "name": "ID",
+      "offset": "0x00",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "VERSION",
+          "lsb": 0,
+          "width": 16,
+          "kind": "CONST",
+          "reset": "0x102",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "MAGIC",
+          "lsb": 16,
+          "width": 16,
+          "kind": "CONST",
+          "reset": "0xA5A5",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "CTRL",
+      "offset": "0x04",
+      "wr_strobe": true,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "ENABLE",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RW",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "MODE",
+          "lsb": 1,
+          "width": 3,
+          "kind": "RW",
+          "reset": "0x2",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "START",
+          "lsb": 8,
+          "width": 1,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "SOFT_RESET",
+          "lsb": 9,
+          "width": 1,
+          "kind": "PULSE",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "DIVIDER",
+          "lsb": 16,
+          "width": 16,
+          "kind": "RW",
+          "reset": "0x1B2",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "STATUS",
+      "offset": "0x08",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "BUSY",
+          "lsb": 0,
+          "width": 1,
+          "kind": "RO",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "LEVEL",
+          "lsb": 4,
+          "width": 8,
+          "kind": "RO",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "EXT_PIN",
+          "lsb": 16,
+          "width": 2,
+          "kind": "RO",
+          "reset": "0x0",
+          "irq": false,
+          "sync": true
+        }
+      ]
+    },
+    {
+      "name": "IRQ",
+      "offset": "0x0C",
+      "wr_strobe": false,
+      "rd_strobe": false,
+      "fields": [
+        {
+          "name": "DONE",
+          "lsb": 0,
+          "width": 1,
+          "kind": "W1C",
+          "reset": "0x0",
+          "irq": true,
+          "sync": false
+        },
+        {
+          "name": "ERROR",
+          "lsb": 1,
+          "width": 1,
+          "kind": "W1C",
+          "reset": "0x0",
+          "irq": true,
+          "sync": false
+        },
+        {
+          "name": "OVERRUN",
+          "lsb": 4,
+          "width": 4,
+          "kind": "W1C",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    },
+    {
+      "name": "DATA",
+      "offset": "0x14",
+      "wr_strobe": true,
+      "rd_strobe": true,
+      "fields": [
+        {
+          "name": "RXDATA",
+          "lsb": 0,
+          "width": 16,
+          "kind": "RO",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        },
+        {
+          "name": "TXDATA",
+          "lsb": 16,
+          "width": 16,
+          "kind": "RW",
+          "reset": "0x0",
+          "irq": false,
+          "sync": false
+        }
+      ]
+    }
+  ]
+}

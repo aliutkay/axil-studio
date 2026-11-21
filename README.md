@@ -142,11 +142,13 @@ Register seçenekleri: `o_<reg>_wr` / `o_<reg>_rd` strobe'ları (FIFO push/pop i
 **HDL Designer için paketli AXI wrapper'ı** (kutu işaretliyse): IP her zaman normal `S_AXI_*` portlu `<ip>.v` olarak üretilir; üstüne `<ip>_pk.v` HDL Designer bloğu (`SLAVE_AXI_REQ/RSP`, içinde normal IP) ve onun `_pk_inst.v` örnekleme şablonu eklenir. Hazır IP'ler için aynı blok **Hazır IP için HDL Designer wrapper'ı…** ile üretilir.
 
 **Üretilen dosyalar:** `<ip>.v` (normal S_AXI_* portlu IP), `<ip>_pk.v` + `_pk_inst.v` (HDL Designer wrapper'ı, isteğe bağlı), `<ip>_tb.v` (kendini kontrol eden testbench),
-`<ip>_inst.v`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.regspec.json` (dosyaların üretildiği spec), `<ip>_regmap.xlsx`.
+`<ip>_inst.v`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.hdlspec.json` (Verilog dosyalarının tek girdisi),
+`<ip>.regspec.json` (register haritasının tamamı, yeniden açmak için), `<ip>_regmap.xlsx`.
 
-**Spec sekmesi** (salt okunur): üretimin girdisini olduğu gibi gösterir: register spesifikasyonu (regspec, adres
-içermez) ve üretim girdileri (`base`: IP'nin adres haritasındaki ilk yeri, C header ve testbench bunu kullanır;
-üretilecek dosyalar). Aynı girdi her zaman aynı dosyaları verir. **Kopyala** ve **Kaydet (.regspec.json)** vardır.
+**Spec sekmesi** (salt okunur): IP'nin **HDL spec**'ini gösterir, yani Verilog'u üreten koda giden verinin tamamını
+ve yalnızca onu: modül adı, HDL Designer wrapper'ı, registerlar (ad, offset, strobe'lar) ve bit alanları (ad, konum,
+genişlik, tür, reset, irq, sync). Açıklamalar, değer anlamları, gösterim biçimleri, sürüm ve adres koda etki etmediği
+için içinde yoktur (bunlar C header, doküman ve Excel'e gider). **Kopyala** ve **Kaydet (.hdlspec.json)** vardır.
 Register Map Editor'da üst bardaki **Spec** aynı görünümü ayrı bir pencerede açar, düzenledikçe güncellenir.
 Bkz. [İki parçalı yapı ve testler](#iki-parçalı-yapı-ve-testler).
 
@@ -232,10 +234,10 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   ve gösterimle, açık renklerde ve beyaz zeminde kaydeder; draw.io dosyasında her blok, yazı ve bağlantı ayrı,
   düzenlenebilir bir şekildir. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır,
   trackpad'de iki parmakla sıkıştırma da çalışır.
-- **Spec** sekmesi (salt okunur) seçili interconnect'in ya da hepsinin crossbar spesifikasyonunu gösterir: wrapper'ın tam girdisi (adresler, maskeler, master'lar, port stili); **Kopyala**, **Kaydet**.
+- **Spec** sekmesi (salt okunur) seçili interconnect'in ya da hepsinin **HDL spec**'ini gösterir: wrapper Verilog'una giden verinin tamamı ve yalnızca o: modül adı, master sayısı, her slave'in adresi ve maskesi, HDL Designer wrapper'ı, axilxbar parametreleri (`OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST`). Port adları koda etki etmediği için yoktur. **Kopyala**, **Kaydet (.hdlspec.json)** (hepsi seçiliyse her biri ayrı dosya).
 - **Verilog önizleme** sekmesi her interconnect'in üretilecek wrapper'larını gösterir. **Wrapper** seçimi:
   *Yalnızca ayrık AXI portları* (`<ad>.v`) ya da *Ayrık portlar + HDL Designer* (`<ad>.v` ve onu saran `<ad>_pk.v`).
-- **Üret…** her interconnect için ayrı dosyalar yazar (`axil_xbar.v`, `axil_xbar_SBB_0.v` …, `.md`, `.xbar.json`);
+- **Üret…** her interconnect için ayrı dosyalar yazar (`axil_xbar.v`, `axil_xbar_SBB_0.v` …, `.md`, `.hdlspec.json`);
   bridge'ler ve sistem bağlantısı için dosya üretilmez.
 - Üst interconnect'in ayarları proje dosyasında (`.axproj.json` içindeki `interconnect`), bir bridge'in arkasındakinin
   ayarları bridge'in kaydında (`xbar`) saklanır. **İçe aktar** `.xbar.json` dosyasından seçili interconnect'in modül
@@ -357,32 +359,46 @@ Sürüm elle değiştirilmiş bir commit'te (ör. yeni özellik için 0.2.0) hoo
 
 ## İki parçalı yapı ve testler
 
-Üretim iki ayrı parçadır ve ikisi ayrı doğrulanır (`axil_studio/core/specs.py`):
+Verilog üretimi iki ayrı parçadır ve ikisi ayrı doğrulanır. Aralarındaki tek veri **HDL spec** dosyasıdır
+(`<modül>.hdlspec.json`, `axil_studio/core/hdlspec.py`): Verilog'u üreten koda giden verinin tamamı ve yalnızca koda
+etki eden kısmı.
 
 | Parça | Ne yapar | Nerede |
 |---|---|---|
-| **1. Girdi → spec** | Araçlar ya da komut satırı bir register spesifikasyonu (`ModuleSpec`, regspec) ve her interconnect için bir crossbar spesifikasyonu (`XbarSpec`) oluşturur | araçlar, `model.py`, `addrmap.py` |
-| **2. Spec → HDL** | Üreticiler yalnızca spec'i (ve IP için `base` adresini) görür; proje, adres haritası ya da arayüz okumaz | `axilgen.py`, `xbargen.py`, `axilpack.py` |
+| **1. Girdi → HDL spec** | Araçlarda ya da komut satırında tasarlanan IP'den / adres haritasından HDL spec'ler çıkar: IP başına bir, interconnect başına bir | araçlar, `model.py`, `addrmap.py`, `hdlspec.py` (`ip_hdlspec`, `xbar_hdlspec`) |
+| **2. HDL spec → Verilog** | Yalnızca HDL spec okunur; proje, adres haritası, isimler, açıklamalar görülmez | `hdlspec.py` (`verilog`, `generate`), `axilgen.py`, `xbargen.py`, `axilpack.py` |
 
-İkisinin arasındaki veri, yani üretimin tam girdisi, her yerde aynı biçimde görülebilir: Wrapper'ın ve Interconnect
-Configurator'ın **Spec** sekmesi, Register Map Editor'daki **Spec** penceresi (hepsi salt okunur) ve komut satırı:
+| HDL spec | İçinde olanlar | Olmayanlar (koda etki etmez) |
+|---|---|---|
+| IP (`axil-ip-hdlspec`) | `module`, `hdl_designer_wrapper`, `registers[]`: `name`, `offset`, `wr_strobe`, `rd_strobe`, `fields[]`: `name`, `lsb`, `width`, `kind`, `reset`, `irq`, `sync` | açıklamalar, değer anlamları, gösterim biçimi, IP sürümü, yerleştirilmemiş alanlar, adres |
+| Interconnect (`axil-xbar-hdlspec`) | `module`, `hdl_designer_wrapper`, `masters` (sayı), `slaves[]`: `addr`, `mask`, `parameters`: `OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST` | master / slave adları, IP'lerin kullandığı alan, kilitler |
+
+Register ve alan adları IP spec'inde vardır, çünkü port ve sinyal adları onlardan oluşur. Üretilen Verilog'un yorum
+satırlarında da yalnızca HDL spec'teki bilgiler bulunur; testbench IP'nin adresine bağlı değildir (üst adres
+bitlerinin yok sayıldığını sabit bir adresle dener).
+
+HDL spec'i görmek: Wrapper'ın ve Interconnect Configurator'ın **Spec** sekmesi, Register Map Editor'daki **Spec**
+penceresi (hepsi salt okunur); her üretimde çıktı klasörüne de yazılır. Komut satırı:
 
 ```
-python -m axil_studio.core.axilgen --dump-spec proje.axproj.json      # projedeki tüm IP ve interconnect spec'leri
-python -m axil_studio.core.axilgen --dump-spec ip.regspec.json --base 0x40000000
-python -m axil_studio.core.axilgen --dump-spec axil_xbar.xbar.json
+python -m axil_studio.core.axilgen --dump-spec proje.axproj.json   # projedeki tüm IP ve interconnect HDL spec'leri
+python -m axil_studio.core.axilgen --dump-spec ip.regspec.json
+python -m axil_studio.core.hdlspec my_ip.hdlspec.json -o out        # Parça 2 tek başına: HDL spec'ten Verilog
+python -m axil_studio.core.hdlspec my_ip.hdlspec.json --check       # yalnızca doğrula
 ```
 
-Bir hata çıkınca yeri böylece ayrılır: spec yanlışsa Parça 1, spec doğru ama dosya yanlışsa Parça 2.
+Bir hata çıkınca yeri böylece ayrılır: HDL spec yanlışsa Parça 1, HDL spec doğru ama Verilog yanlışsa Parça 2.
 
 **Testler** (`tests/`, pytest):
 
-- `tests/part1/`: adres haritası kuralları (otomatik adresleme, kilitler, Sub-bus Bridge, taşıma, çakışmalar,
-  rastgele haritalarla değişmezler); projeden spec'lere; araçlarda yapılan işlemlerin (register ekleme, adres yazma,
-  taşıma…) beklenen spec'i vermesi; araçlardaki Spec görünümleri ile `--dump-spec` çıktısının ve araçlarla komut
-  satırının ürettiği dosyaların birebir aynı olması.
-- `tests/part2/`: `tests/data` altındaki spec'lerden üretilen dosyaların `tests/golden` altındaki kayıtlı
-  dosyalarla aynı olması; üretilen testbench'lerin iverilog ile geçmesi; wrapper'ların derlenmesi; üç seviyeli
+- `tests/part1/` (girdi → HDL spec): `tests/data/ip` (register haritaları) ve `tests/data/xbar` (crossbar ayarları)
+  ile örnek bir hiyerarşik projeden çıkan HDL spec'lerin `tests/data/hdl` altındaki beklenen dosyalarla aynı olması;
+  açıklama, isim gibi verilerin HDL spec'i değiştirmemesi; adres haritası kuralları (kilitler, Sub-bus Bridge, taşıma,
+  çakışmalar, rastgele haritalar); araçlarda yapılan işlemlerin (register ekleme, adres yazma, taşıma…) beklenen HDL
+  spec'i vermesi; araçlardaki Spec görünümleri, `--dump-spec` ve üretilen dosyaların birebir aynı olması.
+- `tests/part2/` (HDL spec → Verilog): yalnızca `tests/data/hdl` altındaki HDL spec dosyalarından başlar: üretilen
+  Verilog'un `tests/golden` altındaki kayıtlı dosyalarla aynı olması; `hdlspec` komutunun aynı dosyaları yazması;
+  hatalı HDL spec'lerin reddedilmesi; IP testbench'lerinin iverilog'da geçmesi; her dosyanın derlenmesi; üç seviyeli
   bir Sub-bus Bridge zincirinde yazma/okumaların doğru IP'ye ulaşması ve haritada olmayan adreslerin DECERR alması.
 
 ```
@@ -408,7 +424,7 @@ commit'in yanında görünür.
 | `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri |
 | `examples/` | Örnek GPIO projesi ve config dosyaları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
-| `tests/` | pytest testleri: `part1` (girdi → spec), `part2` (spec → HDL), `data` (örnek spec'ler), `golden` (beklenen dosyalar) |
+| `tests/` | pytest testleri: `part1` (girdi → HDL spec), `part2` (HDL spec → Verilog), `data` (örnek girdiler ve beklenen HDL spec'ler), `golden` (beklenen Verilog) |
 | `.github/workflows/` | GitHub Actions: her push'ta testler |
 
 `axil_studio/core/`:
@@ -419,7 +435,7 @@ commit'in yanında görünür.
 | `addrmap.py` | Adres haritası: otomatik adresleme, pencereler, doğrulama, interconnect slave'leri |
 | `library.py` | IP kütüphanesi dosyaları (`.axlib.json`) |
 | `hexbus.py` | Hexbus protokol sürücüsü + `SIMULATOR` portu (GPIO0 @0x60000000, loopback UART0 @0x60001000) |
-| `specs.py` | İki parçanın sınırı: üretimin girdisi (Spec görünümleri, `--dump-spec`) |
+| `hdlspec.py` | HDL spec: Verilog'un tek girdisi; projeden / register haritasından çıkarma, doğrulama, Verilog üretimi (komut satırı: `python -m axil_studio.core.hdlspec`) |
 | `axilgen.py` | AXI4-Lite wrapper üretici (komut satırı: `python -m axil_studio.core.axilgen`) |
 | `axilpack.py` | Paketli AXI portu wrapper'ı (`_pk`, REQ/RSP) |
 | `xbargen.py` | axilxbar wrapper üretici (isimli portlar) |

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormL
                                QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
 from axil_studio.core import addrmap as A
-from axil_studio.core import specs
+from axil_studio.core import hdlspec as H
 from axil_studio.core import xbargen as X
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import size_text
@@ -43,7 +43,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.5"
+    version = "0.3.6"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -233,9 +233,10 @@ class InterconnectPage(ToolPage):
         pv.addWidget(self.preview)
         self.tabs.addTab(pv_tab, "Verilog önizleme")
         self.spec_view = ui.SpecView(
-            "Üretimin girdisi, salt okunur: her interconnect için bir crossbar spesifikasyonu (adresler, maskeler, "
-            "master'lar, port stili). Aynı girdi her zaman aynı wrapper'ı verir; komut satırında: axilgen --dump-spec.",
-            self.save_spec, "Kaydet (.xbar.json)…", "Gösterilen spesifikasyonu dosyaya yaz")
+            "HDL spec (salt okunur): wrapper Verilog'u yalnızca bundan üretilir. Sadece kodu etkileyen veri var: "
+            "master ve slave sayısı, slave adresleri ve maskeleri, HDL Designer wrapper'ı, axilxbar parametreleri; "
+            "port adları yok. Komut satırında: python -m axil_studio.core.hdlspec <dosya> -o out",
+            self.save_spec, "Kaydet (.hdlspec.json)…", "Gösterilen HDL spec'i dosyaya yaz")
         self.spec_scope = QComboBox()
         self.spec_scope.addItem("Seçili interconnect", "level")
         self.spec_scope.addItem("Tüm interconnect'ler", "all")
@@ -550,25 +551,29 @@ class InterconnectPage(ToolPage):
         return out
 
     def spec_data(self, scope=None):
-        """What the Spec tab shows (core/specs.py): the selected interconnect's spec, or all of them."""
+        """What the Spec tab shows (core/hdlspec.py): the selected interconnect's HDL spec, or all."""
         if (scope or self.spec_scope.currentData()) == "all":
-            return {"interconnects": [specs.xbar_view(self.spec(b)) for b in A.levels(self.proj)]}
-        return specs.xbar_view(self.spec())
+            return {"interconnects": [H.xbar_hdlspec(self.spec(b)) for b in A.levels(self.proj)]}
+        return H.xbar_hdlspec(self.spec())
 
     def save_spec(self):
-        allv = self.spec_scope.currentData() == "all"
-        name = f"{self.proj.name}_interconnects.json" if allv else f"{self.spec().module}.xbar.json"
-        path, _ = QFileDialog.getSaveFileName(self, "Crossbar spesifikasyonu",
-                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), name),
-                                              "JSON (*.json)" if allv else XBAR_FILTER)
-        if not path:
-            return
+        """The shown HDL spec(s) as <module>.hdlspec.json (all of them: one file each, in a folder)."""
+        start = os.path.dirname(self.ctx.path or ROOT)
         try:
-            if allv:
-                from axil_studio.core.model import write_json
-                write_json(path, self.spec_data("all"))
-            else:
-                self.spec().save(path)
+            if self.spec_scope.currentData() == "all":
+                d = QFileDialog.getExistingDirectory(self, "HDL spec'lerin klasörü", start)
+                if not d:
+                    return
+                for x in self.spec_data("all")["interconnects"]:
+                    H.save(x, os.path.join(d, H.file_name(x)))
+                self.status(f"{len(A.levels(self.proj))} HDL spec kaydedildi: {d}")
+                return
+            x = self.spec_data("level")
+            path, _ = QFileDialog.getSaveFileName(self, "HDL spec", os.path.join(start, H.file_name(x)),
+                                                  "HDL spec (*.hdlspec.json);;JSON (*.json)")
+            if not path:
+                return
+            H.save(x, path)
         except OSError as exc:
             return self.error("Kaydedilemedi", exc)
         self.status(f"Kaydedildi: {path}")
@@ -600,10 +605,9 @@ class InterconnectPage(ToolPage):
                 text = f"// hdl/axilxbar.v okunamadı: {exc}"
         elif errs:
             text = "// Ayarlarda hata var, Verilog üretilemiyor:\n// " + "\n// ".join(errs)
-        elif which == "pk":
-            text = X.gen_xbar_pk(spec)    # HDL Designer block around the main wrapper
-        else:
-            text = X.gen_xbar(spec)       # axilxbar configured by parameters, separate AXI ports
+        else:                             # made from the HDL spec alone, as when generating
+            d = H.xbar_hdlspec(spec)
+            text = H.verilog(d, f"{spec.module}_pk.v" if which == "pk" else f"{spec.module}.v")
         bar = self.preview.verticalScrollBar().value()
         self.preview.setPlainText(text)
         self.preview.verticalScrollBar().setValue(bar)

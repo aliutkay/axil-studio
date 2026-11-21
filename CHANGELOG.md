@@ -10,6 +10,33 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.18 — HDL spec: Verilog'un tek girdisi
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.18 |
+| Register Map Editor | early-alpha 0.5.5 |
+| Slave Interface Wrapper | early-alpha 0.2.7 |
+| Address Map Editor | early-alpha 0.3.5 |
+| Interconnect Configurator | early-alpha 0.3.6 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.5 |
+| IP Library | early-alpha 0.2.1 |
+
+- **HDL spec** (`<modül>.hdlspec.json`, `core/hdlspec.py`): Verilog'u üreten koda giden verinin tamamı ve yalnızca koda
+  etki eden kısmı. IP için modül adı, HDL Designer wrapper'ı, registerlar ve bit alanları (ad, offset, konum, genişlik,
+  tür, reset, irq, sync, strobe'lar); interconnect için modül adı, master sayısı, slave adres ve maskeleri, HDL
+  Designer wrapper'ı, axilxbar parametreleri. Açıklamalar, değer anlamları, sürüm, port adları ve adres içinde yok.
+- Verilog dosyaları yalnızca HDL spec'ten üretilir (araçlarda, `axilgen`'de ve yeni `python -m axil_studio.core.hdlspec
+  <dosya> -o out` komutunda aynı yol). Her üretim HDL spec'i de çıktı klasörüne yazar; interconnect çıktısındaki
+  `.xbar.json` yerine `.hdlspec.json` gelir (ayarlar için Dışa aktar `.xbar.json` yazmaya devam eder).
+- Spec sekmeleri / penceresi ve `--dump-spec` artık HDL spec'i gösterir (önceki sürümdeki "regspec + base" görünümünün
+  yerine).
+- Üretilen Verilog'un mantığı değişmedi. Yorum satırlarından HDL spec dışındaki bilgiler çıktı (IP sürümü ve açıklaması,
+  alan açıklamaları, master / slave adları); IP testbench'i IP'nin adresine bağlı değil, sabit bir bus adresi
+  (`0xA5A5A000`) kullanır. IP sürümü ve açıklamalar C header, doküman ve Excel'de kalır.
+- Testler: Parça 1'in beklenen çıktısı `tests/data/hdl` altındaki HDL spec dosyaları; Parça 2 yalnızca bu dosyalardan
+  başlar.
+
 ## early-alpha 0.1.17 — iki parçalı yapı: Spec görünümleri, testler
 
 | Bileşen | Sürüm |
