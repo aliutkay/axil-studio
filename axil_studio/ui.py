@@ -2,8 +2,9 @@
 
 import concurrent.futures
 
-from PySide6.QtCore import QObject, QPoint, Qt, Signal
-from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QToolBar, QToolButton,
+from PySide6.QtCore import QEvent, QObject, QPoint, Qt, QTimer, Signal
+from PySide6.QtGui import QIcon
+from PySide6.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QToolButton,
                                QPushButton, QSizePolicy, QTabWidget, QVBoxLayout, QWidget)
 
 from axil_studio import icons, theme
@@ -39,6 +40,95 @@ def refresh_icons(root: QWidget):
         name = b.property("iconName")
         if name:
             b.setIcon(icons.icon(name, "accent_text" if b.property("variant") == "primary" else "text", 16))
+
+
+def row_icon(name, hover_token):
+    """Faint icon for a list row; it takes its full colour while the mouse is on it."""
+    t = theme.manager().tokens
+    faint = theme.mix(t["muted"], t["surface"], 0.45)
+    ic = QIcon()
+    ic.addPixmap(icons.pixmap(name, 15, faint), QIcon.Mode.Normal)
+    ic.addPixmap(icons.pixmap(name, 15, t[hover_token]), QIcon.Mode.Active)
+    return ic
+
+
+class RowActions(QWidget):
+    """Pencil (edit) and bin (delete) at the end of a list row."""
+
+    def __init__(self, on_edit=None, on_delete=None, edit_tip="Düzenle", delete_tip="Sil"):
+        super().__init__()
+        self.setObjectName("RowActions")
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(2, 0, 4, 0)
+        lay.setSpacing(0)
+        lay.addStretch(1)
+        self.buttons = []
+        for name, token, slot, tip in (("edit", "accent", on_edit, edit_tip), ("trash", "danger", on_delete, delete_tip)):
+            if slot is None:
+                continue
+            b = QToolButton()
+            b.setObjectName("RowAction")
+            b.setAutoRaise(True)
+            b.setFixedSize(24, 22)
+            b.setToolTip(tip)
+            b.setCursor(Qt.CursorShape.PointingHandCursor)
+            b.setProperty("iconSpec", (name, token))
+            b.clicked.connect(slot)
+            lay.addWidget(b)
+            self.buttons.append(b)
+        self.retint()
+        theme.manager().changed.connect(self.retint)
+
+    def retint(self):
+        for b in self.buttons:
+            b.setIcon(row_icon(*b.property("iconSpec")))
+
+    @property
+    def edit_button(self):
+        return next((b for b in self.buttons if b.property("iconSpec")[0] == "edit"), None)
+
+    @property
+    def delete_button(self):
+        return next((b for b in self.buttons if b.property("iconSpec")[0] == "trash"), None)
+
+
+ROW_ACTIONS_WIDTH = 56
+
+
+def tree_row_actions(tree, item, col, on_edit=None, on_delete=None, **tips):
+    """Put RowActions into a QTreeWidget row; a click selects that row first."""
+    def run(fn):
+        def go():
+            tree.setCurrentItem(item)
+            fn()
+        return go if fn else None
+    w = RowActions(run(on_edit), run(on_delete), **tips)
+    tree.setItemWidget(item, col, w)
+    return w
+
+
+def table_row_actions(table, row, col, on_edit=None, on_delete=None, **tips):
+    """Put RowActions into a QTableWidget row; a click selects that row first."""
+    anchor = table.item(row, 0)
+
+    def run(fn):
+        def go():
+            r = table.row(anchor) if anchor is not None else row
+            table.setCurrentCell(r, 0)
+            table.selectRow(r)
+            fn()
+        return go if fn else None
+    w = RowActions(run(on_edit), run(on_delete), **tips)
+    table.setCellWidget(row, col, w)
+    return w
+
+
+def actions_column(header, col):
+    """A fixed, narrow last column for the row icons."""
+    from PySide6.QtWidgets import QHeaderView
+    header.setStretchLastSection(False)
+    header.setSectionResizeMode(col, QHeaderView.ResizeMode.Fixed)
+    header.resizeSection(col, ROW_ACTIONS_WIDTH)
 
 
 class Card(QFrame):
@@ -110,7 +200,10 @@ class ActionBar(QFrame):
 
 class ToolHeader(ActionBar):
     """The single bar on top of a tool: icon, name and version on the left, the tool's commands right
-    after them, status pills and the main action on the right. Leaves the window's height to the work."""
+    after them, status and the main action on the right. Commands that do not fit the window's width
+    are hidden and offered in the » menu (instead of forcing the window wider)."""
+
+    SPACING = 2
 
     def __init__(self, title, icon_name=None, version_label="", tip=""):
         super().__init__()
@@ -129,46 +222,57 @@ class ToolHeader(ActionBar):
             name.setToolTip(tip)
         self.lay.addWidget(name)
         if version_label:
-            self.lay.addSpacing(6)
-            self.lay.addWidget(Pill(version_label))
+            self.lay.addSpacing(8)
+            self.lay.addWidget(label(version_label, "muted"))
         self.lay.addSpacing(10)
-        # the commands live in a tool bar: when the window is narrow the ones that do not fit move
-        # into its » menu instead of forcing the window wider
-        self.cmds = QToolBar()
-        self.cmds.setObjectName("HeaderCommands")
-        self.cmds.setMovable(False)
-        self.cmds.setFloatable(False)
-        self.cmds.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Preferred)
-        self.lay.addWidget(self.cmds, 1)
+        self.cmds_w = QWidget()
+        self.cmds_w.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Preferred)
+        self.cmds_lay = QHBoxLayout(self.cmds_w)
+        self.cmds_lay.setContentsMargins(0, 0, 0, 0)
+        self.cmds_lay.setSpacing(self.SPACING)
+        self.cmds_lay.setSizeConstraint(QLayout.SizeConstraint.SetNoConstraint)
+        self.cmds_lay.addStretch(1)
+        self.cmds_w.installEventFilter(self)
+        self.lay.addWidget(self.cmds_w, 1)
+        self.more = QToolButton()
+        self.more.setObjectName("MoreButton")
+        self.more.setAutoRaise(True)
+        self.more.setFixedSize(28, 28)
+        self.more.setToolTip("Sığmayan komutlar")
+        self.more.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.more.clicked.connect(self._show_more)
+        self.more.hide()
+        self.lay.addWidget(self.more)
         self.right = QHBoxLayout()
         self.right.setSpacing(8)
+        self.lay.addSpacing(6)
         self.lay.addLayout(self.right)
-        self._first_sep = True
+        self._items = []                        # command buttons and separators, in order
         self.retint()
 
     def retint(self):
         if self.tile:
             self.tile.setPixmap(icons.pixmap(self.icon_name, 18, theme.manager().tokens["accent"]))
+        self.more.setIcon(icons.icon("more", "accent", 16))
+
+    def _insert(self, w):
+        self.cmds_lay.insertWidget(self.cmds_lay.count() - 1, w)     # before the stretch
+        self._items.append(w)
+        QTimer.singleShot(0, self._fit)
 
     def add(self, text, icon=None, slot=None, tip=None, enabled=True):
-        if not self.cmds.actions():
-            self.cmds.addSeparator()           # a divider between the name and the first command
+        if not self._items:
+            self.sep()                          # a divider between the name and the first command
         b = button(text, icon, None, slot, tip)
         b.setEnabled(enabled)
-        self.cmds.addWidget(b)
+        self._insert(b)
         return b
 
     def sep(self):
-        self.cmds.addSeparator()
-
-    def resizeEvent(self, ev):
-        super().resizeEvent(ev)
-        # Qt's overflow button of the commands bar: give it a visible »
-        ext = self.cmds.findChild(QToolButton, "qt_toolbar_ext_button")
-        if ext is not None and ext.property("axilMore") is None:
-            ext.setProperty("axilMore", True)
-            ext.setIcon(icons.icon("more", "accent", 14))
-            ext.setToolTip("Sığmayan komutlar")
+        s = QFrame()
+        s.setObjectName("ActionSep")
+        s.setFixedHeight(22)
+        self._insert(s)
 
     def stretch(self):
         pass                                    # the bar has its own stretch before the right side
@@ -176,6 +280,54 @@ class ToolHeader(ActionBar):
     def add_right(self, widget):
         self.right.addWidget(widget, 0, Qt.AlignmentFlag.AlignVCenter)
         return widget
+
+    def eventFilter(self, obj, ev):
+        if obj is self.cmds_w and ev.type() == QEvent.Type.Resize:
+            self._fit()
+        return False
+
+    def _fit(self):
+        """Show the commands from the left while they fit; the rest go to the » menu."""
+        if not self._items:
+            return
+        avail = self.cmds_w.width()
+        widths = [w.sizeHint().width() for w in self._items]
+        total = sum(widths) + self.SPACING * (len(widths) - 1)
+        if total + self.SPACING <= avail + (self.more.width() + 6 if self.more.isVisible() else 0):
+            cut = len(self._items)
+        else:
+            room = avail - self.SPACING - (0 if self.more.isVisible() else self.more.width() + 6)
+            used, cut = 0, 0
+            for i, w in enumerate(widths):
+                need = used + w + (self.SPACING if i else 0)
+                if need > room:
+                    break
+                used, cut = need, i + 1
+        for i, w in enumerate(self._items):
+            w.setVisible(i < cut)
+        if 0 < cut < len(self._items) and isinstance(self._items[cut - 1], QFrame) \
+                and not isinstance(self._items[cut - 1], QPushButton):
+            self._items[cut - 1].hide()         # no separator right before the » button
+        self.more.setVisible(cut < len(self._items))
+
+    def hidden_commands(self):
+        return [w for w in self._items if isinstance(w, QPushButton) and not w.isVisible()]
+
+    def _show_more(self):
+        self.more_menu().exec(self.more.mapToGlobal(QPoint(0, self.more.height())))
+
+    def more_menu(self):
+        from PySide6.QtWidgets import QMenu
+        m = QMenu(self)
+        hidden = [w for w in self._items if not w.isVisible()]
+        for w in hidden:
+            if isinstance(w, QPushButton):
+                a = m.addAction(w.icon(), w.text(), w.click)
+                a.setEnabled(w.isEnabled())
+                a.setToolTip(w.toolTip())
+            elif m.actions() and not m.actions()[-1].isSeparator():
+                m.addSeparator()
+        return m
 
 
 class Divider(QFrame):

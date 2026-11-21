@@ -5,9 +5,11 @@ the palette and style sheet below give it a flat, modern look. The mode is
 "system" (follows the OS light/dark setting), "light" or "dark".
 """
 
-from PySide6.QtCore import QObject, QSettings, Qt, Signal
+import os
+
+from PySide6.QtCore import QEvent, QObject, QSettings, Qt, Signal
 from PySide6.QtGui import QColor, QFont, QFontDatabase, QGuiApplication, QPalette
-from PySide6.QtWidgets import QApplication, QStyleFactory
+from PySide6.QtWidgets import QAbstractItemView, QApplication, QComboBox, QStyleFactory
 
 # Colours follow the corporate palette: the blue (R0 G48 B135) and its 20 % tints,
 # text in 90 % black, the orange support colour used only for rare highlights.
@@ -61,6 +63,7 @@ QSS = """
 * {{ outline: none; }}
 QWidget {{ color: {text}; font-size: 13px; {font_rule} }}
 QMainWindow, QDialog, #Page, QStackedWidget > QWidget {{ background: {bg}; }}
+QTabWidget QStackedWidget > QWidget {{ background: {surface}; }}   /* tab pages: white like their card */
 QToolTip {{ background: {surface}; color: {text}; border: 1px solid {border}; padding: 4px 6px; }}
 
 /* ---------------------------------------------------------------- sidebar */
@@ -92,11 +95,14 @@ QLabel[role="pill"][state="warn"] {{ background: transparent; color: {highlight}
 /* ---------------------------------------------------------------- action bar */
 #ActionBar {{ background: {surface}; border: 1px solid {border}; border-radius: 10px; }}
 #ActionBar QPushButton {{ background: transparent; border-color: transparent; padding: 5px 10px; }}
-#HeaderCommands {{ background: transparent; border: none; spacing: 2px; padding: 0; }}
-#HeaderCommands::separator {{ background: {border}; width: 1px; margin: 6px 6px; }}
-#HeaderCommands QToolButton {{ background: transparent; border: none; }}
-#HeaderCommands QToolButton#qt_toolbar_ext_button {{ padding: 0; }}
-#HeaderCommands QToolButton#qt_toolbar_ext_button:hover {{ background: {hover}; border-radius: 4px; }}
+#RowActions {{ background: transparent; }}
+#RowAction {{ background: transparent; border: none; padding: 0; }}
+#MoreButton {{ background: transparent; border: none; border-radius: 4px; padding: 0; }}
+#MoreButton:hover {{ background: {hover}; }}
+/* the main action in a bar keeps its colour (the rule above makes bar buttons flat) */
+#ActionBar QPushButton[variant="primary"] {{ background: {primary}; border-color: {primary}; color: {accent_text}; }}
+#ActionBar QPushButton[variant="primary"]:hover {{ background: {primary_hover}; border-color: {primary_hover}; }}
+#ActionBar QPushButton[variant="primary"]:disabled {{ background: {accent_soft}; border-color: {accent_soft}; color: {muted}; }}
 #ActionBar QPushButton:hover {{ background: {hover}; }}
 #ActionSep {{ background: {border}; min-width: 1px; max-width: 1px; margin: 6px 4px; }}
 
@@ -104,7 +110,6 @@ QLabel[role="pill"][state="warn"] {{ background: transparent; color: {highlight}
 #Card {{ background: {surface}; border: 1px solid {border}; border-radius: 12px; }}
 #Card[hover="true"]:hover {{ border-color: {accent}; }}
 /* bit fields not in a register yet: a dashed, tinted card so they never look like placed ones */
-#Card[unplaced="true"] {{ background: {accent_soft}; border: 1px dashed {warning}; }}
 #IconTile {{ background: {accent_soft}; border-radius: 10px; }}
 #Divider {{ background: {border}; max-height: 1px; min-height: 1px; border: none; }}
 
@@ -141,13 +146,21 @@ QCheckBox {{ spacing: 7px; }}
 
 /* ---------------------------------------------------------------- views */
 QTreeView, QTableView, QListView {{
-    background: {row}; alternate-background-color: {row_alt}; border: 1px solid {border};
+    background: {surface}; alternate-background-color: {row_alt}; border: 1px solid {border};
     border-radius: 8px; gridline-color: {border};
     selection-background-color: {selection}; selection-color: {text};
 }}
-QTreeView::item, QTableView::item, QListView::item {{ padding: 4px 2px; }}
+QTreeView::item, QTableView::item, QListView::item {{ padding: 4px 2px; background: {row}; }}
+QTreeView::item:alternate, QTableView::item:alternate, QListView::item:alternate {{ background: {row_alt}; }}
+QTreeView::branch {{ background: {row}; }}
+QTreeView::branch:alternate {{ background: {row_alt}; }}
+QTreeView::branch:selected {{ background: {selection}; }}
+QTreeView::branch:has-children:closed {{ image: url("{branch_closed}"); }}
+QTreeView::branch:has-children:open {{ image: url("{branch_open}"); }}
 QTreeView::item:hover, QListView::item:hover {{ background: {hover}; }}
 QTreeView::item:selected, QTableView::item:selected, QListView::item:selected {{ background: {selection}; color: {text}; }}
+QComboBox QAbstractItemView::item {{ background: {surface}; }}
+QComboBox QAbstractItemView::item:selected {{ background: {selection}; }}
 QHeaderView {{ background: transparent; }}
 QHeaderView::section {{
     background: {surface2}; color: {muted}; border: none; border-bottom: 1px solid {border};
@@ -226,10 +239,19 @@ class ThemeManager(QObject):
         if self.mode not in MODES:
             self.mode = "system"
         app.setStyle(QStyleFactory.create("Fusion"))
+        app.installEventFilter(self)            # every list / table gets the same two-tone rows
         hints = QGuiApplication.styleHints()
         if hasattr(hints, "colorSchemeChanged"):
             hints.colorSchemeChanged.connect(lambda *_: self.mode == "system" and self.apply())
         self.apply()
+
+    def eventFilter(self, obj, ev):
+        if ev.type() == QEvent.Type.Polish and isinstance(obj, QAbstractItemView) \
+                and not isinstance(obj.parent(), QComboBox) and not obj.property("plainRows"):
+            w = obj.parentWidget()
+            if not (w and w.inherits("QComboBoxPrivateContainer")) and not obj.alternatingRowColors():
+                obj.setAlternatingRowColors(True)
+        return False
 
     @property
     def dark(self):
@@ -272,11 +294,38 @@ class ThemeManager(QObject):
             pal.setColor(QPalette.ColorGroup.Disabled, role, QColor(t["muted"]))
         self.app.setPalette(pal)
         font_rule = f'font-family: "{_UI_FAMILY}";' if _UI_FAMILY in UI_FONTS else ""   # else platform default
-        self.app.setStyleSheet(QSS.format(mono=mono_family(), font_rule=font_rule, **t))
+        closed, opened = _branch_arrows(t["muted"])
+        self.app.setStyleSheet(QSS.format(mono=mono_family(), font_rule=font_rule, branch_closed=closed,
+                                          branch_open=opened, **t))
         self.changed.emit()
 
 
 _manager = None
+
+
+def _branch_arrows(color):
+    """Tree expand / collapse arrows as small SVG files (a style sheet that colours the branch
+    area has to draw the arrows itself)."""
+    import tempfile
+    d = os.path.join(tempfile.gettempdir(), "axil_studio_style")
+    os.makedirs(d, exist_ok=True)
+    out = []
+    for name, path in (("closed", "M6 4l4 4-4 4"), ("open", "M4 6l4 4 4-4")):
+        f = os.path.join(d, f"branch_{name}_{color.lstrip('#')}.svg")
+        if not os.path.exists(f):
+            with open(f, "w") as fh:
+                fh.write(f'<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">'
+                         f'<path d="{path}" fill="none" stroke="{color}" stroke-width="1.6" '
+                         f'stroke-linecap="round" stroke-linejoin="round"/></svg>')
+        out.append(f.replace(os.sep, "/"))
+    return out
+
+
+def mix(a, b, t):
+    """Colour between a (t=0) and b (t=1) as #RRGGBB."""
+    ca, cb = QColor(a), QColor(b)
+    return QColor(round(ca.red() + (cb.red() - ca.red()) * t), round(ca.green() + (cb.green() - ca.green()) * t),
+                  round(ca.blue() + (cb.blue() - ca.blue()) * t)).name()
 
 
 def install(app: QApplication) -> ThemeManager:

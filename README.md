@@ -15,7 +15,9 @@ görünüm, açık/koyu tema):
 
 Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
 bir bar vardır: solda ikon, ad ve sürüm, hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
-ve ana düğme. Listelerde iki satır rengi de beyazdan farklıdır, kartların zemininden ayrılır. IP Library, Proje kartındaki
+ve ana düğme (**Kaydet** mavi kalır). Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
+dönüşümlü boyanır, listenin boş kısmı beyaz kalır. Listedeki her satırın sonunda silik bir kalem (düzenle) ve çöp
+kutusu (sil) ikonu vardır; üzerine gelince belirginleşir. IP Library, Proje kartındaki
 **IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
 yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca liste). Araçlar aynı projeyi
 (`.axproj.json`) paylaşır ve birbirini açar:
@@ -68,9 +70,9 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 - **IP aç** IP Library'den bir IP açar.
 - **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
   **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
-- Sağda üstte seçili registerın kartı (bit haritası ve bit alanları), altında ayrı, kesik çizgili ve renkli zeminli
-  **Yerleştirilmemiş bit alanları** kartı ve **Port içe aktar…** düğmesi (Ctrl+I). Sol panelde yalnızca registerlar
-  listelenir. Tüm listelerde düzenleme düğmeleri solda, *Sil* en sağdadır.
+- Sağda üstte seçili registerın kartı (bit haritası ve bit alanları), altında ayrı **Yerleştirilmemiş bit alanları**
+  kartı ve **Port içe aktar…** düğmesi (Ctrl+I). Sol panelde yalnızca registerlar listelenir. Registerlar, bit alanları,
+  değer açıklamaları ve yerleştirilmemiş alanlar satırdaki kalem / çöp ikonlarıyla düzenlenir ve silinir.
 - **Port içe aktar…**: register haritasının arkasındaki IP çekirdeğinin portları Verilog / SystemVerilog
   ya da VHDL olarak yapıştırılır (modülün / entity'nin tamamı, yalnızca port listesi ya da port satırları; dil
   kendiliğinden anlaşılır; modülün içindeki `function` / `task` bildirimleri port sayılmaz). Parametre / generic ifadeleri (`W-1`, `$clog2(N)`, `2**5`), `[15:8]` gibi aralıklar,
@@ -85,7 +87,7 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   yeni registerlara girer; bit alanı listesine de bırakılabilir. Düğmeler ne yapacaklarını yazar (ör. *5 bit alanını CTRL
   registerındaki boş bitlere yerleştir*, *5 bit alanını yeni registera yerleştir*). Yeni registera yerleştirmede bir
   registera sığmayanlar için sırayla yenileri açılır; tek alanlı register alanın adını alır (32 bitlik bir alan kendi
-  adlı registerına), diğerleri `REG<n>` olur. *Sil* / Delete istenmeyenleri siler.
+  adlı registerına), diğerleri `REG<n>` olur. Satırdaki çöp ikonu ya da Delete istenmeyenleri siler.
 - Yerleşmiş bir alan bit haritasından ya da bit alanı listesinden **sürüklenir**: bit haritasında başka bitlere
   (önizleme yeşilse yer boştur, kırmızıysa bırakılmaz), register listesinde başka bir registera (yer yoksa yerinde
   kalır) ya da listenin boş alanına (yeni register), yerleştirilmemiş kartına (registerdan çıkar). Sağ tık →
@@ -163,10 +165,10 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 
 - Tablodaki her satır bir slave portudur; sıra port numarasıdır (SLAVE0, SLAVE1 …). Satırlar sürükle-bırak ya da
   ↑/↓ ile sıralanır, **Adrese göre sırala** listeyi bir kez adres sırasına dizer.
-- Tablonun altındaki satırda **+ IP Kütüphanesinden slave ekle…**, **+ Harici slave ekle…**, Düzenle, Sil, sıralama
-  düğmeleri bulunur. **+ IP Kütüphanesinden slave ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, örnekler IP adı
+- Tablonun altındaki satırda **+ IP Kütüphanesinden slave ekle…**, **+ Harici slave ekle…** ve sıralama düğmeleri
+  bulunur; her satırın sonundaki kalem ad / adres / boyutu düzenler, çöp kutusu örneği çıkarır. **+ IP Kütüphanesinden slave ekle…** IP Library'yi açar; aynı IP istenildiği kadar eklenebilir, örnekler IP adı
   ve 0'dan başlayan numarayla adlandırılır (`GPIO_0`, `GPIO_1` …; IP yeniden adlandırılırsa örnekler de izler).
-  harici slave'ler `EXT_0` … adını alır. Ad hücresine çift tıklayarak örnek yeniden adlandırılır. **Sil**
+  harici slave'ler `EXT_0` … adını alır. Ad hücresine çift tıklayarak örnek yeniden adlandırılır. Çöp ikonu
   örneği haritadan çıkarır; IP tanımı projede kalır.
 - **Adresler**: her örnek ya *otomatik* ya *sabit*tir. Otomatikler başlangıç adresinden itibaren liste sırasıyla
   ardışık ve boyutlarına hizalı adres alır; sabitlerin aralığını atlar. Adres hücresine yazılan değer sabitlenir
@@ -180,7 +182,7 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 ## Interconnect Configurator
 
 - Slave portları adres haritasından gelir (salt okunur liste; satıra çift tık Address Map Editor'u açar).
-  Burada crossbar'ın kendisi ayarlanır: modül adı, port stili ve master'lar (**+ Master / Sil**, ada çift tık).
+  Burada crossbar'ın kendisi ayarlanır: modül adı, port stili ve master'lar (**+ Master**; satırdaki kalem adı değiştirir, çöp kutusu siler; ada çift tık da olur).
 - **Blok diyagramı**: solda master'lar, ortada crossbar, sağda slave'ler; pinler üretilen HDL'deki ad, genişlik ve yönlerle çizilir, bloklarda kendi taraflarındaki port adları (M_AXI_* / S_AXI_*, MASTER_AXI_* / SLAVE_AXI_*) yazar. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır, trackpad'de iki parmakla sıkıştırma da çalışır.
 - **Verilog önizleme** sekmesi üretilecek wrapper'ları gösterir. **Wrapper** seçimi: *Yalnızca ayrık AXI portları* (`<ad>.v`) ya da *Ayrık portlar + HDL Designer* (`<ad>.v` ve onu saran `<ad>_pk.v`).
 - Ayarlar proje dosyasında (`.axproj.json` içindeki `interconnect`) saklanır. **Ayar dosyası aç** `.xbar.json`

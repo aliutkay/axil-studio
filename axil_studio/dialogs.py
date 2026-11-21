@@ -212,7 +212,7 @@ class ValuesEditor(QWidget):
         self.hint = ui.label("", "muted")
         head.addWidget(self.hint)
         lay.addLayout(head)
-        self.table = QTableWidget(0, 5)
+        self.table = QTableWidget(0, 6)
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
@@ -224,14 +224,13 @@ class ValuesEditor(QWidget):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
         for c in (3, 4):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
+        ui.actions_column(hdr, 5)
         self.table.setMinimumHeight(120)
         self.table.doubleClicked.connect(lambda *_: self._edit())
         lay.addWidget(self.table, 1)
         bar = QHBoxLayout()
         bar.setSpacing(6)
         bar.addWidget(ui.button("Ekle", "plus", None, self._add))
-        bar.addWidget(ui.button("Düzenle", None, None, self._edit))
-        bar.addWidget(ui.button("Sil", None, "ghost", self._delete))
         bar.addStretch(1)
         lay.addLayout(bar)
         self.set_kind(kind)
@@ -263,7 +262,7 @@ class ValuesEditor(QWidget):
         w, fmt = self._width(), self._fmt()
         extra = N.typed_extra(fmt, w)
         self.table.setHorizontalHeaderLabels(["Hex", "Binary", N.label(fmt, w).replace(" (oto)", "") if extra else "",
-                                              "Okunursa anlamı", "Yazılırsa etkisi"])
+                                              "Okunursa anlamı", "Yazılırsa etkisi", ""])
         self.table.setColumnHidden(2, not extra)
         self.table.setRowCount(len(self._values))
         for row, e in enumerate(self._values):
@@ -277,6 +276,8 @@ class ValuesEditor(QWidget):
                 if text == "—":
                     it.setForeground(muted)
                 self.table.setItem(row, col, it)
+            ui.table_row_actions(self.table, row, 5, self._edit, self._delete,
+                                 edit_tip="Değer açıklamasını düzenle", delete_tip="Değer açıklamasını sil")
 
     def _selected(self):
         row = self.table.currentRow()

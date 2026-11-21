@@ -36,7 +36,7 @@ class InterconnectPage(ToolPage):
     description = ("Master'ları ve port stilini ayarlar, adres haritasından slave portlarını alır, blok "
                    "diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper üretir.")
     icon_name = "interconnect"
-    version = "0.2.4"
+    version = "0.2.5"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -74,8 +74,8 @@ class InterconnectPage(ToolPage):
         left.lay.addLayout(form)
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label("MASTER'LAR", "section"))
-        self.master_tbl = QTableWidget(0, 2)
-        self.master_tbl.setHorizontalHeaderLabels(["Port", "Ad"])
+        self.master_tbl = QTableWidget(0, 3)
+        self.master_tbl.setHorizontalHeaderLabels(["Port", "Ad", ""])
         self.master_tbl.verticalHeader().setVisible(False)
         self.master_tbl.setShowGrid(False)
         self.master_tbl.setAlternatingRowColors(True)
@@ -86,6 +86,7 @@ class InterconnectPage(ToolPage):
         mh = self.master_tbl.horizontalHeader()
         mh.setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)
         mh.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        ui.actions_column(mh, 2)
         self.master_tbl.setMaximumHeight(160)
         self.master_tbl.setToolTip("Ada çift tıklayarak değiştir")
         self.master_tbl.itemChanged.connect(self._master_changed)
@@ -94,7 +95,6 @@ class InterconnectPage(ToolPage):
         mbar = QHBoxLayout()
         mbar.setSpacing(4)
         mbar.addWidget(ui.button("Master", "plus", "ghost", self.add_master, "Yeni master"))
-        mbar.addWidget(ui.button("Sil", None, "ghost", self.delete_master, "Seçili master'ı sil"))
         mbar.addStretch(1)
         left.lay.addLayout(mbar)
         left.lay.addStretch(1)
@@ -262,6 +262,11 @@ class InterconnectPage(ToolPage):
             port.setFont(mono)
             self.master_tbl.setItem(i, 0, port)
             self.master_tbl.setItem(i, 1, QTableWidgetItem(m.name))
+            blank = QTableWidgetItem("")
+            blank.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            self.master_tbl.setItem(i, 2, blank)
+            ui.table_row_actions(self.master_tbl, i, 2, lambda i=i: self.rename_master(i), self.delete_master,
+                                 edit_tip="Master'ın adını değiştir", delete_tip="Master'ı sil")
 
         sel = self._sel_slave()
         bad = A.overlapping(self.ctx.project)

@@ -43,6 +43,13 @@ PATHS = {
     "alert": '<path d="M12 3l9.5 17h-19z"/><path d="M12 10v4.5M12 17.5v.01"/>',
     "arrow": '<path d="M5 12h14M13 6l6 6-6 6"/>',
     "plus": '<path d="M12 5v14M5 12h14"/>',
+    # save as: disk with a small pen
+    "saveas": '<path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M7 3v5h7M7 21v-6h4"/>'
+              '<path d="M14.5 21l.8-3.2 5.4-5.4a1.6 1.6 0 0 1 2.3 2.3l-5.4 5.4z"/>',
+    # pencil: edit a row
+    "edit": '<path d="M4 20l1-4 11-11a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
+    # bin: delete a row
+    "trash": '<path d="M4 7h16M10 7V4h4v3M6 7l1 13h10l1-13"/><path d="M10 11v6M14 11v6"/>',
     # double chevron: commands that did not fit in the top bar
     "more": '<path d="M5 6l6 6-6 6M13 6l6 6-6 6"/>',
     # stacked books: IP Library

@@ -31,7 +31,7 @@ ROLE = Qt.ItemDataRole.UserRole
 UNPLACED_MIME = "application/x-axil-unplaced-fields"     # drag data: indexes into spec.unplaced
 PLACED_MIME = "application/x-axil-placed-field"          # drag data: "<register>\n<field>"
 # field tree columns
-C_NAME, C_BITS, C_KIND, C_TYPE, C_RESET, C_VALUES, C_PORT, C_DESC = range(8)
+C_NAME, C_BITS, C_KIND, C_TYPE, C_RESET, C_VALUES, C_PORT, C_DESC, C_ACT = range(9)
 
 
 # ============================================================================ read-only register map tree
@@ -293,19 +293,29 @@ class BitMap(QWidget):
             self.unplacedDropped.emit(what[1], lsb)
 
 
+TAIL_ROLE = Qt.ItemDataRole.UserRole + 7
 TAIL_SPACE = 56     # empty, inert row at the end of the lists: room to drop below the last entry
 
 
 def add_tail_space(tree, height=TAIL_SPACE):
     """An empty row at the end of a list (no data, not selectable): however full the list is,
-    scrolling down leaves free room to drop fields."""
+    scrolling down leaves free room to drop fields. It is not painted (see TailRowTree)."""
     it = QTreeWidgetItem([""])
     it.setFlags(Qt.ItemFlag.NoItemFlags)
     it.setSizeHint(0, QSize(10, height))
-    it.setBackground(0, theme.manager().color("row"))   # the list's own background: no extra striped row
+    it.setData(0, TAIL_ROLE, True)
     tree.addTopLevelItem(it)
     it.setFirstColumnSpanned(True)
     return it
+
+
+class TailRowTree(QTreeWidget):
+    """Tree that leaves its tail space row unpainted, like the empty area below the rows."""
+
+    def drawRow(self, painter, option, index):
+        if index.data(TAIL_ROLE):
+            return
+        super().drawRow(painter, option, index)
 
 
 def real_items(tree):
@@ -314,7 +324,7 @@ def real_items(tree):
             if tree.topLevelItem(i).data(0, ROLE) is not None]
 
 
-class FieldsTree(QTreeWidget):
+class FieldsTree(TailRowTree):
     """Bit fields of the selected register. A field row can be dragged onto the bit map (new bits),
     the unplaced list or another register; unplaced fields dropped here go to its first free bits."""
 
@@ -361,7 +371,7 @@ class FieldsTree(QTreeWidget):
         self.unplacedDropped.emit([int(x) for x in bytes(md.data(UNPLACED_MIME)).decode().split(",") if x])
 
 
-class RegTree(QTreeWidget):
+class RegTree(TailRowTree):
     """Register list that also takes bit fields: unplaced ones dropped on a register go into it,
     below the registers they make new registers; a placed field dropped on another register moves
     there (below the registers: into a new register)."""
@@ -404,7 +414,7 @@ class RegTree(QTreeWidget):
             self.placedDropped.emit(what[1][0], what[1][1], target)
 
 
-class UnplacedTree(QTreeWidget):
+class UnplacedTree(TailRowTree):
     """Bit fields that are not in a register yet; drag them onto the bit map or a register. A
     placed field dragged here from the bit map is taken out of its register."""
 
@@ -413,7 +423,7 @@ class UnplacedTree(QTreeWidget):
 
     def __init__(self):
         super().__init__()
-        self.setHeaderLabels(["Bit alanı", "Bit", "Tip", "Kaynak"])
+        self.setHeaderLabels(["Bit alanı", "Bit", "Tip", "Kaynak", ""])
         self.setRootIsDecorated(False)
         self.setUniformRowHeights(True)
         self.setAlternatingRowColors(True)
@@ -423,9 +433,10 @@ class UnplacedTree(QTreeWidget):
         self.viewport().setAcceptDrops(True)
         self.setDragDropMode(QAbstractItemView.DragDropMode.DragDrop)
         h = self.header()
-        h.setStretchLastSection(True)
         for c in (0, 1, 2):
             h.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        h.setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)
+        ui.actions_column(h, 4)
         self.setToolTip("Bit haritasına ya da bir registera sürükle (birden çok seçilebilir); "
                         "register listesinin boş alanına bırakmak yeni register açar. Delete: sil")
 
@@ -724,6 +735,8 @@ class ValueTable(QTableWidget):
             cols.append("Okunursa anlamı")
         if self.writes:
             cols.append("Yazılırsa etkisi")
+        cols.append("")                         # row icons
+        self.act_col = len(cols) - 1
         self.setColumnCount(len(cols))
         self.setHorizontalHeaderLabels(cols)
         self.verticalHeader().setVisible(False)
@@ -738,8 +751,9 @@ class ValueTable(QTableWidget):
         hdr = self.horizontalHeader()
         for c in range(self.n_val_cols):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
-        for c in range(self.n_val_cols, len(cols)):
+        for c in range(self.n_val_cols, self.act_col):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Stretch)
+        ui.actions_column(hdr, self.act_col)
         mono = theme.mono_font()
         muted = theme.manager().color("muted")
         self.values = sorted(f.values, key=lambda e: e.value)
@@ -758,6 +772,9 @@ class ValueTable(QTableWidget):
                     it.setForeground(muted)
                 it.setToolTip("Çift tık: düzenle · Delete: sil")
                 self.setItem(row, col, it)
+            ui.table_row_actions(self, row, self.act_col, lambda v=e.value: self.editRequested.emit(v),
+                                 lambda v=e.value: self.deleteRequested.emit(v),
+                                 edit_tip="Değer açıklamasını düzenle", delete_tip="Değer açıklamasını sil")
         add = QTableWidgetItem("+ değer açıklaması ekle")
         add.setForeground(theme.manager().color("accent"))
         add.setFlags(Qt.ItemFlag.ItemIsEnabled)
@@ -827,7 +844,7 @@ class RegMapEditorPage(ToolPage):
     description = ("IP'nin register haritasını tasarlar: registerlar, bit alanları, veri tipleri ve değer "
                    "açıklamaları. Adres içermez; IP, Address Map Editor'da yerleştirilir.")
     icon_name = "regmap"
-    version = "0.5.0"
+    version = "0.5.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -842,7 +859,7 @@ class RegMapEditorPage(ToolPage):
 
         # ---- header: where the map lives + main action
         self.origin_pill = self.header.add_right(ui.Pill(""))
-        self.header.add_right(ui.button("Farklı kaydet…", None, "ghost", self.save_as,
+        self.header.add_right(ui.button("Farklı kaydet…", "saveas", "ghost", lambda: self.save_as(),
                                         "Kaydedilecek yeri seç: proje, IP kütüphanesi ya da .regspec.json dosyası"))
         self.save_btn = self.header.add_right(ui.button("Kaydet", "save", "primary", self.save,
                                                         "Son kaydedilen yere kaydet (proje / kütüphane / dosya); "
@@ -906,7 +923,7 @@ class RegMapEditorPage(ToolPage):
         self.search_ed.textChanged.connect(lambda *_: self._refresh_regs())
         rl.addWidget(self.search_ed)
         self.reg_tree = RegTree()
-        self.reg_tree.setHeaderLabels(["Ad", "Offset", "Erişim", "Strobe"])
+        self.reg_tree.setHeaderLabels(["Ad", "Offset", "Erişim", "Strobe", ""])
         self.reg_tree.setRootIsDecorated(False)
         self.reg_tree.setUniformRowHeights(True)
         self.reg_tree.setAlternatingRowColors(True)
@@ -915,6 +932,7 @@ class RegMapEditorPage(ToolPage):
         hdr.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         for c in (1, 2, 3):
             hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.ResizeToContents)
+        ui.actions_column(hdr, 4)
         self.reg_tree.currentItemChanged.connect(lambda *_: self._reg_changed())
         self.reg_tree.itemDoubleClicked.connect(lambda *_: self.edit_reg())
         self.reg_tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
@@ -924,17 +942,15 @@ class RegMapEditorPage(ToolPage):
         rl.addWidget(self.reg_tree, 1)
         rbar = QHBoxLayout()
         rbar.setSpacing(4)
-        rbar.addWidget(small_button("Düzenle", self.edit_reg, "Seçili registerı düzenle (Enter)"))
         rbar.addWidget(small_button("↑", lambda: self.move_reg(-1), "Yukarı taşı (offset'leri değiştirir)"))
         rbar.addWidget(small_button("↓", lambda: self.move_reg(1), "Aşağı taşı (offset'leri değiştirir)"))
         rbar.addWidget(small_button("Sırala", self.repack, "Offset'leri 0x00'dan itibaren 4'er artır"))
         rbar.addStretch(1)
-        rbar.addWidget(small_button("Sil", self.del_reg, "Seçili registerı sil (Delete)"))
         rl.addLayout(rbar)
         regcard = ui.Card(margins=16, spacing=10)
         regcard.lay.addWidget(regs_box, 1)
         left_lay.addWidget(regcard, 1)
-        left.setMinimumWidth(360)
+        left.setMinimumWidth(400)
         split.addWidget(left)
 
         # ---- right: the selected register's bit fields (card) above the unplaced bit fields (own card)
@@ -964,13 +980,14 @@ class RegMapEditorPage(ToolPage):
         self.fields.unplacedDropped.connect(lambda idx: self._place(idx, self._sel_reg()))
         self.fields.dragStarted.connect(self._list_drag_started)
         self.fields.setHeaderLabels(["Bit alanı", "Bitler", "Tip", "Veri tipi", "Reset", "Değer açıklamaları", "Port",
-                                     "Açıklama"])
-        self.fields.setAlternatingRowColors(False)
+                                     "Açıklama", ""])
+        self.fields.setAlternatingRowColors(True)
         self.fields.setUniformRowHeights(False)
         self.fields.setIndentation(18)
         self.fields.setExpandsOnDoubleClick(False)
         fh = self.fields.header()
-        fh.setStretchLastSection(True)
+        fh.setSectionResizeMode(C_DESC, QHeaderView.ResizeMode.Stretch)
+        ui.actions_column(fh, C_ACT)
         self.fields.itemClicked.connect(self._item_clicked)
         self.fields.itemDoubleClicked.connect(self._item_double_clicked)
         self.fields.currentItemChanged.connect(lambda *_: self._field_selection_changed())
@@ -980,7 +997,6 @@ class RegMapEditorPage(ToolPage):
         # every list bar: actions on the left, Sil on the far right
         fbar = QHBoxLayout()
         fbar.setSpacing(4)
-        fbar.addWidget(small_button("Düzenle", self.edit_field, "Seçili bit alanını düzenle (Enter)"))
         fbar.addStretch(1)
         self.legend = []
         for k in G.KINDS:
@@ -990,11 +1006,8 @@ class RegMapEditorPage(ToolPage):
             fbar.addWidget(dot)
             fbar.addSpacing(6)
             self.legend.append(dot)
-        fbar.addSpacing(10)
-        fbar.addWidget(small_button("Sil", self.del_field, "Seçili bit alanını sil (Delete)"))
         fl.addLayout(fbar)
         unp_box = ui.Card(margins=14, spacing=8)
-        unp_box.setProperty("unplaced", "true")
         ul = unp_box.lay
         uhead = QHBoxLayout()
         self.unp_title = ui.label("YERLEŞTİRİLMEMİŞ BİT ALANLARI", "section")
@@ -1029,8 +1042,6 @@ class RegMapEditorPage(ToolPage):
         ubar.addWidget(self.place_new_btn)
         ubar.addStretch(1)
         ubar.addWidget(small_button("Tümünü sil", self.clear_unplaced))
-        ubar.addSpacing(10)
-        ubar.addWidget(small_button("Sil", self.delete_unplaced, "Seçilenleri sil (Delete)"))
         ul.addLayout(ubar)
         self.unplaced.itemSelectionChanged.connect(self._update_place_buttons)
         right = QSplitter(Qt.Orientation.Vertical)
@@ -1040,7 +1051,7 @@ class RegMapEditorPage(ToolPage):
         right.setSizes([520, 240])
         split.addWidget(right)
         split.setStretchFactor(1, 1)
-        split.setSizes([370, 870])
+        split.setSizes([420, 820])
         self.body.addWidget(split, 1)
 
         # ---- validation strip
@@ -1079,7 +1090,7 @@ class RegMapEditorPage(ToolPage):
         act("IP aç (IP Library)…", self.choose_ip, "Ctrl+Shift+O")
         m.addSeparator()
         act("Kaydet", self.save, "Ctrl+Shift+S")
-        act("Farklı kaydet (proje / kütüphane / dosya)…", self.save_as)
+        act("Farklı kaydet (proje / kütüphane / dosya)…", lambda: self.save_as())
         act("İçe aktar (.regspec.json)…", self.open_spec)
         m.addSeparator()
         act("Yeni register", self.add_reg)
@@ -1233,6 +1244,8 @@ class RegMapEditorPage(ToolPage):
             if hits:
                 it.setForeground(0, accent)
             self.reg_tree.addTopLevelItem(it)
+            ui.tree_row_actions(self.reg_tree, it, 4, self.edit_reg, self.del_reg,
+                                edit_tip="Registerı düzenle", delete_tip="Registerı sil")
             if r.name == keep:
                 target = it
         regs = real_items(self.reg_tree)
@@ -1411,6 +1424,8 @@ class RegMapEditorPage(ToolPage):
             if f.kind in ("RW", "CONST"):
                 it.setToolTip(C_RESET, "\n".join(f"{a}: {b}" for a, b in N.all_views(f.reset, f.width)))
             self.fields.addTopLevelItem(it)
+            ui.tree_row_actions(self.fields, it, C_ACT, self.edit_field, self.del_field,
+                                edit_tip="Bit alanını düzenle", delete_tip="Bit alanını sil")
             if f.name == select:
                 target = it
         # size the columns from the field rows only, then hang the value rows under them
@@ -1437,6 +1452,7 @@ class RegMapEditorPage(ToolPage):
         table.editRequested.connect(lambda v, n=f.name: self.edit_value(n, v))
         table.deleteRequested.connect(lambda v, n=f.name: self.del_value(n, v))
         table.addRequested.connect(lambda n=f.name: self.add_value(n))
+        table.setFixedHeight(table.fitted_height())     # the row takes the table's height, no blank below
         ch.setSizeHint(0, QSize(10, table.fitted_height() + 8))
         holder = QWidget()
         hl = QVBoxLayout(holder)
@@ -1578,6 +1594,8 @@ class RegMapEditorPage(ToolPage):
             it.setForeground(3, QColor(t["muted"]))
             it.setToolTip(0, f"{f.name}: {f.width} bit {f.kind}\n{f.desc}\nSürükle: bit haritasına ya da bir registera")
             self.unplaced.addTopLevelItem(it)
+            ui.tree_row_actions(self.unplaced, it, 4, self.edit_unplaced, self.delete_unplaced,
+                                edit_tip="Bit alanını düzenle", delete_tip="Bit alanını sil")
             if i in select:
                 it.setSelected(True)
         add_tail_space(self.unplaced)
@@ -1595,6 +1613,8 @@ class RegMapEditorPage(ToolPage):
             if r:
                 m.addAction(f"{r.name} registerına yerleştir", self.place_selected)
             m.addAction("Yeni registera yerleştir", lambda: self.place_selected(new_register=True))
+            if len(self._sel_unplaced()) == 1:
+                m.addAction("Düzenle…", self.edit_unplaced)
             m.addAction("Tipini değiştir…", self.retype_unplaced)
             m.addSeparator()
             m.addAction("Sil", self.delete_unplaced)
@@ -1618,6 +1638,23 @@ class RegMapEditorPage(ToolPage):
         drop = set(idx)
         self.spec.unplaced = [f for i, f in enumerate(self.spec.unplaced) if i not in drop]
         self._refresh_unplaced()
+        self._mark()
+
+    def edit_unplaced(self):
+        idx = self._sel_unplaced()
+        if len(idx) != 1:
+            return
+        i = idx[0]
+        f = self.spec.unplaced[i]
+        new = FieldDialog.ask(self, f, f"Yerleştirilmemiş: {f.name}")
+        if not new:
+            return
+        if new.name != f.name and any(x.name == new.name for j, x in enumerate(self.spec.unplaced) if j != i):
+            QMessageBox.warning(self, self.title, f"“{new.name}” adı yerleştirilmemişlerde zaten var.")
+            return
+        new.lsb = 0
+        self.spec.unplaced[i] = new
+        self._refresh_unplaced({i})
         self._mark()
 
     def clear_unplaced(self):
@@ -1985,7 +2022,7 @@ class RegMapEditorPage(ToolPage):
         current = o[1] if o[0] == "project" and self.ctx.project.get_ip(o[1]) else None
         prev = self.ctx.project.get_ip(current) if current else None
         path = o[1] if o[0] == "file" else os.path.join(self.outdir or ROOT, f"{self.spec.module}.regspec.json")
-        if select is None:
+        if select not in ("project", "library", "file"):      # also the `checked` a button / action passes
             select = o[0] if o[0] in ("project", "library", "file") else "project"
         res = SaveAsDialog.ask(self, self.ctx, self.spec.module or "my_ip_axil", self.spec.version, current,
                                prev.source if prev else self.source_lib, path, select)

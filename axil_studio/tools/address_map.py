@@ -24,7 +24,7 @@ from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # slave table columns
-C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK = range(6)
+C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK, C_ACT = range(7)
 
 
 def overlapping(slaves):
@@ -167,7 +167,7 @@ class SlaveTable(QTableWidget):
     rowMoved = Signal(int, int)
 
     def __init__(self):
-        super().__init__(0, 6)
+        super().__init__(0, 7)
         self.setDragEnabled(True)
         self.setAcceptDrops(True)
         self.viewport().setAcceptDrops(True)
@@ -195,7 +195,7 @@ class AddressMapPage(ToolPage):
     description = ("Projedeki IP'leri adres haritasına yerleştirir (aynı IP birden çok kez kullanılabilir), "
                    "otomatik ya da sabit adres verir, hizalama ve çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.2.2"
+    version = "0.2.3"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -248,7 +248,7 @@ class AddressMapPage(ToolPage):
         self.map.slaveActivated.connect(self.edit_slave)
         right.lay.addWidget(self.map)
         self.table = SlaveTable()
-        self.table.setHorizontalHeaderLabels(["Port", "Ad", "IP", "Adres", "Boyut", "Adresleme"])
+        self.table.setHorizontalHeaderLabels(["Port", "Ad", "IP", "Adres", "Boyut", "Adresleme", ""])
         self.table.verticalHeader().setVisible(False)
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
@@ -270,11 +270,6 @@ class AddressMapPage(ToolPage):
                                  "eklenebilir: <IP>_0, <IP>_1 …)"))
         sbar.addWidget(ui.button("Harici slave ekle…", "plus", "ghost", self.add_external,
                                  "Projede register haritası olmayan bir slave (ör. bellek, hazır IP) ekle"))
-        sbar.addSpacing(12)
-        sbar.addWidget(ui.button("Düzenle", None, "ghost", lambda: self.edit_slave(self._sel_row()),
-                                 "Ad, adres ve boyut"))
-        sbar.addWidget(ui.button("Sil", None, "ghost", self.delete_slave,
-                                 "Seçili örneği adres haritasından çıkar (Delete); IP tanımı projede kalır"))
         sbar.addStretch(1)
         sbar.addWidget(ui.button("Adrese göre sırala", None, "ghost", self.sort_slaves,
                                  "Listeyi (port numaralarını) adres sırasına diz"))
@@ -381,10 +376,17 @@ class AddressMapPage(ToolPage):
                     it.setForeground(QColor(t["danger"]))
                 self.table.setItem(j, col, it)
             self.table.setCellWidget(j, C_SIZE, self._size_combo(j, s))
+            blank = QTableWidgetItem("")
+            blank.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
+            self.table.setItem(j, C_ACT, blank)
+            ui.table_row_actions(self.table, j, C_ACT, lambda: self.edit_slave(self._sel_row()), self.delete_slave,
+                                 edit_tip="Ad, adres ve boyut",
+                                 delete_tip="Adres haritasından çıkar (IP tanımı projede kalır)")
         self.table.resizeColumnsToContents()
         hdr = self.table.horizontalHeader()
         hdr.setSectionResizeMode(C_NAME, QHeaderView.ResizeMode.Stretch)
         self.table.setColumnWidth(C_SIZE, max(self.table.columnWidth(C_SIZE), 110))
+        ui.actions_column(hdr, C_ACT)
         if sel is not None and 0 <= sel < len(slaves):
             self.table.selectRow(sel)
         self._loading = False

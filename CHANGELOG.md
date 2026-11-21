@@ -10,6 +10,31 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.10 — satır ikonları, beyaz paneller, başlık düzeltmeleri
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.10 |
+| Register Map Editor | early-alpha 0.5.1 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.2.3 |
+| Interconnect Configurator | early-alpha 0.2.5 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.3 |
+| IP Library | early-alpha 0.2.1 |
+
+- Düzeltme: Register Map Editor'da **Farklı kaydet…** (düğme ve menü) `x not in tuple` hatasıyla çöküyordu (Qt'nin
+  `clicked(bool)` değeri seçim parametresine gidiyordu).
+- Üst bar: sürüm düz, ince yazı (kalın etiket değil); **Kaydet** ve **Farklı kaydet…** ikonlu; bardaki ana düğme yine
+  mavi. » menüsü yeniden yazıldı: pencere daraldıkça sığmayan komutlar sondan başlayarak menüye geçer, genişleyince
+  geri gelir; menüdeki komutlar düğmenin kendisini çalıştırır.
+- Kartlar, sekmeli panellerin sayfaları ve yerleştirilmemiş bit alanları kartı yeniden beyaz (turuncu kesik çerçeve
+  kalktı). Tüm listeler (ağaçlar, tablolar, dosya listeleri) aynı iki satır rengini kullanır; listenin boş kısmı beyaz.
+- Listelerde alttaki tek *Düzenle* / *Sil* düğmeleri yerine her satırın sonunda silik kalem ve çöp kutusu ikonu
+  (üzerine gelince belirginleşir): Register Map Editor'da registerlar, bit alanları, değer açıklamaları,
+  yerleştirilmemiş alanlar (artık düzenlenebilir); Address Map Editor'da slave'ler; Interconnect Configurator'da
+  master'lar; değer açıklaması penceresi.
+- Register Map Editor: açılmış değer açıklaması tablosunun altındaki boşluk kaldırıldı.
+
 ## early-alpha 0.1.9 — tek üst bar, evrensel kayıt, bit alanı panelleri
 
 | Bileşen | Sürüm |
