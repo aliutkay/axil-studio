@@ -11,6 +11,7 @@ addresses are only edited in the Address Map Editor.
 """
 
 import os
+import re
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QColor
@@ -41,7 +42,7 @@ class InterconnectPage(ToolPage):
     description = ("Her interconnect'in modül adını ve master'larını ayarlar, slave portlarını adres haritasından "
                    "alır, tüm sistemin blok diyagramını çizer ve ZipCPU axilxbar için isimli portlu wrapper'lar üretir.")
     icon_name = "interconnect"
-    version = "0.3.0"
+    version = "0.3.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -164,6 +165,14 @@ class InterconnectPage(ToolPage):
                                 "üretilen HDL'deki pinlerle")
         self.view_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.view_cb)
+        self.sig_cb = QComboBox()
+        self.sig_cb.addItem("AXI4-Lite sinyalleri", "axi")
+        self.sig_cb.addItem("HDL Designer (REQ / RSP)", "packed")
+        self.sig_cb.setToolTip("Bağlantıların gösterimi: AXI4-Lite kanalları / ayrık sinyaller ya da HDL Designer "
+                               "paketli REQ / RSP portları (üretilen dosyaları değiştirmez; dışa aktarma bu "
+                               "gösterimle yapılır)")
+        self.sig_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
+        drow.addWidget(self.sig_cb)
         drow.addSpacing(8)
         drow.addWidget(ui.button("−", None, "ghost", lambda: self._dia().zoom_by(1 / 1.2), "Uzaklaş"))
         self.zoom_lbl = ui.label("100%", "muted")
@@ -173,13 +182,16 @@ class InterconnectPage(ToolPage):
         drow.addWidget(ui.button("+", None, "ghost", lambda: self._dia().zoom_by(1.2), "Yakınlaş"))
         drow.addWidget(ui.button("Sığdır", None, "ghost", lambda: self._dia().set_zoom(None), "Genişliğe sığdır"))
         drow.addWidget(ui.button("100%", None, "ghost", lambda: self._dia().set_zoom(1.0), "Gerçek boyut"))
-        drow.addSpacing(12)
-        drow.addWidget(ui.label("Tekerlek: yakınlaş · sürükle: kaydır", "muted"))
         drow.addStretch(1)
         self.all_sig_cb = QCheckBox("Tüm sinyalleri göster")
         self.all_sig_cb.setToolTip("Ayrık sinyal stilinde her AXI sinyalini ayrı pin olarak çizer")
         self.all_sig_cb.toggled.connect(lambda on: self.diagram.set_all_signals(on))
         drow.addWidget(self.all_sig_cb)
+        drow.addWidget(ui.button("PDF…", "file", "ghost", lambda: self.export_diagram("pdf"),
+                                 "Gösterilen diyagramı PDF olarak kaydet (beyaz zeminde)"))
+        drow.addWidget(ui.button("draw.io…", "file", "ghost", lambda: self.export_diagram("drawio"),
+                                 "Gösterilen diyagramı draw.io (diagrams.net) dosyası olarak kaydet: her blok, "
+                                 "yazı ve bağlantı düzenlenebilir"))
         dt.addLayout(drow)
         self.diagram = BlockDiagram()
         self.diagram.slaveClicked.connect(lambda j: self.slave_tbl.selectRow(j))
@@ -231,6 +243,9 @@ class InterconnectPage(ToolPage):
 
         self.module_ed.editingFinished.connect(self._settings_changed)
         self.style_cb.currentIndexChanged.connect(self._settings_changed)
+        self.sig_cb.blockSignals(True)
+        self.sig_cb.setCurrentIndex(1 if self.style == "packed" else 0)
+        self.sig_cb.blockSignals(False)
         self.load_from_project()
 
     # ================================================================ menus
@@ -473,7 +488,7 @@ class InterconnectPage(ToolPage):
 
     def _switch_view(self):
         self.dia_stack.setCurrentIndex(0 if self.view_cb.currentData() == "system" else 1)
-        self.all_sig_cb.setVisible(self.view_cb.currentData() != "system")
+        self.all_sig_cb.setVisible(self.view_cb.currentData() != "system" and self.sig_cb.currentData() == "axi")
         self._update_diagram()
         self.zoom_lbl.setText(f"{round(self._dia()._scale * 100)}%")
 
@@ -488,10 +503,35 @@ class InterconnectPage(ToolPage):
         if self.view_cb.currentData() == "system":
             insts = self.proj.level(b)
             sel_name = insts[s].name if s is not None and s < len(insts) else None
-            self.system.set_project(self.proj, self.style, b.name if b else "", sel_name)
+            self.system.set_project(self.proj, self.sig_cb.currentData(), b.name if b else "", sel_name)
         else:
-            self.diagram.set_spec(self.spec(), sel, bad)
+            spec = self.spec()
+            spec.style = "packed" if self.sig_cb.currentData() == "packed" else "signals"
+            kinds = ["bridge" if i.bridge else "ext" if i.external else "ip" for i in self.proj.level(b)]
+            self.diagram.set_spec(spec, sel, bad, kinds)
         self._refresh_preview()
+
+    def export_diagram(self, fmt):
+        d = self._dia()
+        system = d is self.system
+        stem = (f"{self.proj.name}_sistem" if system else self.spec().module) + \
+            ("_hdld" if self.sig_cb.currentData() == "packed" else "_axi")
+        stem = re.sub(r"[^\w.-]+", "_", stem)
+        ext, flt = (".pdf", "PDF (*.pdf)") if fmt == "pdf" else (".drawio", "draw.io (*.drawio)")
+        path, _ = QFileDialog.getSaveFileName(self, "Blok diyagramını kaydet",
+                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), stem + ext), flt)
+        if not path:
+            return
+        if not path.lower().endswith(ext):
+            path += ext
+        try:
+            if fmt == "pdf":
+                d.export_pdf(path)
+            else:
+                d.export_drawio(path, stem)
+        except (OSError, RuntimeError) as exc:
+            return self.error("Kaydedilemedi", exc)
+        self.status(f"Blok diyagramı kaydedildi ({self.sig_cb.currentText()}): {path}")
 
     def _files(self):
         out = []

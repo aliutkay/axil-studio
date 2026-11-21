@@ -10,6 +10,29 @@ kendi sürümü vardır (`axil_studio/__init__.py` → `APP_VERSION`, her aracı
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.12 — kilitler, pastel blok renkleri, diyagram dışa aktarma
+
+| Bileşen | Sürüm |
+|---|---|
+| AXIL Studio (hub) | early-alpha 0.1.12 |
+| Register Map Editor | early-alpha 0.5.1 |
+| Slave Interface Wrapper | early-alpha 0.2.4 |
+| Address Map Editor | early-alpha 0.3.1 |
+| Interconnect Configurator | early-alpha 0.3.1 |
+| UART-to-AXI Debug Bridge | early-alpha 0.0.4 |
+| IP Library | early-alpha 0.2.1 |
+
+- Pencere başlıkları *AXIL Studio <araç> <sürüm> | <proje>* biçiminde; araçların üst barındaki sürüm yazısı kalktı
+  (sürüm başlıkta ve adın ipucunda).
+- Listelerin zemini satırların açık tonuyla aynı.
+- Address Map Editor: *Adresleme* sütunu yerine adresin ve boyutun yanında çalışan kilit düğmeleri; altta *Tüm
+  adresleri kilitle / kilitlerini aç* ve *Tüm boyutları kilitle / kilitlerini aç*. Bellek şeridi blok diyagramının
+  pastel renklerini kullanır.
+- Interconnect Configurator: blok diyagramının zemini beyaz, bloklar türüne göre pastel renkli (master, interconnect,
+  IP, harici slave, Sub-bus Bridge) ve renk açıklamalı. Bağlantılar *AXI4-Lite* (tüm sistemde AW / W / B / AR / R
+  kanalları) ya da *HDL Designer* (REQ / RSP) olarak gösterilir. **PDF…** ve **draw.io…** gösterilen diyagramı o anki
+  gösterimle kaydeder (açık renkler, seçim vurgusu olmadan).
+
 ## early-alpha 0.1.11 — Sub-bus Bridge: hiyerarşik adres haritası ve interconnect'ler
 
 | Bileşen | Sürüm |

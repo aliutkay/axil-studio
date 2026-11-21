@@ -624,7 +624,7 @@ class BridgeDialog(FormDialog):
         while first < need:
             first <<= 1                         # windows are powers of two
         for w in window_choices(first):
-            self.window.addItem(f"🔒 {size_text(w)}  ({w:#x})", w)
+            self.window.addItem(f"{size_text(w)}  ({w:#x}) · kilitli", w)
         self.window.setCurrentIndex(max(0, self.window.findData(cur or 0)))
 
     def apply(self):

@@ -25,7 +25,14 @@ LIGHT = {
     "hover": "#E6EAF2", "selection": "#CCD6E7", "danger": "#C62828", "success": "#2E7D32",
     "warning": ORANGE, "highlight": ORANGE, "input": "#FFFFFF",
     # list rows: neither of the two is white, so a list stands out from the white cards
-    "row": "#F6F7FA", "row_alt": "#ECEFF5",
+    "row": "#F6F7FA", "row_alt": "#ECEFF5", "list_bg": "#F6F7FA",   # list background: its lightest row tone
+    # block colours (block diagram, memory strip): pastel fill / border / title per block kind
+    "blk_ip": "#DDEBFB", "blk_ip_b": "#7FA8DA", "blk_ip_t": "#1F4E86",
+    "blk_ext": "#ECEEF2", "blk_ext_b": "#A3ABB8", "blk_ext_t": "#465063",
+    "blk_xbar": "#E8E1F7", "blk_xbar_b": "#9B88D3", "blk_xbar_t": "#4A3A8C",
+    "blk_master": "#DDF2E3", "blk_master_b": "#7FBF92", "blk_master_t": "#245C35",
+    "blk_bridge": "#FDEBD6", "blk_bridge_b": "#E0A766", "blk_bridge_t": "#8A5414",
+    "diagram_bg": "#FFFFFF",
 }
 DARK = {   # black / graphite, not navy; the corporate blue stays on buttons and accents
     "bg": "#0B0B0D", "surface": "#151518", "surface2": "#1C1C20", "sidebar": "#111114",
@@ -34,7 +41,13 @@ DARK = {   # black / graphite, not navy; the corporate blue stays on buttons and
     "primary": "#1F4C9C", "primary_hover": "#33599F",
     "hover": "#232328", "selection": "#2C3A57", "danger": "#EF6B6B", "success": "#5CBF73",
     "warning": ORANGE, "highlight": ORANGE, "input": "#101013",
-    "row": "#18181C", "row_alt": "#202025",
+    "row": "#18181C", "row_alt": "#202025", "list_bg": "#202025",
+    "blk_ip": "#1C2A3D", "blk_ip_b": "#4F7DB5", "blk_ip_t": "#A9C8EE",
+    "blk_ext": "#24262B", "blk_ext_b": "#646C7A", "blk_ext_t": "#C2C8D2",
+    "blk_xbar": "#2A2440", "blk_xbar_b": "#7D6BC0", "blk_xbar_t": "#CBBEF2",
+    "blk_master": "#1D3125", "blk_master_b": "#5A9E6E", "blk_master_t": "#B3E0C0",
+    "blk_bridge": "#3A2B19", "blk_bridge_b": "#C08A47", "blk_bridge_t": "#F2CB98",
+    "diagram_bg": "#151518",
 }
 # Field-kind colours are their own signal colours (not the corporate palette, which is for
 # menus and buttons): blue control, green status, amber pulse, red event flag, grey constant.
@@ -146,7 +159,7 @@ QCheckBox {{ spacing: 7px; }}
 
 /* ---------------------------------------------------------------- views */
 QTreeView, QTableView, QListView {{
-    background: {surface}; alternate-background-color: {row_alt}; border: 1px solid {border};
+    background: {list_bg}; alternate-background-color: {row_alt}; border: 1px solid {border};
     border-radius: 8px; gridline-color: {border};
     selection-background-color: {selection}; selection-color: {text};
 }}
@@ -319,6 +332,12 @@ def _branch_arrows(color):
                          f'stroke-linecap="round" stroke-linejoin="round"/></svg>')
         out.append(f.replace(os.sep, "/"))
     return out
+
+
+def block_colors(kind, t=None):
+    """(fill, border, title) of a block kind in a diagram: ip, ext, xbar, master, bridge."""
+    t = t or _manager.tokens
+    return t[f"blk_{kind}"], t[f"blk_{kind}_b"], t[f"blk_{kind}_t"]
 
 
 def mix(a, b, t):

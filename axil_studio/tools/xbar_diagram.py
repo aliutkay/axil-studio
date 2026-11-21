@@ -1,14 +1,25 @@
-"""Block diagram of the interconnect: masters on the left, the crossbar in the middle, slaves on
-the right. Crossbar pins come from the generated wrapper header (xbargen.xbar_ports), so names,
-widths and directions are exactly those of the HDL for the chosen port style. Every master and
-slave block shows its own side of each connection (M_AXI_* / S_AXI_*, or the packed
-MASTER_AXI_* / SLAVE_AXI_* ports of the HDL Designer blocks). Ctrl + wheel or the page's
-buttons zoom; "fit" scales the diagram to the available width."""
+"""Block diagrams of the interconnects.
 
+BlockDiagram: one crossbar with its masters on the left and slaves on the right. Crossbar pins
+come from the generated wrapper header (xbargen.xbar_ports), so names, widths and directions are
+exactly those of the HDL for the shown port style (AXI4-Lite signals or HDL Designer REQ/RSP).
+Every master and slave block shows its own side of each connection (M_AXI_* / S_AXI_*, or the
+packed MASTER_AXI_* / SLAVE_AXI_* ports of the HDL Designer blocks).
+
+SystemDiagram: the whole bus hierarchy left to right; each connection is drawn as its AXI4-Lite
+channels (AW, W, B, AR, R) or as the HDL Designer REQ / RSP pair.
+
+Blocks are coloured by kind (master, interconnect, IP, external slave, Sub-bus Bridge). Both
+diagrams draw through a Canvas that can also record what it draws, so they export to PDF and to
+draw.io (.drawio) exactly as shown. The mouse wheel zooms around the cursor, dragging the empty
+background pans; "fit" scales the diagram to the available width."""
+
+import html
 import re
 
-from PySide6.QtCore import QEvent, QPointF, QRectF, QSize, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QFontMetrics, QPainter, QPainterPath, QPen, QPolygonF
+from PySide6.QtCore import QEvent, QMarginsF, QPointF, QRectF, QSize, QSizeF, Qt, QTimer, Signal
+from PySide6.QtGui import (QColor, QFont, QFontMetrics, QPageLayout, QPageSize, QPainter, QPainterPath, QPdfWriter,
+                           QPen, QPicture, QPolygonF)
 from PySide6.QtWidgets import QToolTip, QWidget
 
 from axil_studio.core import xbargen as X
@@ -16,8 +27,8 @@ from axil_studio import theme
 from axil_studio.dialogs import size_text
 from axil_studio.core.model import hex32
 
-IN_COLOR = "#3B82F6"     # into the crossbar
-OUT_COLOR = "#D99A00"    # out of the crossbar
+IN_COLOR = "#3B82F6"     # towards the slaves (requests)
+OUT_COLOR = "#D99A00"    # towards the masters (responses)
 PIN_H = 20
 HEAD = 46                # block title area above the first pin
 GAP = 16
@@ -25,6 +36,13 @@ WIRE = 70
 MARGIN = 24
 TOP = 92
 ZOOM_MIN, ZOOM_MAX = 0.3, 3.0
+
+# how a connection is shown in the whole-system diagram
+CHANNELS = {
+    "axi": [("AW", 1), ("W", 1), ("B", -1), ("AR", 1), ("R", -1)],
+    "packed": [("REQ", 1), ("RSP", -1)],
+}
+MODE_TEXT = {"axi": "AXI4-Lite sinyalleri", "packed": "HDL Designer (REQ / RSP)"}
 
 
 def block_pin_name(xbar_name):
@@ -38,6 +56,113 @@ def block_pin_name(xbar_name):
     return xbar_name
 
 
+# ============================================================================ drawing + recording
+class Canvas:
+    """Draws rectangles, text and arrows on a QPainter; with `rec` (a list) it also records them
+    as primitives for the draw.io export."""
+
+    def __init__(self, painter, rec=None):
+        self.p = painter
+        self.rec = rec
+
+    def rect(self, r, fill, stroke, width=1.2, radius=8):
+        p = self.p
+        p.setPen(QPen(QColor(stroke), width) if stroke else Qt.PenStyle.NoPen)
+        p.setBrush(QColor(fill) if fill else Qt.BrushStyle.NoBrush)
+        p.drawRoundedRect(r, radius, radius)
+        if self.rec is not None:
+            self.rec.append(("rect", QRectF(r), fill, stroke, width, radius))
+
+    def head(self, r, fill, radius=10):
+        """A rounded box's title band (rounded on top only)."""
+        path = QPainterPath()
+        path.addRoundedRect(r, radius, radius)
+        self.p.fillPath(path, QColor(fill))
+        self.p.fillRect(QRectF(r.left(), r.bottom() - radius, r.width(), radius), QColor(fill))
+        if self.rec is not None:
+            self.rec.append(("rect", QRectF(r), fill, None, 0, radius))
+
+    def text(self, r, s, color, font, align=Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
+             elide=True):
+        p = self.p
+        p.setFont(font)
+        p.setPen(QColor(color))
+        if elide:
+            s = QFontMetrics(font).elidedText(s, Qt.TextElideMode.ElideRight, int(max(4, r.width())))
+        p.drawText(r, align, s)
+        if self.rec is not None and s:
+            self.rec.append(("text", QRectF(r), s, color, QFont(font), int(align)))
+
+    def line(self, a, b, color, width=2, arrow=0):
+        """arrow: 1 at b, -1 at a, 0 none."""
+        p = self.p
+        p.setPen(QPen(QColor(color), width))
+        p.drawLine(a, b)
+        if arrow:
+            tip, frm = (b, a) if arrow > 0 else (a, b)
+            self._head(tip, frm, QColor(color))
+        if self.rec is not None:
+            self.rec.append(("line", QPointF(a), QPointF(b), color, width, arrow))
+
+    def _head(self, tip, frm, color, s=6):
+        dx, dy = tip.x() - frm.x(), tip.y() - frm.y()
+        n = max(1e-6, (dx * dx + dy * dy) ** 0.5)
+        ux, uy = dx / n, dy / n
+        poly = QPolygonF([tip, QPointF(tip.x() - ux * s - uy * s / 1.4, tip.y() - uy * s + ux * s / 1.4),
+                          QPointF(tip.x() - ux * s + uy * s / 1.4, tip.y() - uy * s - ux * s / 1.4)])
+        self.p.setPen(Qt.PenStyle.NoPen)
+        self.p.setBrush(color)
+        self.p.drawPolygon(poly)
+
+
+def drawio_xml(prims, width, height, name="diagram"):
+    """A draw.io (diagrams.net) file holding the recorded primitives as shapes, texts and arrows."""
+    cells = ['<mxCell id="0"/>', '<mxCell id="1" parent="0"/>']
+    k = 2
+
+    def esc(v):
+        return html.escape(str(v), quote=True)
+    for prim in prims:
+        if prim[0] == "rect":
+            _, r, fill, stroke, w, radius = prim
+            arc = int(min(50, radius * 100 / max(1, min(r.width(), r.height()))))
+            style = (f"rounded=1;arcSize={arc};absoluteArcSize=0;whiteSpace=wrap;html=1;"
+                     f"fillColor={fill or 'none'};strokeColor={stroke or 'none'};strokeWidth={w or 1};")
+            cells.append(f'<mxCell id="c{k}" value="" style="{esc(style)}" vertex="1" parent="1">'
+                         f'<mxGeometry x="{r.x():.1f}" y="{r.y():.1f}" width="{r.width():.1f}" '
+                         f'height="{r.height():.1f}" as="geometry"/></mxCell>')
+        elif prim[0] == "text":
+            _, r, s, color, font, align = prim
+            h = ("center" if align & int(Qt.AlignmentFlag.AlignHCenter) else
+                 "right" if align & int(Qt.AlignmentFlag.AlignRight) else "left")
+            size = font.pixelSize() if font.pixelSize() > 0 else round(font.pointSizeF() * 4 / 3)
+            style = (f"text;html=1;whiteSpace=nowrap;align={h};verticalAlign=middle;fontColor={color};"
+                     f"fontSize={size};fontFamily={font.family()};fontStyle={1 if font.bold() else 0};"
+                     "spacing=0;overflow=visible;")
+            cells.append(f'<mxCell id="c{k}" value="{esc(s)}" style="{esc(style)}" vertex="1" parent="1">'
+                         f'<mxGeometry x="{r.x():.1f}" y="{r.y():.1f}" width="{r.width():.1f}" '
+                         f'height="{r.height():.1f}" as="geometry"/></mxCell>')
+        else:
+            _, a, b, color, w, arrow = prim
+            if arrow < 0:
+                a, b = b, a
+            style = (f"endArrow={'block' if arrow else 'none'};endFill=1;html=1;strokeColor={color};"
+                     f"strokeWidth={w};")
+            cells.append(f'<mxCell id="c{k}" value="" style="{esc(style)}" edge="1" parent="1">'
+                         f'<mxGeometry relative="1" as="geometry">'
+                         f'<mxPoint x="{a.x():.1f}" y="{a.y():.1f}" as="sourcePoint"/>'
+                         f'<mxPoint x="{b.x():.1f}" y="{b.y():.1f}" as="targetPoint"/>'
+                         f'</mxGeometry></mxCell>')
+        k += 1
+    return ('<?xml version="1.0" encoding="UTF-8"?>\n'
+            f'<mxfile host="AXIL Studio"><diagram name="{esc(name)}" id="axil">'
+            f'<mxGraphModel dx="{int(width)}" dy="{int(height)}" grid="0" gridSize="10" guides="1" tooltips="1" '
+            f'connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="{int(width)}" '
+            f'pageHeight="{int(height)}" background="#FFFFFF" math="0" shadow="0"><root>'
+            + "".join(cells) + "</root></mxGraphModel></diagram></mxfile>\n")
+
+
+# ============================================================================ one crossbar
 class BlockDiagram(QWidget):
     masterClicked = Signal(int)
     slaveClicked = Signal(int)
@@ -51,19 +176,25 @@ class BlockDiagram(QWidget):
         self.selected = None          # ("m", i) | ("s", j)
         self.all_signals = False
         self.bad = set()
+        self.kinds = []               # per slave: "ip" | "ext" | "bridge"
         self.error = None
         self.zoom = None              # None: fit to width
         self._scale = 1.0
         self._hits = []
         self._size = QSize(900, 400)
+        self._tokens = None           # a fixed palette while exporting
         self.mono = theme.mono_font()
         self.scroll = None            # the QScrollArea around the diagram (set by the page)
         self._pan = None
         self.setMouseTracking(True)
 
+    def tokens(self):
+        return self._tokens or theme.manager().tokens
+
     # ------------------------------------------------------------ data
-    def set_spec(self, spec, selected=None, bad=()):
+    def set_spec(self, spec, selected=None, bad=(), kinds=None):
         self.spec, self.selected, self.bad = spec, selected, set(bad)
+        self.kinds = list(kinds or [])
         try:
             self._build()
             self.error = None
@@ -73,7 +204,7 @@ class BlockDiagram(QWidget):
 
     def set_all_signals(self, on):
         self.all_signals = on
-        self.set_spec(self.spec, self.selected, self.bad)
+        self.set_spec(self.spec, self.selected, self.bad, self.kinds)
 
     # ------------------------------------------------------------ zoom
     def set_zoom(self, z):
@@ -137,6 +268,80 @@ class BlockDiagram(QWidget):
 
     def sizeHint(self):
         return QSize(int(self._size.width() * self._scale), int(self._size.height() * self._scale))
+
+    # ------------------------------------------------------------ painting / export
+    def paintEvent(self, _):
+        t = self.tokens()
+        p = QPainter(self)
+        p.fillRect(self.rect(), QColor(t["diagram_bg"]))
+        if self.spec is None:
+            return
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        if self.error:
+            p.setPen(QColor(t["danger"]))
+            p.drawText(QRectF(self.rect()).adjusted(16, 16, -16, -16),
+                       Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self.error)
+            return
+        p.scale(self._scale, self._scale)
+        self._hits = []
+        self.render_to(Canvas(p), t)
+
+    def _export_tokens(self):
+        return dict(theme.LIGHT)          # exports are always light, on white
+
+    SEL_ATTRS = ("selected", "level_sel", "inst_sel")
+
+    def _render_export(self, painter, rec=None):
+        """Draw for an export: light palette, no selection highlight; the screen state is kept."""
+        keep = {a: getattr(self, a) for a in self.SEL_ATTRS if hasattr(self, a)}
+        hits = self._hits
+        for a in keep:
+            setattr(self, a, "" if a == "level_sel" else None)
+        if "level_sel" in keep:
+            self.level_sel = None
+        self._tokens = self._export_tokens()
+        try:
+            self.render_to(Canvas(painter, rec), self._tokens)
+        finally:
+            self._tokens = None
+            self._hits = hits
+            for a, v in keep.items():
+                setattr(self, a, v)
+
+    def export_pdf(self, path):
+        """The diagram as one PDF page of its own size (always the light palette, white page)."""
+        if self.spec is None or self.error:
+            raise RuntimeError(self.error or "Çizilecek bir şey yok")
+        w, h = self._size.width(), self._size.height()
+        pdf = QPdfWriter(path)
+        pdf.setResolution(72)
+        pdf.setPageLayout(QPageLayout(QPageSize(QSizeF(w, h), QPageSize.Unit.Point, "diagram",
+                                                QPageSize.SizeMatchPolicy.ExactMatch),
+                                      QPageLayout.Orientation.Portrait, QMarginsF(0, 0, 0, 0)))
+        pdf.setTitle("AXIL Studio block diagram")
+        p = QPainter(pdf)
+        p.setRenderHint(QPainter.RenderHint.Antialiasing)
+        sx = pdf.width() / w
+        p.scale(sx, sx)
+        p.fillRect(QRectF(0, 0, w, h), QColor("#FFFFFF"))
+        try:
+            self._render_export(p)
+        finally:
+            p.end()
+
+    def export_drawio(self, path, name="diagram"):
+        """The diagram as a draw.io file: every block, text and connection as an editable shape."""
+        if self.spec is None or self.error:
+            raise RuntimeError(self.error or "Çizilecek bir şey yok")
+        pic = QPicture()
+        p = QPainter(pic)
+        rec = []
+        try:
+            self._render_export(p, rec)
+        finally:
+            p.end()
+        with open(path, "w", encoding="utf-8") as fh:
+            fh.write(drawio_xml(rec, self._size.width(), self._size.height(), name))
 
     # ------------------------------------------------------------ layout
     def _pins(self, pins, side_prefix):
@@ -205,137 +410,89 @@ class BlockDiagram(QWidget):
     def _pin_ys(slot, n):
         return [slot.top() + HEAD + i * PIN_H + PIN_H / 2 for i in range(n)]
 
-    # ------------------------------------------------------------ paint
-    def paintEvent(self, _):
-        if self.spec is None:
-            return
-        t = theme.manager().tokens
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self.error:
-            p.setPen(QColor(t["danger"]))
-            p.drawText(QRectF(self.rect()).adjusted(16, 16, -16, -16),
-                       Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self.error)
-            return
-        p.scale(self._scale, self._scale)
+    def render_to(self, cv, t):
         sp = self.spec
-        self._hits = []
         bold = QFont(self.font())
         bold.setBold(True)
         small = self.mono
+        base = QFont(self.font())
 
         # legend
-        p.setFont(self.font())
         x = MARGIN
         for color, text in ((IN_COLOR, "crossbar girişi (input)"), (OUT_COLOR, "crossbar çıkışı (output)")):
-            p.setPen(QPen(QColor(color), 2))
-            p.drawLine(QPointF(x, 18), QPointF(x + 26, 18))
-            self._arrow(p, QPointF(x + 26, 18), 1, QColor(color))
-            p.setPen(QColor(t["muted"]))
-            p.drawText(QPointF(x + 34, 22), text)
-            x += 34 + p.fontMetrics().horizontalAdvance(text) + 24
+            cv.line(QPointF(x, 18), QPointF(x + 26, 18), color, 2, 1)
+            w = QFontMetrics(base).horizontalAdvance(text) + 4
+            cv.text(QRectF(x + 34, 8, w, 20), text, t["muted"], base, elide=False)
+            x += 34 + w + 20
 
         # crossbar
         xr = self.xbar_rect
-        p.setPen(QPen(QColor(t["primary"]), 2))
-        p.setBrush(QColor(t["surface"]))
-        p.drawRoundedRect(xr, 10, 10)
+        xf, xb, xt = theme.block_colors("xbar", t)
+        cv.rect(xr, xf, xb, 2, 10)
         head = QRectF(xr.left(), xr.top(), xr.width(), 34)
-        path = QPainterPath()
-        path.addRoundedRect(head, 10, 10)
-        p.fillPath(path, QColor(t["primary"]))
-        p.fillRect(QRectF(head.left(), head.bottom() - 10, head.width(), 10), QColor(t["primary"]))
-        p.setPen(QColor("#FFFFFF"))
-        p.setFont(bold)
-        p.drawText(head, Qt.AlignmentFlag.AlignCenter, f"{sp.module}   ·   axilxbar")
-        p.setFont(small)
+        cv.head(head, xb)
+        cv.text(head, f"{sp.module}   ·   axilxbar", "#FFFFFF", bold, Qt.AlignmentFlag.AlignCenter)
         for k, (d, w, n) in enumerate(self.clock):
             cx = xr.left() + 40 + k * 110
-            p.setPen(QPen(QColor(IN_COLOR), 2))
-            p.drawLine(QPointF(cx, xr.top() - 34), QPointF(cx, xr.top()))
-            self._arrow(p, QPointF(cx, xr.top()), 2, QColor(IN_COLOR))
-            p.setPen(QColor(t["text"]))
-            p.drawText(QPointF(cx + 6, xr.top() - 22), n)
-        p.setPen(QColor(t["muted"]))
+            cv.line(QPointF(cx, xr.top() - 34), QPointF(cx, xr.top()), IN_COLOR, 2, 1)
+            cv.text(QRectF(cx + 6, xr.top() - 32, 100, 16), n, t["text"], small)
         foot = (f"{sp.module}_pk (HDL Designer): port başına paketli REQ[110:0] / RSP[40:0]" if sp.style == "packed"
                 else f"{sp.module}: ayrık AXI4-Lite sinyalleri")
-        p.drawText(QRectF(xr.left() + 6, xr.bottom() - 22, xr.width() - 12, 18), Qt.AlignmentFlag.AlignCenter,
-                   p.fontMetrics().elidedText(foot, Qt.TextElideMode.ElideRight, int(xr.width() - 12)))
+        cv.text(QRectF(xr.left() + 6, xr.bottom() - 22, xr.width() - 12, 18), foot, xt, small,
+                Qt.AlignmentFlag.AlignCenter)
 
         for i, m in enumerate(sp.masters):
             box = QRectF(self.mx, self.mslots[i].top(), self.mw, self.mslots[i].height())
-            self._block(p, t, bold, small, box, m.name, f"MASTER{i}", "", "", ("m", i) == self.selected, False)
+            self._block(cv, t, bold, small, box, "master", m.name, f"MASTER{i}", "", "", ("m", i) == self.selected,
+                        False)
             self._hits.append((box, "m", i, f"MASTER{i} · {m.name}"))
-            self._side(p, t, small, self.left[i], self.mslots[i], True)
+            self._side(cv, t, small, self.left[i], self.mslots[i], True)
         for j, s in enumerate(sp.slaves):
             box = QRectF(self.sx, self.sslots[j].top(), self.sw, self.sslots[j].height())
             rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}"
-            self._block(p, t, bold, small, box, s.name, f"SLAVE{j}", rng, size_text(s.window),
+            kind = self.kinds[j] if j < len(self.kinds) else ("ext" if s.external else "ip")
+            self._block(cv, t, bold, small, box, kind, s.name, f"SLAVE{j}", rng, size_text(s.window),
                         ("s", j) == self.selected, j in self.bad)
             self._hits.append((box, "s", j, f"SLAVE{j} · {s.name}\n{rng}"))
-            self._side(p, t, small, self.right[j], self.sslots[j], False)
+            self._side(cv, t, small, self.right[j], self.sslots[j], False)
 
-    def _block(self, p, t, bold, small, box, title, port, line2, line3, selected, bad):
-        fill = QColor(t["surface"])
-        border = QColor(t["danger"]) if bad else QColor(t["text"] if selected else t["border"])
-        p.setPen(QPen(border, 2.5 if selected or bad else 1.2))
-        p.setBrush(fill)
-        p.drawRoundedRect(box, 8, 8)
+    def _block(self, cv, t, bold, small, box, kind, title, port, line2, line3, selected, bad):
+        fill, border, tcol = theme.block_colors(kind, t)
+        stroke = t["danger"] if bad else t["text"] if selected else border
+        cv.rect(box, fill, stroke, 2.5 if selected or bad else 1.4, 8)
         inner = box.adjusted(10, 6, -10, 0)
-        p.setFont(bold)
-        p.setPen(QColor(t["text"]))
-        p.drawText(QRectF(inner.left(), inner.top(), inner.width() - 70, 18), Qt.AlignmentFlag.AlignLeft,
-                   p.fontMetrics().elidedText(title, Qt.TextElideMode.ElideRight, int(inner.width() - 70)))
-        p.setFont(small)
-        p.setPen(QColor(t["muted"]))
-        p.drawText(QRectF(inner.left(), inner.top(), inner.width(), 18), Qt.AlignmentFlag.AlignRight, port)
+        cv.text(QRectF(inner.left(), inner.top(), inner.width() - 70, 18), title, tcol, bold)
+        cv.text(QRectF(inner.left(), inner.top(), inner.width(), 18), port, t["muted"], small,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if line2:
-            p.drawText(QRectF(inner.left(), inner.top() + 19, inner.width(), 16), Qt.AlignmentFlag.AlignLeft, line2)
+            cv.text(QRectF(inner.left(), inner.top() + 19, inner.width() - 60, 16), line2, t["muted"], small)
         if line3:
-            p.drawText(QRectF(inner.left(), inner.top() + 19, inner.width(), 16), Qt.AlignmentFlag.AlignRight, line3)
-        p.setPen(QPen(QColor(t["border"]), 1))
-        p.drawLine(QPointF(box.left() + 1, box.top() + HEAD - 6), QPointF(box.right() - 1, box.top() + HEAD - 6))
+            cv.text(QRectF(inner.left(), inner.top() + 19, inner.width(), 16), line3, t["muted"], small,
+                    Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+        cv.line(QPointF(box.left() + 1, box.top() + HEAD - 6), QPointF(box.right() - 1, box.top() + HEAD - 6),
+                border, 1)
 
-    @staticmethod
-    def _arrow(p, tip, direction, color):
-        """direction: 1 right, -1 left, 2 down."""
-        s = 6
-        if direction == 2:
-            poly = QPolygonF([tip, QPointF(tip.x() - s / 1.4, tip.y() - s), QPointF(tip.x() + s / 1.4, tip.y() - s)])
-        else:
-            d = direction
-            poly = QPolygonF([tip, QPointF(tip.x() - d * s, tip.y() - s / 1.4),
-                              QPointF(tip.x() - d * s, tip.y() + s / 1.4)])
-        p.setPen(Qt.PenStyle.NoPen)
-        p.setBrush(color)
-        p.drawPolygon(poly)
-
-    def _side(self, p, t, small, pins, slot, left):
+    def _side(self, cv, t, small, pins, slot, left):
         ys = self._pin_ys(slot, len(pins))
         x_edge = self.xbar_rect.left() if left else self.xbar_rect.right()
         block_edge = self.mx + self.mw if left else self.sx
         for (d, w, xname, bname, members), y in zip(pins, ys):
             is_in = d == "input"
-            color = QColor(IN_COLOR if is_in else OUT_COLOR)
-            p.setPen(QPen(color, 2))
-            p.drawLine(QPointF(block_edge, y), QPointF(x_edge, y))
+            color = IN_COLOR if is_in else OUT_COLOR
             # arrow at the receiving end: crossbar for its inputs, the block for crossbar outputs
-            if left:
-                self._arrow(p, QPointF(x_edge if is_in else block_edge, y), 1 if is_in else -1, color)
-            else:
-                self._arrow(p, QPointF(x_edge if is_in else block_edge, y), -1 if is_in else 1, color)
-            p.setFont(small)
-            p.setPen(QColor(t["text"]))
+            a, b = QPointF(block_edge, y), QPointF(x_edge, y)
+            cv.line(a, b, color, 2, 1 if is_in else -1)
             half = self.xbar_w / 2 - 12
             xr = QRectF(x_edge + 8, y - 9, half, 18) if left else QRectF(x_edge - half - 8, y - 9, half, 18)
-            p.drawText(xr, (Qt.AlignmentFlag.AlignLeft if left else Qt.AlignmentFlag.AlignRight) |
-                       Qt.AlignmentFlag.AlignVCenter, f"{xname} {w}".strip())
+            cv.text(xr, f"{xname} {w}".strip(), t["text"], small,
+                    (Qt.AlignmentFlag.AlignLeft if left else Qt.AlignmentFlag.AlignRight) |
+                    Qt.AlignmentFlag.AlignVCenter)
             bw = self.mw if left else self.sw
             br = QRectF(block_edge - bw + 8, y - 9, bw - 16, 18) if left else \
                 QRectF(block_edge + 8, y - 9, bw - 16, 18)
-            p.setPen(QColor(t["muted"]))
-            p.drawText(br, (Qt.AlignmentFlag.AlignRight if left else Qt.AlignmentFlag.AlignLeft) |
-                       Qt.AlignmentFlag.AlignVCenter, bname)
+            cv.text(br, bname, t["muted"], small,
+                    (Qt.AlignmentFlag.AlignRight if left else Qt.AlignmentFlag.AlignLeft) |
+                    Qt.AlignmentFlag.AlignVCenter)
             own = "output" if is_in else "input"
             tip = f"crossbar: {d} {w} {xname}\nblok: {own} {w} {block_pin_name(xname)}".replace("  ", " ")
             if members:
@@ -395,7 +552,8 @@ class BlockDiagram(QWidget):
 class SystemDiagram(BlockDiagram):
     """The whole bus hierarchy left to right: every interconnect with its masters on the left and
     its slaves on the right. A Sub-bus Bridge is drawn as its own block: a slave of the bus on its
-    left and MASTER0 of the interconnect behind it (whose extra masters sit below it). Click an
+    left and MASTER0 of the interconnect behind it (whose extra masters sit below it). Each
+    connection shows its AXI4-Lite channels or the HDL Designer REQ / RSP pair. Click an
     interconnect or a master to pick that interconnect, a slave to select it; double-click a
     bridge to pick its interconnect, any other slave to edit it in the Address Map Editor."""
 
@@ -403,20 +561,22 @@ class SystemDiagram(BlockDiagram):
     instClicked = Signal(str)
     instActivated = Signal(str)
 
-    MW, XW, SW, SWIRE = 170, 190, 230, 56
-    LEAF_H, BRIDGE_H, MASTER_H, VGAP, XHEAD = 56, 66, 42, 12, 30
+    XW, SW, SWIRE = 190, 230, 84
+    LEAF_H, BRIDGE_H, MASTER_H, VGAP, XHEAD = 58, 66, 50, 12, 30
 
     def __init__(self):
         super().__init__()
         self.project = None
-        self.style = "packed"
+        self.mode = "axi"
         self.level_sel = ""
         self.inst_sel = None
         self._items = []
+        self._wires = []
 
-    def set_project(self, project, style, level_sel="", inst_sel=None):
-        self.project, self.style, self.level_sel, self.inst_sel = project, style, level_sel, inst_sel
-        self.spec = project          # BlockDiagram.paintEvent guard
+    def set_project(self, project, mode="axi", level_sel="", inst_sel=None):
+        self.project, self.level_sel, self.inst_sel = project, level_sel, inst_sel
+        self.mode = mode if mode in CHANNELS else "axi"
+        self.spec = project          # "something to draw" for the base class
         try:
             self._build()
             self.error = None
@@ -435,7 +595,7 @@ class SystemDiagram(BlockDiagram):
         from axil_studio.core import addrmap as A
         proj = self.project
         self._items = []          # (kind, rect, data)
-        self._wires = []          # (QPointF, QPointF)
+        self._wires = []          # (from x, to x, y, port label)
         self._maxdepth = 0
         top_masters = A.xbar_masters(proj, None)
         mrects = []
@@ -482,130 +642,107 @@ class SystemDiagram(BlockDiagram):
             y = max(yy, child_bottom + self.VGAP)
         last = max([y - self.VGAP] + [r.bottom() for r in mrects]) + 10
         xr = QRectF(xx, y0, self.XW, max(last - y0, self.XHEAD + 40))
-        spec_name = A.xbar_module(proj, bridge)
-        self._items.append(("x", xr, (bridge.name if bridge else "", spec_name, len(mrects), len(ports))))
+        self._items.append(("x", xr, (bridge.name if bridge else "", A.xbar_module(proj, bridge),
+                                      len(mrects), len(ports))))
         for i, r in enumerate(mrects):
-            self._wires.append((QPointF(r.right(), r.center().y()), QPointF(xr.left(), r.center().y()), f"M{i}"))
+            self._wires.append((r.right(), xr.left(), r.center().y(), f"M{i}", "m"))
         for j, py in enumerate(ports):
-            self._wires.append((QPointF(xr.right(), py), QPointF(sx, py), f"S{j}"))
+            self._wires.append((xr.right(), sx, py, f"S{j}", "s"))
         return xr.bottom()
 
     # ------------------------------------------------------------ paint
-    def paintEvent(self, _):
-        if self.project is None:
-            return
-        t = theme.manager().tokens
-        p = QPainter(self)
-        p.setRenderHint(QPainter.RenderHint.Antialiasing)
-        if self.error:
-            p.setPen(QColor(t["danger"]))
-            p.drawText(QRectF(self.rect()).adjusted(16, 16, -16, -16),
-                       Qt.AlignmentFlag.AlignLeft | Qt.TextFlag.TextWordWrap, self.error)
-            return
-        p.scale(self._scale, self._scale)
-        self._hits = []
+    def render_to(self, cv, t):
         bold = QFont(self.font())
         bold.setBold(True)
         small = theme.mono_font()
         small.setPixelSize(10)
-        p.setFont(self.font())
-        p.setPen(QColor(t["muted"]))
-        p.drawText(QPointF(MARGIN, 22), "İstek yönü soldan sağa: master → interconnect → slave · "
-                                        "Sub-bus Bridge: üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı")
-        # wires, blocks, then the port labels on the interconnects
-        for a, b, label in self._wires:
-            p.setPen(QPen(QColor(IN_COLOR), 2))
-            p.drawLine(a, b)
-            self._arrow(p, b, 1, QColor(IN_COLOR))
-        self._blocks(p, t, bold, small)
-        for a, b, label in self._wires:
-            p.setFont(small)
-            p.setPen(QColor(t["muted"]))
-            if label.startswith("M"):
-                p.drawText(QRectF(b.x() + 4, b.y() - 8, 40, 16), Qt.AlignmentFlag.AlignLeft |
-                           Qt.AlignmentFlag.AlignVCenter, label)
+        tiny = theme.mono_font()
+        tiny.setPixelSize(8)
+        base = QFont(self.font())
+        cv.text(QRectF(MARGIN, 8, 1400, 20),
+                f"Bağlantılar: {MODE_TEXT[self.mode]} · istek yönü soldan sağa (master → interconnect → slave) · "
+                "Sub-bus Bridge: üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı", t["muted"], base,
+                elide=False)
+        # legend: one swatch per block kind
+        x = MARGIN
+        for kind, text in (("master", "master"), ("xbar", "interconnect"), ("ip", "IP"), ("ext", "harici slave"),
+                           ("bridge", "Sub-bus Bridge")):
+            f, b, _ = theme.block_colors(kind, t)
+            cv.rect(QRectF(x, 32, 16, 12), f, b, 1.2, 3)
+            w = QFontMetrics(base).horizontalAdvance(text) + 6
+            cv.text(QRectF(x + 22, 29, w, 18), text, t["muted"], base, elide=False)
+            x += 22 + w + 16
+        chans = CHANNELS[self.mode]
+        step = 9 if self.mode == "axi" else 13
+        for a, b, y, label, side in self._wires:
+            n = len(chans)
+            for k, (name, d) in enumerate(chans):
+                yy = y + (k - (n - 1) / 2) * step
+                color = IN_COLOR if d > 0 else OUT_COLOR
+                cv.line(QPointF(a, yy), QPointF(b, yy), color, 1.4 if self.mode == "axi" else 2, d)
+                f = tiny if self.mode == "axi" else small
+                tw = QFontMetrics(f).horizontalAdvance(name) + 6
+                lab = QRectF(a + (b - a) / 2 - tw / 2, yy - step / 2, tw, step)
+                cv.rect(lab, t["diagram_bg"], None, 0, 2)          # the label cuts its line
+                cv.text(lab, name, color, f, Qt.AlignmentFlag.AlignCenter, elide=False)
+        self._blocks(cv, t, bold, small)
+        for a, b, y, label, side in self._wires:
+            if side == "m":
+                cv.text(QRectF(b + 4, y - 8, 40, 16), label, t["muted"], small)
             else:
-                p.drawText(QRectF(a.x() - 44, a.y() - 8, 40, 16), Qt.AlignmentFlag.AlignRight |
-                           Qt.AlignmentFlag.AlignVCenter, label)
+                cv.text(QRectF(a - 44, y - 8, 40, 16), label, t["muted"], small,
+                        Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
-    def _blocks(self, p, t, bold, small):
+    def _blocks(self, cv, t, bold, small):
         for kind, r, data in self._items:
             if kind == "x":
-                self._xbar(p, t, bold, small, r, *data)
+                self._xbar(cv, t, bold, small, r, *data)
             elif kind == "m":
                 lvl, i, name, extra = data
                 sel = lvl == self.level_sel
-                p.setPen(QPen(QColor(t["text"] if sel else t["border"]), 1.8 if sel else 1.2))
-                p.setBrush(QColor(t["surface"]))
-                p.drawRoundedRect(r, 8, 8)
-                p.setFont(bold)
-                p.setPen(QColor(t["text"]))
-                p.drawText(r.adjusted(10, 0, -60, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft,
-                           p.fontMetrics().elidedText(name, Qt.TextElideMode.ElideRight, int(r.width() - 70)))
-                p.setFont(small)
-                p.setPen(QColor(t["muted"]))
-                p.drawText(r.adjusted(0, 0, -10, 0), Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight,
-                           f"MASTER{i}")
+                f, b, tc = theme.block_colors("master", t)
+                cv.rect(r, f, t["text"] if sel else b, 2.2 if sel else 1.4, 8)
+                cv.text(r.adjusted(10, 0, -70, 0), name, tc, bold)
+                cv.text(r.adjusted(0, 0, -10, 0), f"MASTER{i}", t["muted"], small,
+                        Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignRight)
                 where = "üst bus" if not lvl else lvl
                 self._hits.append((r, "m", lvl, f"MASTER{i} · {name}\n{where} interconnect'i"
                                    + ("\n(ek master: yalnızca bu interconnect'in slave'lerine erişir)" if extra else "")))
             else:
                 inst, s, j, bad = data
-                self._slave(p, t, bold, small, r, kind == "b", inst, s, j, bad)
+                self._slave(cv, t, bold, small, r, kind == "b", inst, s, j, bad)
 
-    def _xbar(self, p, t, bold, small, r, lvl, module, nm, ns):
+    def _xbar(self, cv, t, bold, small, r, lvl, module, nm, ns):
         sel = lvl == self.level_sel
-        p.setPen(QPen(QColor(t["text"] if sel else t["primary"]), 3 if sel else 2))
-        p.setBrush(QColor(t["surface"]))
-        p.drawRoundedRect(r, 10, 10)
+        f, b, tc = theme.block_colors("xbar", t)
+        cv.rect(r, f, t["text"] if sel else b, 3 if sel else 1.8, 10)
         head = QRectF(r.left(), r.top(), r.width(), self.XHEAD)
-        path = QPainterPath()
-        path.addRoundedRect(head, 10, 10)
-        p.fillPath(path, QColor(t["primary"]))
-        p.fillRect(QRectF(head.left(), head.bottom() - 10, head.width(), 10), QColor(t["primary"]))
-        p.setPen(QColor("#FFFFFF"))
-        p.setFont(bold)
-        p.drawText(head.adjusted(8, 0, -8, 0), Qt.AlignmentFlag.AlignCenter,
-                   p.fontMetrics().elidedText(module, Qt.TextElideMode.ElideRight, int(head.width() - 16)))
-        p.setFont(small)
-        p.setPen(QColor(t["muted"]))
-        p.drawText(QRectF(r.left(), r.bottom() - 22, r.width(), 16), Qt.AlignmentFlag.AlignCenter,
-                   f"axilxbar · {nm}M × {ns}S")
+        cv.head(head, b)
+        cv.text(head.adjusted(8, 0, -8, 0), module, "#FFFFFF", bold, Qt.AlignmentFlag.AlignCenter)
+        cv.text(QRectF(r.left(), r.bottom() - 22, r.width(), 16), f"axilxbar · {nm}M × {ns}S", tc, small,
+                Qt.AlignmentFlag.AlignCenter)
         self._hits.append((r, "x", lvl, f"{module}\n{'üst bus' if not lvl else lvl + ' arkasındaki'} interconnect · "
                                         f"{nm} master, {ns} slave\nTıkla: seç"))
 
-    def _slave(self, p, t, bold, small, r, is_bridge, inst, s, j, bad):
+    def _slave(self, cv, t, bold, small, r, is_bridge, inst, s, j, bad):
         from axil_studio.core import addrmap as A
         sel = inst.name == self.inst_sel or (is_bridge and inst.name == self.level_sel)
-        if is_bridge:
-            p.setBrush(QColor(t["accent_soft"]))
-            border = QColor(t["danger"] if bad else t["text"] if sel else t["accent"])
-            p.setPen(QPen(border, 2.5 if sel or bad else 1.6))
-        else:
-            p.setBrush(QColor(t["surface"]))
-            border = QColor(t["danger"] if bad else t["text"] if sel else t["border"])
-            p.setPen(QPen(border, 2.5 if sel or bad else 1.2))
-        p.drawRoundedRect(r, 8, 8)
+        f, b, tc = theme.block_colors("bridge" if is_bridge else "ext" if inst.external else "ip", t)
+        cv.rect(r, f, t["danger"] if bad else t["text"] if sel else b, 2.5 if sel or bad else 1.4, 8)
         inner = r.adjusted(10, 5, -10, -4)
-        p.setFont(bold)
-        p.setPen(QColor(t["accent"] if is_bridge else t["text"]))
-        p.drawText(QRectF(inner.left(), inner.top(), inner.width() - 60, 18), Qt.AlignmentFlag.AlignLeft,
-                   p.fontMetrics().elidedText(inst.name, Qt.TextElideMode.ElideRight, int(inner.width() - 60)))
-        p.setFont(small)
-        p.setPen(QColor(t["muted"]))
-        p.drawText(QRectF(inner.left(), inner.top(), inner.width(), 18), Qt.AlignmentFlag.AlignRight, f"SLAVE{j}")
+        cv.text(QRectF(inner.left(), inner.top(), inner.width() - 60, 18), inst.name, tc, bold)
+        cv.text(QRectF(inner.left(), inner.top(), inner.width(), 18), f"SLAVE{j}", t["muted"], small,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}"
-        p.setPen(QColor(t["danger"]) if bad else QColor(t["muted"]))
-        p.drawText(QRectF(inner.left(), inner.top() + 19, inner.width(), 15), Qt.AlignmentFlag.AlignLeft, rng)
-        p.setPen(QColor(t["muted"]))
+        cv.text(QRectF(inner.left(), inner.top() + 19, inner.width(), 15), rng,
+                t["danger"] if bad else t["muted"], small)
         if is_bridge:
             kind = A.BRIDGE_LABEL + (f" · kendi {size_text(inst.self_window)}" if inst.self_window else "")
         else:
             kind = "harici" if inst.external else inst.ip
-        p.drawText(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), Qt.AlignmentFlag.AlignLeft,
-                   p.fontMetrics().elidedText(kind, Qt.TextElideMode.ElideRight, int(inner.width() - 60)))
-        p.drawText(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), Qt.AlignmentFlag.AlignRight,
-                   size_text(s.window))
+        cv.text(QRectF(inner.left(), inner.top() + 34, inner.width() - 60, 15), kind, t["muted"], small)
+        cv.text(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), size_text(s.window), t["muted"], small,
+                Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
         if is_bridge:
             tip = (f"{inst.name} · {A.BRIDGE_LABEL}\n{rng}\nüst bus'ta SLAVE{j}, arkasındaki interconnect'te MASTER0"
                    f"\nÇift tık: arkasındaki interconnect'i seç")

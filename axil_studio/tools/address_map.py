@@ -17,18 +17,19 @@ import os
 from PySide6.QtCore import QRectF, Qt, Signal
 from PySide6.QtGui import QAction, QBrush, QColor, QPainter, QPen
 from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView, QLineEdit,
-                               QMenu, QMessageBox, QSplitter, QToolTip, QTreeWidget, QTreeWidgetItem, QWidget)
+                               QMenu, QMessageBox, QSplitter, QToolButton, QToolTip, QTreeWidget, QTreeWidgetItem,
+                               QWidget)
 
 from axil_studio.core import addrmap as A
 from axil_studio.core import regmap_xlsx
 from axil_studio.core import xbargen as X
-from axil_studio import ROOT, theme, ui
+from axil_studio import ROOT, icons, theme, ui
 from axil_studio.dialogs import BridgeDialog, SlaveDialog, size_text, window_choices
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import IPInstance, hex32, parse_int
 
 # tree columns
-C_PORT, C_NAME, C_IP, C_ADDR, C_SIZE, C_LOCK, C_ACT = range(7)
+C_PORT, C_NAME, C_IP, C_ADDR, C_ALOCK, C_SIZE, C_SLOCK, C_ACT = range(8)
 ROLE = Qt.ItemDataRole.UserRole          # instance name ("" for a bridge's own-window row)
 BRIDGE = A.BRIDGE_LABEL
 
@@ -141,8 +142,9 @@ class MemoryMap(QWidget):
                 p.drawText(QRectF(inner.left(), 0, inner.width(), 16), Qt.AlignmentFlag.AlignLeft,
                            p.fontMetrics().elidedText(hex32(base), Qt.TextElideMode.ElideRight, int(inner.width())))
             if j < 0:                                   # the bridge's own window
-                p.setBrush(QBrush(QColor(t["muted"]), Qt.BrushStyle.BDiagPattern))
-                p.setPen(QPen(QColor(t["border"]), 1))
+                bf, bb, bt = theme.block_colors("bridge", t)
+                p.setBrush(QBrush(QColor(bb), Qt.BrushStyle.BDiagPattern))
+                p.setPen(QPen(QColor(bb), 1))
                 p.drawRoundedRect(inner, 4, 4)
                 p.setFont(small)
                 text = p.fontMetrics().elidedText(f"kendi · {size_text(win)}", Qt.TextElideMode.ElideRight,
@@ -159,11 +161,12 @@ class MemoryMap(QWidget):
             self._boxes.append((inner, inst.name))
             sel = inst.name == self.selected
             if inst.bridge:
-                p.setBrush(QColor(t["accent_soft"]))
-                p.setPen(QPen(QColor(t["danger"] if j in bad else t["text"] if sel else t["accent"]),
-                              2.5 if sel or j in bad else 1.2))
+                bf, bb, bt = theme.block_colors("bridge", t)
+                p.setBrush(QColor(bf))
+                p.setPen(QPen(QColor(t["danger"] if j in bad else t["text"] if sel else bb),
+                              2.5 if sel or j in bad else 1.4))
                 p.drawRoundedRect(inner, 6, 6)
-                p.setPen(QColor(t["accent"]))
+                p.setPen(QColor(bt))
                 p.setFont(name_font)
                 title = QRectF(inner.left() + 6, inner.top() + 2, inner.width() - 12, self.TITLE)
                 p.drawText(title, Qt.AlignmentFlag.AlignLeft | Qt.AlignmentFlag.AlignVCenter,
@@ -177,13 +180,12 @@ class MemoryMap(QWidget):
                     p.setFont(small)
                     p.drawText(body, Qt.AlignmentFlag.AlignCenter, "boş")
                 continue
-            fill = QColor(t["danger"]) if j in bad else QColor(t["primary"])
-            if s.external and j not in bad:
-                fill = QColor(t["accent_hover"] if not theme.manager().dark else t["primary_hover"])
-            p.setBrush(fill)
-            p.setPen(QPen(QColor(t["text"]), 2.5) if sel else Qt.PenStyle.NoPen)
+            bf, bb, bt = theme.block_colors("ext" if s.external else "ip", t)
+            p.setBrush(QColor(bf))
+            p.setPen(QPen(QColor(t["danger"] if j in bad else t["text"] if sel else bb),
+                          2.5 if sel or j in bad else 1.2))
             p.drawRoundedRect(inner, 5, 5)
-            p.setPen(QColor("#FFFFFF"))
+            p.setPen(QColor(bt))
             p.setFont(name_font)
             fm = p.fontMetrics()
             two = inner.height() >= 34
@@ -279,7 +281,7 @@ class AddressMapPage(ToolPage):
                    "Sub-bus Bridge'lerle hiyerarşik bus kurar, otomatik ya da sabit adres verir, hizalama ve "
                    "çakışma kontrolü yapar.")
     icon_name = "addrmap"
-    version = "0.3.0"
+    version = "0.3.1"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -308,8 +310,8 @@ class AddressMapPage(ToolPage):
         left.lay.addWidget(self.start_ed)
         left.lay.addWidget(ui.label("Otomatik adresli slave'ler bu adresten başlayarak liste sırasıyla, pencere "
                                     "boyutlarına hizalı yerleşir; bir Sub-bus Bridge'in içindekiler onun kendi "
-                                    "penceresinden sonra. Adres hücresine yazılan değer sabitlenir (🔒); "
-                                    "kilide tıkla: otomatiğe dön.", "muted", wrap=True))
+                                    "penceresinden sonra. Adres hücresine yazılan değer kilitlenir; "
+                                    "adresin yanındaki kilit düğmesi adresi kilitler ya da otomatiğe döndürür.", "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label("VARSAYILAN PENCERE", "section"))
         self.window_cb = QComboBox()
@@ -319,8 +321,8 @@ class AddressMapPage(ToolPage):
         self.window_cb.currentIndexChanged.connect(self._default_window_changed)
         left.lay.addWidget(self.window_cb)
         left.lay.addWidget(ui.label("Boyutu elle seçilmemiş her slave bu pencereyi alır (IP daha büyükse "
-                                    "kendiliğinden büyür). Boyut sütununda elle seçilen boyut o slave'de kalır "
-                                    "(🔒); listeden \"varsayılan\"ı seçince yeniden bu ayarı izler.",
+                                    "kendiliğinden büyür). Boyut sütununda seçilen boyut ya da boyutun yanındaki "
+                                    "kilit o slave'in boyutunu kilitler; kilit açılınca yeniden bu ayarı izler.",
                                     "muted", wrap=True))
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.label(BRIDGE.upper(), "section"))
@@ -341,7 +343,7 @@ class AddressMapPage(ToolPage):
         self.map.slaveActivated.connect(lambda n: self.edit_slave(self.proj.get_instance(n)))
         right.lay.addWidget(self.map)
         self.tree = AddressTree()
-        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "Adres", "Boyut", "Adresleme", ""])
+        self.tree.setHeaderLabels(["Port", "Ad", "Tür / IP", "Adres", "", "Boyut", "", ""])
         self.tree.setUniformRowHeights(True)
         self.tree.setIndentation(18)
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.SingleSelection)
@@ -368,7 +370,14 @@ class AddressMapPage(ToolPage):
         sbar.addStretch(1)
         sbar.addWidget(ui.button("Adrese göre sırala", None, "ghost", self.sort_slaves,
                                  "Her bus'taki listeyi (port numaralarını) adres sırasına diz"))
-        sbar.addWidget(ui.button("Tümü otomatik", None, "ghost", self.unlock_all, "Tüm adresleri otomatiğe çevir"))
+        self.alock_btn = ui.button("Tüm adresleri kilitle", "lock", "ghost", self.toggle_all_addr_locks,
+                                   "Tüm adres kilitlerini kapat / aç (kilitli adres sabit kalır, açık olan "
+                                   "otomatik verilir)")
+        self.slock_btn = ui.button("Tüm boyutları kilitle", "lock", "ghost", self.toggle_all_size_locks,
+                                   "Tüm pencere boyutu kilitlerini kapat / aç (kilitli boyut sabit kalır, açık olan "
+                                   "varsayılanı izler ya da içerikle büyür)")
+        sbar.addWidget(self.alock_btn)
+        sbar.addWidget(self.slock_btn)
         sbar.addWidget(ui.button("↑", None, "ghost", lambda: self.move(-1), "Bus içinde yukarı taşı"))
         sbar.addWidget(ui.button("↓", None, "ghost", lambda: self.move(1), "Bus içinde aşağı taşı"))
         right.lay.addLayout(sbar)
@@ -385,7 +394,8 @@ class AddressMapPage(ToolPage):
         for text, slot in (("IP Kütüphanesinden slave ekle…", self.add_ip), ("Harici slave ekle…", self.add_external),
                            (f"{BRIDGE} ekle…", self.add_bridge), (None, None),
                            ("Adrese göre sırala", self.sort_slaves),
-                           ("Tüm adresleri otomatiğe çevir", self.unlock_all), (None, None),
+                           ("Tüm adresleri kilitle / kilitleri aç", self.toggle_all_addr_locks),
+                           ("Tüm boyutları kilitle / kilitleri aç", self.toggle_all_size_locks), (None, None),
                            ("Register haritasını düzenle", self.edit_regs),
                            ("Excel'e aktar…", self.export_xlsx), (None, None),
                            ("Interconnect Configurator", lambda: self.open_tool("interconnect"))):
@@ -451,14 +461,26 @@ class AddressMapPage(ToolPage):
         self.tree.clear()
         self._items = {}
         self._fill_level(None, self.tree.invisibleRootItem())
-        for c in (C_PORT, C_IP, C_ADDR, C_LOCK):
+        for c in (C_PORT, C_IP, C_ADDR):
             self.tree.resizeColumnToContents(c)
         self.tree.setColumnWidth(C_PORT, self.tree.columnWidth(C_PORT) + 24)
         hdr = self.tree.header()
         hdr.setStretchLastSection(False)
         hdr.setSectionResizeMode(C_NAME, QHeaderView.ResizeMode.Stretch)
         self.tree.setColumnWidth(C_SIZE, 140)
+        for c in (C_ALOCK, C_SLOCK):
+            hdr.setSectionResizeMode(c, QHeaderView.ResizeMode.Fixed)
+            self.tree.setColumnWidth(c, 30)
         ui.actions_column(hdr, C_ACT)
+        insts = self.proj.all_instances()
+        all_a = bool(insts) and all(i.fixed for i in insts)
+        all_s = bool(insts) and all(i.window for i in insts)
+        self.alock_btn.setText("Tüm adres kilitlerini aç" if all_a else "Tüm adresleri kilitle")
+        self.alock_btn.setProperty("iconName", "unlock" if all_a else "lock")
+        self.alock_btn.setIcon(icons.icon("unlock" if all_a else "lock", "text", 16))
+        self.slock_btn.setText("Tüm boyut kilitlerini aç" if all_s else "Tüm boyutları kilitle")
+        self.slock_btn.setProperty("iconName", "unlock" if all_s else "lock")
+        self.slock_btn.setIcon(icons.icon("unlock" if all_s else "lock", "text", 16))
         if sel in self._items:
             self.tree.setCurrentItem(self._items[sel])
         self._loading = False
@@ -484,8 +506,8 @@ class AddressMapPage(ToolPage):
         sl = A.xbar_slaves(self.proj, bridge)
         bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
         if bridge is not None and bridge.self_window:
-            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, hex32(bridge.base), size_text(bridge.self_window),
-                                   "", ""])
+            own = QTreeWidgetItem(["", "kendi penceresi", BRIDGE, hex32(bridge.base), "",
+                                   size_text(bridge.self_window), "", ""])
             own.setData(0, ROLE, "")
             own.setFlags(Qt.ItemFlag.ItemIsEnabled)
             own.setFont(C_ADDR, mono)
@@ -505,8 +527,7 @@ class AddressMapPage(ToolPage):
                 kind = f"{inst.ip} (projede yok)"
             else:
                 kind = ip.name + (f" {ip.version}" if ip.version else "")
-            it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, ("🔒 " if inst.fixed else "") + hex32(s.base),
-                                  "", "sabit" if inst.fixed else "otomatik", ""])
+            it = QTreeWidgetItem([f"SLAVE{j}", inst.name, kind, hex32(s.base), "", "", "", ""])
             it.setData(0, ROLE, inst.name)
             it.setData(0, Qt.ItemDataRole.UserRole + 1, inst.bridge)
             it.setData(0, Qt.ItemDataRole.UserRole + 2, j)
@@ -523,7 +544,7 @@ class AddressMapPage(ToolPage):
                 f = it.font(C_NAME)
                 f.setBold(True)
                 it.setFont(C_NAME, f)
-                it.setForeground(C_IP, QColor(t["accent"]))
+                it.setForeground(C_IP, QColor(theme.block_colors("bridge", t)[2]))
                 it.setToolTip(C_IP, f"{len(inst.children)} slave · interconnect {inst.xbar_module}\n"
                                     "Sürükleyip üstüne bırakılan satır bu bus'a taşınır")
             else:
@@ -534,13 +555,20 @@ class AddressMapPage(ToolPage):
                     it.setToolTip(C_IP, f"{ip.name}: {len(ip.registers)} register"
                                         + (f" · haritada {n} kez" if n > 1 else "")
                                         + "\nSağ tık: register haritasını düzenle")
-            it.setForeground(C_LOCK, QColor(t["accent"]) if inst.fixed else muted)
-            it.setToolTip(C_LOCK, "Tıkla: " + ("otomatik adrese dön" if inst.fixed else "bu adresi sabitle"))
+            it.setToolTip(C_ADDR, tip + "\nÇift tık: adres yaz (yazılan adres kilitlenir)")
             if j in bad:
                 it.setForeground(C_ADDR, QColor(t["danger"]))
             parent_item.addChild(it)
             self._items[inst.name] = it
             self.tree.setItemWidget(it, C_SIZE, self._size_combo(inst, s))
+            self.tree.setItemWidget(it, C_ALOCK, self._lock_button(
+                inst.fixed, lambda i=inst: self._toggle_lock(i),
+                "Adres kilitli (sabit): tıkla, otomatik adrese dön" if inst.fixed else
+                "Adres otomatik: tıkla, bu adreste kilitle"))
+            self.tree.setItemWidget(it, C_SLOCK, self._lock_button(
+                bool(inst.window), lambda i=inst: self._toggle_size_lock(i),
+                "Boyut kilitli: tıkla, " + ("içerikle büyüsün" if inst.bridge else "varsayılanı izlesin")
+                if inst.window else "Boyut otomatik: tıkla, bu boyutta kilitle"))
             ui.tree_row_actions(self.tree, it, C_ACT, lambda i=inst: self.edit_slave(i),
                                 lambda i=inst: self.delete_slave(i),
                                 edit_tip="Ad, adres ve boyut",
@@ -550,20 +578,36 @@ class AddressMapPage(ToolPage):
                 self._fill_level(inst, it)
                 it.setExpanded(inst.name not in self._collapsed)
 
+    def _lock_button(self, locked, slot, tip):
+        b = QToolButton()
+        b.setAutoRaise(True)
+        b.setObjectName("RowAction")
+        b.setFixedSize(26, 22)
+        b.setCursor(Qt.CursorShape.PointingHandCursor)
+        b.setIcon(icons.icon("lock", "accent", 15) if locked else ui.row_icon("unlock", "text"))
+        b.setToolTip(tip)
+        b.clicked.connect(slot)
+        box = QWidget()
+        box.setObjectName("RowActions")
+        lay = QHBoxLayout(box)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.addWidget(b, 0, Qt.AlignmentFlag.AlignCenter)
+        return box
+
     def _size_combo(self, inst, s):
         cb = QComboBox()
         if inst.bridge:
             need = A.content_end(self.proj, inst)
             cb.addItem(f"otomatik · {size_text(A.auto_window(self.proj, inst))}", 0)
             cb.setToolTip("Sub-bus Bridge penceresi: otomatik seçilirse kendi penceresi ve içindekiler büyüdükçe "
-                          "büyür; elle seçilen boyut (🔒) sabit kalır, sığmayan slave eklenemez.")
+                          "büyür; elle seçilen (kilitli) boyut sabit kalır, sığmayan slave eklenemez.")
         else:
             need = A.need_window(s.span, 4)
             cb.addItem(f"varsayılan · {size_text(A.auto_window(self.proj, inst))}", 0)
             cb.setToolTip("Slave'e ayrılan adres aralığı (en az IP'nin kullandığı kadar). Elle seçilen boyut bu "
-                          "slave'de kalır (🔒); \"varsayılan\" Varsayılan pencere ayarını izler.")
+                          "slave'de kalır (kilitli); \"varsayılan\" Varsayılan pencere ayarını izler.")
         for w in window_choices(A.need_window(need, 4)):
-            cb.addItem(("🔒 " if inst.window == w else "") + size_text(w), w)
+            cb.addItem(size_text(w), w)
         cb.setCurrentIndex(max(0, cb.findData(inst.window if inst.window else 0)))
         cb.currentIndexChanged.connect(lambda _i, inst=inst, cb=cb: self._size_changed(inst, cb.currentData()))
         return cb
@@ -648,7 +692,7 @@ class AddressMapPage(ToolPage):
             if self._guarded(lambda: A.set_default_window(self.proj, w)) is False:
                 A.set_default_window(self.proj, old)
                 return self._refresh()
-            self.status(f"Varsayılan pencere {size_text(w)}; elle boyut seçilmiş slave'ler (🔒) değişmedi")
+            self.status(f"Varsayılan pencere {size_text(w)}; boyutu kilitli slave'ler değişmedi")
 
     def _rename(self, inst, name):
         if not X.IDENT.match(name):
@@ -677,7 +721,7 @@ class AddressMapPage(ToolPage):
         if col == C_ADDR:
             w = A.window_of(self.proj, inst)
             try:
-                v = parse_int(item.text(C_ADDR).replace("🔒", "").strip()) & 0xFFFFFFFF
+                v = parse_int(item.text(C_ADDR).strip()) & 0xFFFFFFFF
             except ValueError:
                 self.status("Adres bir sayı olmalı (ör. 0x80000000)")
                 return self._refresh(inst)
@@ -693,9 +737,7 @@ class AddressMapPage(ToolPage):
         self._refresh(inst)
 
     def _item_clicked(self, item, col):
-        inst = self._inst(item)
-        if col == C_LOCK and inst is not None:
-            self._toggle_lock(inst)
+        pass
 
     def _toggle_lock(self, inst):
         inst.fixed = not inst.fixed
@@ -749,6 +791,32 @@ class AddressMapPage(ToolPage):
         sort(self.proj.instances)
         self._changed()
         self.status("Her bus'taki liste adres sırasına dizildi")
+
+    def _toggle_size_lock(self, inst):
+        if inst.window:
+            inst.window = 0
+            self._changed(inst)
+        else:
+            w = A.window_of(self.proj, inst)
+            self._guarded(lambda: setattr(inst, "window", w), inst)
+
+    def toggle_all_addr_locks(self):
+        insts = self.proj.all_instances()
+        lock = not (insts and all(i.fixed for i in insts))
+        for inst in insts:
+            inst.fixed = lock
+        self._changed()
+        self.status("Tüm adresler kilitlendi (sabit)" if lock else "Tüm adres kilitleri açıldı (otomatik)")
+
+    def toggle_all_size_locks(self):
+        insts = self.proj.all_instances()
+        lock = not (insts and all(i.window for i in insts))
+        sizes = {id(i): A.window_of(self.proj, i) for i in insts}
+        for inst in insts:
+            inst.window = sizes[id(inst)] if lock else 0
+        self._changed()
+        self.status("Tüm pencere boyutları kilitlendi" if lock else
+                    "Tüm boyut kilitleri açıldı (varsayılan pencere / içerikle büyür)")
 
     def unlock_all(self):
         for inst in self.proj.all_instances():

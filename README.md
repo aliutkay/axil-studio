@@ -14,9 +14,10 @@ görünüm, açık/koyu tema):
 | **IP Library** | Projedeki tüm IP'leri gösterir; IP kütüphaneleri oluşturur, kütüphanelerden projeye IP alır |
 
 Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
-bir bar vardır: solda ikon, ad ve sürüm, hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
+bir bar vardır: solda ikon ve ad (sürüm pencere başlığında: *AXIL Studio Register Map Editor early-alpha … | proje*),
+hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
 ve ana düğme (**Kaydet** mavi kalır). Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
-dönüşümlü boyanır, listenin boş kısmı beyaz kalır. Listedeki her satırın sonunda silik bir kalem (düzenle) ve çöp
+dönüşümlü boyanır, listenin zemini satırların açık tonudur. Listedeki her satırın sonunda silik bir kalem (düzenle) ve çöp
 kutusu (sil) ikonu vardır; üzerine gelince belirginleşir. IP Library, Proje kartındaki
 **IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
 yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca liste). Araçlar aynı projeyi
@@ -181,20 +182,22 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   IP'nin adresi her yerde (C header, Debug Bridge, dokümanlar) aynıdır. Her satır ya *otomatik* ya *sabit*tir.
   Otomatikler, üst bus'ta başlangıç adresinden, bir bridge'in içinde bridge'in kendi penceresinden sonra liste
   sırasıyla ardışık ve boyutlarına hizalı adres alır; sabitlerin aralığını atlar. Adres hücresine yazılan değer
-  sabitlenir (🔒), *Adresleme* hücresine tıklayınca otomatiğe döner. Bir bridge'in içindekiler her zaman onun
+  kilitlenir; adresin yanındaki **kilit düğmesi** adresi kilitler (sabit) ya da otomatiğe döndürür. Bir bridge'in içindekiler her zaman onun
   penceresinin iletilen kısmında olmalıdır (değilse hata).
 - **Sub-bus Bridge**: adres haritasında bir pencere kaplar; penceresinin başı isteğe bağlı olarak köprünün kendisine
   ayrılır (**kendi penceresi**: yok, 256 B … 256 MB; register haritası bağlanmaz), geri kalanı arkasındaki
   interconnect'e iletilir. **Pencere** *otomatik* ise kendi penceresini ve içindekileri kapsayan en küçük 2'nin
-  kuvvetidir; içerik büyüdükçe büyür ve ondan sonraki otomatik adresler yeniden dizilir. Elle seçilen pencere (🔒)
+  kuvvetidir; içerik büyüdükçe büyür ve ondan sonraki otomatik adresler yeniden dizilir. Elle seçilen (kilitli) pencere
   sabit kalır; sığmayan bir ekleme, taşıma ya da boyut değişikliği yapılmaz ve hata gösterilir. Bridge için HDL
   üretilmez: yerine konacak blok, üst interconnect'in SLAVE portuna ve arkasındaki interconnect'in MASTER0 portuna
   bağlanır.
 - Üstteki şerit haritayı adres sırasıyla çizer; bridge'ler çerçeveli blok olarak, kendi penceresi taralı, içindekiler
-  içinde gösterilir.
+  içinde gösterilir. Renkler blok diyagramıyla aynıdır: IP mavi, harici slave gri, Sub-bus Bridge şeftali.
 - **Varsayılan pencere** (başlangıç adresinin altında): boyutu elle seçilmemiş her slave'in adres aralığı, 4 KB ile
-  başlar. **Boyut** hücresinden elle seçilen boyut o slave'de kalır (🔒) ve varsayılan değişse de değişmez;
-  listeden *varsayılan* seçilince yeniden bu ayarı izler. IP pencereden büyükse pencere kendiliğinden büyür.
+  başlar. **Boyut** hücresinden seçilen boyut ya da boyutun yanındaki **kilit düğmesi** o slave'in
+  boyutunu kilitler, varsayılan değişse de değişmez; kilit açılınca (ya da *varsayılan* seçilince) yeniden bu ayarı
+  izler. Altta **Tüm adresleri kilitle / Tüm adres kilitlerini aç** ve **Tüm boyutları kilitle / Tüm boyut
+  kilitlerini aç** düğmeleri hepsini birden değiştirir. IP pencereden büyükse pencere kendiliğinden büyür.
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
 - **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (bridge içindeki IP'lerin
   bus'ı Özet sayfasında yazar).
@@ -213,7 +216,12 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   slave'ler; Sub-bus Bridge ayrı bir bloktur (üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı), ek
   master'lar onun altında durur. Bir interconnect'e ya da master'a tıklamak onu seçer, bridge'e çift tık arkasındaki
   interconnect'i seçer. *Seçili interconnect (pinlerle)* görünümü tek crossbar'ı üretilen HDL'deki pin adları,
-  genişlikleri ve yönleriyle çizer. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır,
+  genişlikleri ve yönleriyle çizer. Bloklar türüne göre pastel renklidir (master yeşil, interconnect lila, IP mavi,
+  harici slave gri, Sub-bus Bridge şeftali), zemin beyazdır. **Sinyaller** seçimi bağlantıları *AXI4-Lite* (tüm
+  sistemde AW / W / B / AR / R kanalları, tek crossbar'da ayrık sinyaller) ya da *HDL Designer* (REQ / RSP) olarak
+  gösterir; üretilen dosyaları değiştirmez. **PDF…** ve **draw.io…** gösterilen diyagramı o anki görünüm ve sinyal
+  gösterimiyle, açık renklerde ve beyaz zeminde kaydeder; draw.io dosyasında her blok, yazı ve bağlantı ayrı,
+  düzenlenebilir bir şekildir. Fare tekerleği imleç etrafında yakınlaştırır, boş alanı sürüklemek kaydırır,
   trackpad'de iki parmakla sıkıştırma da çalışır.
 - **Verilog önizleme** sekmesi her interconnect'in üretilecek wrapper'larını gösterir. **Wrapper** seçimi:
   *Yalnızca ayrık AXI portları* (`<ad>.v`) ya da *Ayrık portlar + HDL Designer* (`<ad>.v` ve onu saran `<ad>_pk.v`).

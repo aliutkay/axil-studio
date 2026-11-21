@@ -46,6 +46,9 @@ PATHS = {
     # save as: disk with a small pen
     "saveas": '<path d="M13 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M7 3v5h7M7 21v-6h4"/>'
               '<path d="M14.5 21l.8-3.2 5.4-5.4a1.6 1.6 0 0 1 2.3 2.3l-5.4 5.4z"/>',
+    # padlock closed / open
+    "lock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+    "unlock": '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-1.9"/>',
     # pencil: edit a row
     "edit": '<path d="M4 20l1-4 11-11a2.1 2.1 0 0 1 3 3L8 19z"/><path d="M14 7l3 3"/>',
     # bin: delete a row

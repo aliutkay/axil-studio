@@ -355,7 +355,7 @@ class HubWindow(QMainWindow):
             pass
 
     def _update_title(self):
-        self.setWindowTitle(f"{self.ctx.display_name} — {APP_NAME} {version_text()}")
+        self.setWindowTitle(f"{APP_NAME} {version_text()} | {self.ctx.display_name}")
 
     def _about(self):
         QMessageBox.about(self, APP_NAME,
@@ -401,7 +401,7 @@ class ToolWindow(QMainWindow):
         self._update_title()
 
     def _update_title(self):
-        self.setWindowTitle(f"{self.tool_title} — {self.ctx.display_name} — {APP_NAME}")
+        self.setWindowTitle(f"{APP_NAME} {self.tool_title} | {self.ctx.display_name}")
 
     def force_close(self):
         """Close without asking (the hub already asked)."""
