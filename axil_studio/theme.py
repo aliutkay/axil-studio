@@ -71,7 +71,7 @@ def ink_on(hex_color):
 UI_FONTS = ("IBM Plex Sans",)
 MONO_FONTS = ("IBM Plex Mono",)
 MODES = ("system", "light", "dark")
-MODE_LABELS = {"system": "Sistem", "light": tr("Light"), "dark": "Koyu"}
+MODE_LABELS = {"system": tr("System"), "light": tr("Light"), "dark": tr("Dark")}
 
 QSS = """
 * {{ outline: none; }}

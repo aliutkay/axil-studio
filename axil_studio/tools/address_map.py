@@ -340,7 +340,7 @@ class AddressMapPage(ToolPage):
         left.lay.addWidget(self.window_cb)
         left.lay.addWidget(ui.Divider())
         left.lay.addWidget(ui.section(BRIDGE.upper(), tr("Groups slaves in one window of its bus; the start of the window can be kept for the subsystem itself, the rest is forwarded unchanged to its contents. With more than one slave (or extra masters) it gets a crossbar of its own; with a single slave the port connects straight to it. Add IPs, external slaves and further subsystems into it; move rows between buses by drag and drop or right-click → Move (a fixed address becomes automatic on another bus).")))
-        left.lay.addWidget(ui.label(tr("A sub-bus with its own interconnect, inside one window of this bus."), "muted", wrap=True))
+        left.lay.addWidget(ui.label(tr("Groups slaves in one window of this bus; with more than one slave it gets its own crossbar."), "muted", wrap=True))
         left.lay.addStretch(1)
         self.issues = ui.IssueList(tr("No errors"))     # shown in the window's status bar
         left.setMinimumWidth(300)
