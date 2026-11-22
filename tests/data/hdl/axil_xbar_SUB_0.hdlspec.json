@@ -1,20 +1,24 @@
 {
   "format": "axil-xbar-hdlspec",
   "version": 1,
-  "module": "axil_xbar_SBB_0",
+  "module": "axil_xbar_SUB_0",
   "hdl_designer_wrapper": true,
   "masters": 1,
   "slaves": [
     {
-      "addr": "0x00004000",
+      "addr": "0x00008000",
       "mask": "0xFFFFF000"
     },
     {
-      "addr": "0x00005000",
+      "addr": "0x00009000",
       "mask": "0xFFFFF000"
     },
     {
-      "addr": "0x00006000",
+      "addr": "0x0000A000",
+      "mask": "0xFFFFE000"
+    },
+    {
+      "addr": "0x0000C000",
       "mask": "0xFFFFF000"
     }
   ],

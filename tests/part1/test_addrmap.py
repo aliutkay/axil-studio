@@ -118,7 +118,7 @@ def test_validation_errors():
     assert A.validate(p2)                                   # empty map
     A.add_instance(p2, "ip")
     A.add_bridge(p2)
-    assert any("is empty" in e for e in A.validate(p2))      # empty Sub-bus Bridge
+    assert any("is empty" in e for e in A.validate(p2))      # empty subsystem
 
 
 @pytest.mark.parametrize("module, clash", [("axilxbar", True), ("ip", True), ("ip_pk", True), ("my_xbar", False)])
@@ -132,8 +132,27 @@ def test_module_name_clashes(module, clash):
 def test_hierarchy_levels_and_names():
     p = hier_project()
     lv = A.levels(p)
-    assert [None if b is None else b.name for b in lv] == [None, "SBB_0", "SBB_1"]
+    assert [None if b is None else b.name for b in lv] == [None, "SUB_0", "SUB_1", "SUB_2"]
     assert A.validate(p) == []
+
+
+def test_subsystem_gets_a_crossbar_only_when_it_needs_one():
+    p = hier_project()
+    names = lambda: [None if b is None else b.name for b in A.xbar_levels(p)]
+    assert names() == [None, "SUB_0", "SUB_1"]                  # SUB_2 has a single slave
+    s2, ip6 = p.get_instance("SUB_2"), p.get_instance("ip_6")
+    assert A.xbar_of(p, ip6) == (p.get_instance("SUB_0"), 3)     # its port: SLAVE3 of SUB_0
+    assert A.endpoint(p, s2) is ip6
+    s2.xbar = {"module": "", "masters": ["dma"]}                 # an extra master needs a crossbar
+    assert names() == [None, "SUB_0", "SUB_1", "SUB_2"] and A.xbar_of(p, ip6) == (s2, 0)
+    s2.xbar = {"module": "", "masters": []}
+    A.add_instance(p, "tst_reg", "ip_7", parent=s2)              # so does a second slave
+    assert names() == [None, "SUB_0", "SUB_1", "SUB_2"]
+    one = project()
+    b = A.add_bridge(one)
+    A.add_instance(one, "ip", parent=b)
+    b.xbar = {"module": "not valid!", "masters": []}             # no crossbar: its settings are not checked
+    assert A.validate(one) == [] and A.module_clashes(one) == []
 
 
 @pytest.mark.parametrize("seed", range(150))

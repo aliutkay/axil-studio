@@ -1,11 +1,11 @@
 """Address Map Editor: where every IP instance sits on the bus.
 
 The address map is a tree of IP instances (model.IPInstance): the top list is the top
-interconnect's slave ports in order; a Sub-bus Bridge is one slave whose window is forwarded
-to the interconnect behind it, with its own slaves (any depth). Addresses are global. An IP
+interconnect's slave ports in order; a subsystem is one slave whose window is forwarded to the
+entries grouped in it (any depth; a crossbar of its own only with more than one slave). Addresses are global. An IP
 definition can be placed any number of times, each instance with its own name and base. Each
 entry's address is either automatic (consecutive, aligned, in list order: from the start
-address, inside a bridge after its own window) or fixed (typed by hand, marked with a lock).
+address, inside a subsystem after its own window) or fixed (typed by hand, marked with a lock).
 External slaves (memories, ready-made IPs without a register map in the project) are entered
 with their size. Entries are moved between buses by drag & drop or the context menu. IPs are
 added through the IP Library; every address edit in the studio opens this tool.
@@ -51,7 +51,7 @@ def _depth(items):
 # ============================================================================ memory map strip
 class MemoryMap(QWidget):
     """The address map in address order: one block per slave with its base and size, a gap marker
-    where a bus is not contiguous, overlapping windows in red. A Sub-bus Bridge is a framed block
+    where a bus is not contiguous, overlapping windows in red. A subsystem is a framed block
     with its own window and its slaves inside. Click selects, double-click edits."""
 
     slaveClicked = Signal(str)
@@ -104,7 +104,7 @@ class MemoryMap(QWidget):
         lo = min(s.base for s in sl)
         hi = max(s.base + s.window for s in sl) - 1
         p.drawText(QRectF(r.left(), r.bottom() + 4, r.width(), 16), Qt.AlignmentFlag.AlignRight,
-                   tr("{0} slaves · {1} {2} · {3} – {4}").format(n, len(self.project.bridges()), BRIDGE, hex32(lo), hex32(hi)))
+                   tr("{0} slaves · {1} subsystems · {2} – {3}").format(n, len(self.project.bridges()), hex32(lo), hex32(hi)))
 
     def _level(self, p, t, bridge, r, depth):
         """Draw the entries of one bus (and a bridge's own window) side by side in `r`."""
@@ -301,8 +301,8 @@ class AddressMapPage(ToolPage):
     tool_id = "addrmap"
     title = "Address Map Editor"
     short_title = "Address Map Editor"
-    subtitle = tr("Place IPs in the address map: base address, window size, port order and Sub-bus Bridges.")
-    description = (tr("Places the project's IPs in the address map (an IP can be used several times), builds a bus hierarchy with Sub-bus Bridges, gives automatic or fixed addresses and checks alignment and overlaps."))
+    subtitle = tr("Arrange the system address map: base addresses, windows, port order and subsystems.")
+    description = tr("System address map: IP instances, external slaves and subsystems in a bus hierarchy, with automatic or fixed base addresses, window sizing, alignment and overlap checks and Excel export.")
     icon_name = "addrmap"
 
     def __init__(self, ctx, parent=None):
@@ -324,7 +324,7 @@ class AddressMapPage(ToolPage):
 
         # ---- left: start address + default window
         left = ui.Card(margins=16, spacing=10)
-        left.lay.addWidget(ui.section(tr("START ADDRESS"), tr("Automatic slaves are placed from this address, in list order, aligned to their windows (inside a Sub-bus Bridge: after its own window). A typed address is locked; the lock next to an address locks it or makes it automatic again.")))
+        left.lay.addWidget(ui.section(tr("START ADDRESS"), tr("Automatic slaves are placed from this address, in list order, aligned to their windows (inside a subsystem: after its own window). A typed address is locked; the lock next to an address locks it or makes it automatic again.")))
         self.start_ed = QLineEdit()
         self.start_ed.setProperty("mono", "true")
         self.start_ed.setToolTip(tr("Automatic slaves on the top bus are placed from this address in list order"))
@@ -339,7 +339,7 @@ class AddressMapPage(ToolPage):
         self.window_cb.currentIndexChanged.connect(self._default_window_changed)
         left.lay.addWidget(self.window_cb)
         left.lay.addWidget(ui.Divider())
-        left.lay.addWidget(ui.section(BRIDGE.upper(), tr("Takes one window in the address map; its start can be kept for the bridge itself, the rest is forwarded unchanged to the interconnect behind it. Add IPs, external slaves and more Sub-bus Bridges into it; move rows between buses by drag and drop or right-click → Move (a fixed address becomes automatic on another bus).")))
+        left.lay.addWidget(ui.section(BRIDGE.upper(), tr("Groups slaves in one window of its bus; the start of the window can be kept for the subsystem itself, the rest is forwarded unchanged to its contents. With more than one slave (or extra masters) it gets a crossbar of its own; with a single slave the port connects straight to it. Add IPs, external slaves and further subsystems into it; move rows between buses by drag and drop or right-click → Move (a fixed address becomes automatic on another bus).")))
         left.lay.addWidget(ui.label(tr("A sub-bus with its own interconnect, inside one window of this bus."), "muted", wrap=True))
         left.lay.addStretch(1)
         self.issues = ui.IssueList(tr("No errors"))     # shown in the window's status bar
@@ -423,7 +423,7 @@ class AddressMapPage(ToolPage):
         self._refresh(select)
 
     def _guarded(self, edit, select=None):
-        """Run an edit; undo it when it makes a hand-sized Sub-bus Bridge (more) too small."""
+        """Run an edit; undo it when it makes a hand-sized subsystem (more) too small."""
         keep = copy.deepcopy(self.proj.instances)
         before = A._fill(self.proj)
         result = edit()
@@ -493,14 +493,14 @@ class AddressMapPage(ToolPage):
         cur = self._sel_inst()
         self.map.set_project(self.proj, cur.name if cur else None)
         errs = A.validate(self.proj) if self.proj.instances else [
-            tr("Address map is empty: add a slave from the IP Library, an external slave or a Sub-bus Bridge.")]
+            tr("Address map is empty: add a slave from the IP Library, an external slave or a subsystem.")]
         if not errs:
             sl = A.xbar_slaves(self.proj)
             lo = min(s.base for s in sl)
             hi = max(s.base + s.window for s in sl) - 1
             nb = len(self.proj.bridges())
             self.issues.ok_text = (tr("No errors · {0} slaves").format(len(self.proj.leaf_instances()))
-                                   + (f" · {nb} {BRIDGE}" if nb else "") + f" · {hex32(lo)} – {hex32(hi)}")
+                                   + (tr(" · {0} subsystems").format(nb) if nb else "") + f" · {hex32(lo)} – {hex32(hi)}")
         self.issues.set_issues(errs)
         self._sync_buttons()
 
@@ -519,13 +519,13 @@ class AddressMapPage(ToolPage):
             own.setFont(C_ADDR, mono)
             for c in range(C_ACT):
                 own.setForeground(c, muted)
-            own.setToolTip(C_NAME, tr("Space kept for the bridge {0} itself (not forwarded): {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + bridge.self_window - 1)))
+            own.setToolTip(C_NAME, tr("Space kept for the subsystem {0} itself (not forwarded): {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + bridge.self_window - 1)))
             parent_item.addChild(own)
         ro = (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled)
         for j, (inst, s) in enumerate(zip(items, sl)):
             ip = self.proj.get_ip(inst.ip) if inst.ip else None
             if inst.bridge:
-                kind = BRIDGE
+                kind = BRIDGE + (tr(" · crossbar") if A.has_xbar(self.proj, inst) else tr(" · direct"))
             elif inst.external:
                 kind = tr("external")
             elif ip is None:
@@ -603,7 +603,7 @@ class AddressMapPage(ToolPage):
         if inst.bridge:
             need = A.content_end(self.proj, inst)
             cb.addItem(tr("automatic · {0}").format(size_text(A.auto_window(self.proj, inst))), 0)
-            cb.setToolTip(tr("Sub-bus Bridge window: automatic grows with its own window and contents; a size chosen by hand (locked) stays and a slave that does not fit cannot be added."))
+            cb.setToolTip(tr("Subsystem window: automatic grows with its own window and contents; a size chosen by hand (locked) stays and a slave that does not fit cannot be added."))
         else:
             need = A.need_window(s.span, 4)
             cb.addItem(tr("default · {0}").format(size_text(A.auto_window(self.proj, inst))), 0)

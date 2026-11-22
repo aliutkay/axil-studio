@@ -44,7 +44,7 @@ def test_crossbar_gives_the_expected_hdl_spec(name):
 
 def test_hierarchy_gives_the_expected_hdl_specs():
     got = [H.xbar_hdlspec(s) for s in H.project_xbar_specs(hier_project())]
-    assert got == [expected(m) for m in ("axil_xbar", "axil_xbar_SBB_0", "axil_xbar_SBB_1")]
+    assert got == [expected(m) for m in ("axil_xbar", "axil_xbar_SUB_0", "axil_xbar_SUB_1")]
 
 
 def test_only_code_data_is_in_the_ip_hdl_spec():
@@ -78,14 +78,14 @@ def test_only_code_data_is_in_the_xbar_hdl_spec():
 def test_hierarchy_ports_and_addresses():
     p = hier_project()
     p.interconnect = {"module": "top_xbar", "masters": [{"name": "cpu"}, {"name": "dbg"}], "style": "signals"}
-    p.get_instance("SBB_0").xbar = {"module": "", "masters": ["dma"]}
+    p.get_instance("SUB_0").xbar = {"module": "", "masters": ["dma"]}
     top, s0, s1 = [H.xbar_hdlspec(s) for s in H.project_xbar_specs(p)]
-    assert (top["module"], s0["module"], s1["module"]) == ("top_xbar", "axil_xbar_SBB_0", "axil_xbar_SBB_1")
-    assert (top["masters"], s0["masters"], s1["masters"]) == (2, 2, 1)      # a bridge's MASTER0 + extras
-    assert (len(top["slaves"]), len(s0["slaves"]), len(s1["slaves"])) == (3, 3, 1)
+    assert (top["module"], s0["module"], s1["module"]) == ("top_xbar", "axil_xbar_SUB_0", "axil_xbar_SUB_1")
+    assert (top["masters"], s0["masters"], s1["masters"]) == (2, 2, 1)      # a subsystem's MASTER0 + extras
+    assert (len(top["slaves"]), len(s0["slaves"]), len(s1["slaves"])) == (3, 4, 2)
     assert not top["hdl_designer_wrapper"]
     win = lambda s: (int(s["addr"], 16), ((~int(s["mask"], 16)) & 0xFFFFFFFF) + 1)
-    lo, size = win(top["slaves"][1])                                          # SBB_0's window on the top bus
+    lo, size = win(top["slaves"][1])                                          # SUB_0's window on the top bus
     for s in s0["slaves"]:                                                    # global addresses inside it
         a, w = win(s)
         assert lo <= a and a + w <= lo + size

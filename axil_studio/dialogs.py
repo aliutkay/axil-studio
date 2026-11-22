@@ -576,7 +576,7 @@ class SlaveDialog(FormDialog):
 
 
 class BridgeDialog(FormDialog):
-    """A Sub-bus Bridge (Address Map Editor): name, its own window at the start, the window size
+    """A subsystem (Address Map Editor): name, its own window at the start, the window size
     (grows with the contents unless chosen) and the address (automatic or fixed)."""
 
     def __init__(self, parent, title, name, base, self_window, window, fixed, need):
@@ -593,7 +593,7 @@ class BridgeDialog(FormDialog):
         for w in window_choices(0x100):
             self.own.addItem(f"{size_text(w)}  ({w:#x})", w)
         self.own.setCurrentIndex(max(0, self.own.findData(self_window)))
-        self.own.setToolTip(tr("Space at the start of the window for the bridge itself; the slaves behind it are placed after it"))
+        self.own.setToolTip(tr("Space at the start of the window for the subsystem itself; its slaves are placed after it"))
         self.form.addRow(tr("Own window"), self.own)
         self.window = QComboBox()
         self.form.addRow(tr("Window"), self.window)
@@ -603,8 +603,8 @@ class BridgeDialog(FormDialog):
         self.form.addRow("", self.fixed)
         self.fixed.toggled.connect(lambda on: self.base.setEnabled(on))
         self.base.setEnabled(fixed)
-        self.extra.addWidget(ui.note(tr("The rest of the window is forwarded to the interconnect behind the bridge."),
-                                     tr("Addresses in the window (outside its own part) are forwarded unchanged to the interconnect behind the bridge. An automatic window grows with its contents; a slave that does not fit in a fixed window cannot be added.")))
+        self.extra.addWidget(ui.note(tr("The rest of the window is forwarded to the subsystem's slaves."),
+                                     tr("Addresses in the window (outside its own part) are forwarded unchanged to the slaves of the subsystem: through a crossbar of its own when it has more than one slave or extra masters, straight to the slave when it has one. An automatic window grows with its contents; a slave that does not fit in a fixed window cannot be added.")))
         self.own.currentIndexChanged.connect(self._fill)
         self._fill()
         self.name.setFocus()

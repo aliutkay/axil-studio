@@ -9,7 +9,7 @@ packed MASTER_AXI_* / SLAVE_AXI_* ports of the HDL Designer blocks).
 SystemDiagram: the whole bus hierarchy left to right; each connection is drawn as its AXI4-Lite
 channels (AW, W, B, AR, R) or as the HDL Designer REQ / RSP pair.
 
-Blocks are coloured by kind (master, interconnect, IP, external slave, Sub-bus Bridge). Both
+Blocks are coloured by kind (master, interconnect, IP, external slave, subsystem). Both
 diagrams draw through a Canvas that can also record what it draws, so they export to PDF and to
 draw.io (.drawio) exactly as shown. The mouse wheel zooms around the cursor, dragging the empty
 background pans; "fit" scales the diagram to the available width."""
@@ -574,11 +574,12 @@ class BlockDiagram(QWidget):
 # ============================================================================ whole system
 class SystemDiagram(BlockDiagram):
     """The whole bus hierarchy left to right: every interconnect with its masters on the left and
-    its slaves on the right. A Sub-bus Bridge is drawn as its own block: a slave of the bus on its
-    left and MASTER0 of the interconnect behind it (whose extra masters sit below it). Each
+    its slaves on the right. A subsystem is drawn as its own block: a slave of the bus on its left
+    and MASTER0 of its own crossbar (whose extra masters sit below it), or, with a single slave and
+    no extra master, connected straight to that slave. Each
     connection shows its AXI4-Lite channels or the HDL Designer REQ / RSP pair. Click an
     interconnect or a master to pick that interconnect, a slave to select it; double-click a
-    bridge to pick its interconnect, any other slave to edit it in the Address Map Editor."""
+    subsystem to pick it, any other slave to edit it in the Address Map Editor."""
 
     levelClicked = Signal(str)
     instClicked = Signal(str)
@@ -648,24 +649,9 @@ class SystemDiagram(BlockDiagram):
         sl = A.xbar_slaves(proj, bridge)
         bad = A.overlapping(proj, bridge) | (A.outside(proj, bridge) if bridge is not None else set())
         for j, (inst, s) in enumerate(zip(proj.level(bridge), sl)):
-            if not inst.bridge:
-                r = QRectF(sx, y, self.SW, self.LEAF_H)
-                self._items.append(("s", r, (inst, s, j, j in bad)))
-                ports.append(r.center().y())
-                y = r.bottom() + self.VGAP
-                continue
-            r = QRectF(sx, y, self.SW, self.BRIDGE_H)
-            self._items.append(("b", r, (inst, s, j, j in bad)))
-            ports.append(r.center().y())
-            sub = [r]
-            yy = r.bottom() + self.VGAP
-            for k, name in enumerate(inst.xbar_masters):
-                mr = QRectF(sx, yy, self.SW, self.MASTER_H)
-                self._items.append(("m", mr, (inst.name, k + 1, name, True)))
-                sub.append(mr)
-                yy = mr.bottom() + self.VGAP
-            child_bottom = self._level(A, inst, y - 8, depth + 1, sub)
-            y = max(yy, child_bottom + self.VGAP)
+            py, bottom = self._entry(A, inst, s, j, j in bad, depth, y)
+            ports.append(py)
+            y = bottom + self.VGAP
         last = max([y - self.VGAP] + [r.bottom() for r in mrects]) + 10
         xr = QRectF(xx, y0, self.XW, max(last - y0, self.XHEAD + 40))
         self._items.append(("x", xr, (bridge.name if bridge else "", A.xbar_module(proj, bridge),
@@ -676,8 +662,43 @@ class SystemDiagram(BlockDiagram):
             self._wires.append((xr.right(), sx, py, f"S{j}", "s"))
         return xr.bottom()
 
+    def _entry(self, A, inst, s, j, bad, depth, y):
+        """Lay out one slave of a bus in the column after `depth` from y: an IP, an external slave
+        or a subsystem with its crossbar (or, without one, its single slave right behind it).
+        Returns (y of its port, bottom)."""
+        proj = self.project
+        sx = self._colx(depth + 1)
+        if not inst.bridge:
+            r = QRectF(sx, y, self.SW, self.LEAF_H)
+            self._items.append(("s", r, (inst, s, j, bad)))
+            return r.center().y(), r.bottom()
+        r = QRectF(sx, y, self.SW, self.BRIDGE_H)
+        self._items.append(("b", r, (inst, s, j, bad)))
+        if not A.has_xbar(proj, inst):
+            bottom = r.bottom()
+            if inst.children:                    # connected straight to its one slave
+                c = inst.children[0]
+                cs = A.xbar_slaves(proj, inst)[0]
+                cbad = 0 in (A.overlapping(proj, inst) | A.outside(proj, inst))
+                self._maxdepth = max(self._maxdepth, depth + 1)
+                cy = y + (self.BRIDGE_H - (self.BRIDGE_H if c.bridge else self.LEAF_H)) / 2
+                _, cb = self._entry(A, c, cs, 0, cbad, depth + 1, cy)
+                self._wires.append((r.right(), self._colx(depth + 2), r.center().y(), "", "d"))
+                bottom = max(bottom, cb)
+            return r.center().y(), bottom
+        sub = [r]
+        yy = r.bottom() + self.VGAP
+        for k, name in enumerate(inst.xbar_masters):
+            mr = QRectF(sx, yy, self.SW, self.MASTER_H)
+            self._items.append(("m", mr, (inst.name, k + 1, name, True)))
+            sub.append(mr)
+            yy = mr.bottom() + self.VGAP
+        child_bottom = self._level(A, inst, y - 8, depth + 1, sub)
+        return r.center().y(), max(yy - self.VGAP, child_bottom)
+
     # ------------------------------------------------------------ paint
     def render_to(self, cv, t):
+        from axil_studio.core import addrmap as A
         bold = QFont(self.font())
         bold.setBold(True)
         small = theme.mono_font()
@@ -686,12 +707,12 @@ class SystemDiagram(BlockDiagram):
         tiny.setPixelSize(8)
         base = QFont(self.font())
         cv.text(QRectF(MARGIN, 8, 1400, 20),
-                tr("Display: {0} · requests flow left to right (master → interconnect → slave) · Sub-bus Bridge: a slave of the upper bus, MASTER0 of the interconnect behind it").format(MODE_TEXT[self.mode]), t["muted"], base,
+                tr("Display: {0} · requests flow left to right (master → interconnect → slave) · subsystem: a slave of the upper bus, MASTER0 of its own crossbar or connected straight to its single slave").format(MODE_TEXT[self.mode]), t["muted"], base,
                 elide=False)
         # legend: one swatch per block kind
         x = MARGIN
         for kind, text in (("master", "master"), ("xbar", "interconnect"), ("ip", "IP"), ("ext", tr("external slave")),
-                           ("bridge", "Sub-bus Bridge")):
+                           ("bridge", A.BRIDGE_LABEL)):
             f, b, _ = theme.block_colors(kind, t)
             cv.rect(QRectF(x, 32, 16, 12), f, b, 1.2, 3)
             w = QFontMetrics(base).horizontalAdvance(text) + 6
@@ -716,7 +737,7 @@ class SystemDiagram(BlockDiagram):
         for a, b, y, label, side in self._wires:
             if side == "m":
                 cv.text(QRectF(b + 4, y - 8, 40, 16), label, t["muted"], small)
-            else:
+            elif side == "s":
                 cv.text(QRectF(a - 44, y - 8, 40, 16), label, t["muted"], small,
                         Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
 
@@ -769,8 +790,10 @@ class SystemDiagram(BlockDiagram):
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width() - 60, 15), kind, t["muted"], small)
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), size_text(s.window), t["muted"], small,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        if is_bridge:
-            tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, MASTER0 of the interconnect behind it\nDouble-click: select the interconnect behind it").format(inst.name, A.BRIDGE_LABEL, rng, j))
+        if is_bridge and A.has_xbar(self.project, inst):
+            tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, MASTER0 of its own crossbar\nDouble-click: select the subsystem").format(inst.name, A.BRIDGE_LABEL, rng, j))
+        elif is_bridge:
+            tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, connected straight to its single slave\nDouble-click: select the subsystem").format(inst.name, A.BRIDGE_LABEL, rng, j))
         else:
             tip = tr("SLAVE{0} · {1}\n{2}\nDouble-click: edit in the Address Map Editor").format(j, inst.name, rng)
         self._hits.append((r, "b" if is_bridge else "s", inst.name, tip))

@@ -6,19 +6,19 @@ görünüm, açık/koyu tema):
 
 | Araç | Ne yapar |
 |---|---|
-| **Register Map Editor** | Bir IP'nin registerlarını, bit alanlarını, veri tiplerini ve değer anlamlarını tasarlar. Adres içermez. |
-| **Slave Interface Wrapper** | Register haritasından AXI4-Lite slave HDL, testbench, C header, doküman ve Excel üretir |
-| **Address Map Editor** | IP'leri adres haritasına yerleştirir (aynı IP birden çok kez), otomatik / sabit adres, hizalama ve çakışma kontrolü |
-| **Interconnect Configurator** | Adres haritası + master'lar → axilxbar crossbar wrapper'ı, blok diyagramı |
-| **UART-to-AXI Debug Bridge** | Hexbus üzerinden karttaki registerları okur/yazar, bit alanlarını çözer |
-| **IP Library** | Projedeki tüm IP'leri gösterir; IP kütüphaneleri oluşturur, kütüphanelerden projeye IP alır |
+| **Register Map Editor** | AXI4-Lite IP'ler için register haritası tasarımı: registerlar, bit alanları, erişim türleri, reset değerleri ve değer kodlamaları; Verilog / VHDL'den port aktarma ve Excel'e aktarma |
+| **Slave Interface Wrapper** | Register haritasından AXI4-Lite slave üretimi: sentezlenebilir Verilog, kendini denetleyen testbench, C header ve register dokümanı; hazır modüller için HDL Designer wrapper'ları |
+| **Address Map Editor** | Sistem adres haritası: bus hiyerarşisinde IP örnekleri, harici slave'ler ve alt sistemler; otomatik / sabit taban adres, pencere boyutlandırma, hizalama ve çakışma denetimi, Excel'e aktarma |
+| **Interconnect Configurator** | Adres haritasındaki her bus için crossbar yapılandırması (master'lar, modül adları, port stili), sistem ve crossbar blok diyagramları, ZipCPU axilxbar wrapper'ları |
+| **UART-to-AXI Debug Bridge** | UART hexbus köprüsü üzerinden donanımda register erişimi: çözümlenmiş register görünümleri, periyodik okuma, yerleşik simülatör |
+| **IP Library** | Proje ve paylaşılan IP kütüphaneleri için IP yönetimi: sürümlü IP'ler, adres haritasındaki örnekleri, projeler ile kütüphaneler arasında aktarım |
 
 Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
 bir bar vardır: solda ikon ve ad (sürüm pencere başlığında: *AXIL Studio Register Map Editor early-alpha … | proje*),
 hemen yanında aracın komutları (sığmayanlar » menüsüne geçer), sağda durum
 ve ana düğme (**Kaydet** mavi kalır). Uzun açıklamalar panellerde paragraf olarak değil, başlıkların yanındaki **?**
 düğmesinde durur (üzerine gelince ya da tıklayınca görünür). İkincil düğmelerin ince bir çerçevesi vardır, devre dışı
-olanlar kesikli çerçeveyle soluk görünür. Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
+olanlar kesikli çerçeveyle soluk görünür. Sekme köşesindeki **Ayrı pencere** düğmesi çerçevesizdir. Kartlar ve sekme sayfaları beyazdır; tüm listelerde satırlar aynı iki renkle
 dönüşümlü boyanır, listenin zemini satırların açık tonudur. Listedeki her satırın sonunda silik bir kalem (düzenle) ve çöp
 kutusu (sil) ikonu vardır; üzerine gelince belirginleşir. IP Library, Proje kartındaki
 **IP'leri yönet** düğmesiyle açılır. Doğrulama sonuçları her aracın penceresinin alt çubuğunda gösterilir (yeşil: hata
@@ -27,8 +27,7 @@ yok; kırmızı: hata sayısı ve ilki — üzerine gelince hepsi, tıklayınca 
 
 - Register haritası nerede düzenlenirse düzenlensin (Wrapper, Address Map Editor, IP Library, Debug Bridge)
   **Register Map Editor** açılır.
-- Adres nerede düzenlenirse düzenlensin (Interconnect, IP Library, Debug Bridge, Register Map Editor'daki
-  *Adres haritasına ekle*) **Address Map Editor** açılır.
+- Adres nerede düzenlenirse düzenlensin (Interconnect, IP Library, Debug Bridge) **Address Map Editor** açılır.
 - IP seçilen / eklenen her yerde (Address Map Editor *IP ekle*, Register Map Editor *IP aç*, Wrapper *IP seç*)
   **IP Library** seçici olarak açılır; kütüphanedeki bir IP seçilirse önce projeye alınır.
 
@@ -52,8 +51,8 @@ Proje dosyası (`.axproj.json`, biçim sürümü 2) iki ayrı şey tutar:
 - **Adres haritası** (`instances`): IP örnekleri — ad, hangi IP, base adres, pencere boyutu, sabit/otomatik.
   Aynı IP birden çok kez yerleştirilebilir (ör. `UART_0`, `UART_1` ikisi de `UART` IP'si). Harici
   slave'ler (bellek, hazır IP) register haritası olmadan adres ve boyutla girilir. Liste sırası slave port
-  numarasıdır. **Sub-bus Bridge** kaydı (`"kind": "bridge"`) kendi penceresini (`self_window`), arkasındaki
-  interconnect'in ayarlarını (`xbar`) ve o bus'ın slave'lerini (`children`, aynı biçimde, iç içe) tutar.
+  numarasıdır. **Alt sistem** (Subsystem) kaydı (`"kind": "bridge"`, dosya biçimi değişmedi) kendi penceresini
+  (`self_window`), crossbar ayarlarını (`xbar`) ve içindeki slave'leri (`children`, aynı biçimde, iç içe) tutar.
 
 Bir IP'nin register haritası değişince tüm örnekleri onu kullanır; IP büyürse pencereleri ve otomatik
 adresler kendiliğinden güncellenir. IP yeniden adlandırılırsa örnekleri onu izler. Eski (sürüm 1) proje
@@ -76,8 +75,10 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
   seçilen yer sonraki Kaydet'lerde kullanılır. Kütüphaneden açılan IP'de Kaydet o kütüphaneye yazar. **İçe aktar…** bir
   `.regspec.json` açar. (Eski *Projeye kaydet* / *Kütüphaneye kaydet* / *Dosyaya kaydet* düğmeleri bunlarla değişti.)
 - **IP aç** IP Library'den bir IP açar.
-- **Adres haritasına ekle**: IP'yi projeye kaydeder, adres haritasına bir örnek ekler ve Address Map Editor'u açar.
-  **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar.
+- **Wrapper'da aç**: HDL üretimi için Slave Interface Wrapper'ı açar. IP adres haritasına Address Map Editor'da
+  (ya da IP Library'de) yerleştirilir.
+- **Excel'e aktar…** register haritasını `.xlsx` olarak yazar (IP projede yerleşmişse ilk adresi, değilse 0 base
+  olarak; Özet sayfasındaki sarı hücreden değiştirilebilir).
 - Sağda üstte seçili registerın kartı (bit haritası ve bit alanları), altında ayrı **Yerleştirilmemiş bit alanları**
   kartı ve **Port içe aktar…** düğmesi (Ctrl+I). Sol panelde yalnızca registerlar listelenir. Registerlar, bit alanları,
   değer açıklamaları ve yerleştirilmemiş alanlar satırdaki kalem / çöp ikonlarıyla düzenlenir ve silinir.
@@ -149,7 +150,8 @@ Register seçenekleri: `o_<reg>_wr` / `o_<reg>_rd` strobe'ları (FIFO push/pop i
 
 **Üretilen dosyalar:** `<ip>.v` (normal S_AXI_* portlu IP), `<ip>_pk.v` + `_pk_inst.v` (HDL Designer wrapper'ı, isteğe bağlı), `<ip>_tb.v` (kendini kontrol eden testbench),
 `<ip>_inst.v`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.hdlspec.json` (Verilog dosyalarının tek girdisi),
-`<ip>.regspec.json` (register haritasının tamamı, yeniden açmak için), `<ip>_regmap.xlsx`.
+`<ip>.regspec.json` (register haritasının tamamı, yeniden açmak için). Excel register haritası Register Map Editor'dan
+(ya da tüm harita için Address Map Editor'dan) aktarılır; komut satırı `axilgen` ayrıca `<ip>_regmap.xlsx` yazar.
 
 **Spec sekmesi** (salt okunur): IP'nin **HDL spec**'ini gösterir, yani Verilog'u üreten koda giden verinin tamamını
 ve yalnızca onu: modül adı, HDL Designer wrapper'ı, registerlar (ad, offset, strobe'lar) ve bit alanları (ad, konum,
@@ -163,13 +165,13 @@ Her alana bir değer tablosu eklenebilir: her satırda değer, *okunursa anlamı
 Hangi sütunların kullanılacağı alan tipine bağlıdır: RO/CONST için sadece okuma, PULSE için sadece yazma,
 RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satırı yazılır.
 
-**Excel kütük haritası** (Wrapper'da tek IP, Address Map Editor'da tüm adres haritası için `Excel'e aktar…`):
+**Excel kütük haritası** (Register Map Editor'da tek IP, Address Map Editor'da tüm adres haritası için `Excel'e aktar…`):
 - *Özet*: IP açıklaması ve register listesi (haritaya bağlantılı)
 - *Kütük Haritası*: register ve alan satırları, ayrılmış bitler, reset değerleri, davranış, okuma/yazma anlamları
 - *Bit Görünümü*: 32 bitlik yerleşim, tipe göre renkli
 
 **Notlar**
-- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın C header, testbench ve Excel çıktıları IP'nin adres haritasındaki ilk adresini kullanır, yerleşmemişse 0; komut satırında `--base` ile verilir, varsayılan 0). Eski `.regspec.json` dosyalarındaki `base` okunurken yok sayılır. Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir; header'daki `<IP>_BASE` `#ifndef` ile ezilebilir.
+- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın C header ve testbench çıktıları ile Excel IP'nin adres haritasındaki ilk adresini kullanır, yerleşmemişse 0; komut satırında `--base` ile verilir, varsayılan 0). Eski `.regspec.json` dosyalarındaki `base` okunurken yok sayılır. Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir; header'daki `<IP>_BASE` `#ifndef` ile ezilebilir.
 - `i_reset` ve `o_irq` port adları ayrılmıştır (easyaxil'in iç reset sinyali ve kesme çıkışı); bunları üretecek register / alan adları doğrulamada reddedilir (ör. `RESET` registerında `RESET` RO alanı).
 - Libero: `C_AXI_ADDR_WIDTH` parametresini interconnect slave adres genişliğine eşitle; BIF tipi AXI4, slave slotu AXI4-Lite.
 - Tüm registerlar `S_AXI_ARESETN` ile resetlenir (PolarFire `initial` bloğunu yok sayar).
@@ -181,33 +183,35 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 ## Address Map Editor
 
 - Adres haritası bir **ağaçtır**: üst seviyedeki her satır üst interconnect'in bir slave portudur, sıra port
-  numarasıdır (SLAVE0, SLAVE1 …). Bir **Sub-bus Bridge**'in altındaki satırlar onun arkasındaki interconnect'in
-  slave portlarıdır (her bus kendi SLAVE0'ından başlar). Derinlik sınırsızdır.
-- Tablonun altında **+ IP Kütüphanesinden slave ekle…**, **+ Harici slave ekle…**, **+ Sub-bus Bridge ekle…** ve
-  sıralama düğmeleri bulunur. Ekleme seçili Sub-bus Bridge'in içine (seçili satır bir bridge'in içindeyse aynı bus'a),
+  numarasıdır (SLAVE0, SLAVE1 …). Bir **alt sistemin** (Subsystem) altındaki satırlar onun slave'leridir (her bus
+  kendi SLAVE0'ından başlar). Derinlik sınırsızdır.
+- Tablonun altında **+ IP Kütüphanesinden slave ekle…**, **+ Harici slave ekle…**, **+ Alt sistem ekle…** ve
+  sıralama düğmeleri bulunur. Ekleme seçili alt sistemin içine (seçili satır bir alt sistemin içindeyse aynı bus'a),
   seçim yoksa üst bus'a yapılır. Her satırın sonundaki kalem ad / adres / boyutu düzenler, çöp kutusu satırı çıkarır
-  (bridge içindekilerle birlikte; IP tanımları projede kalır). Aynı IP istenildiği kadar eklenebilir; örnekler IP adı
+  (alt sistem içindekilerle birlikte; IP tanımları projede kalır). Aynı IP istenildiği kadar eklenebilir; örnekler IP adı
   ve 0'dan başlayan numarayla adlandırılır (`GPIO_0`, `GPIO_1` …; IP yeniden adlandırılırsa örnekler de izler),
-  harici slave'ler `EXT_0` …, Sub-bus Bridge'ler `SBB_0` … adını alır. Ad hücresine çift tıklayarak yeniden adlandırılır.
-- **Taşıma**: satırlar sürükle-bırak ile bus içinde sıralanır ya da başka bir bus'a taşınır (bir Sub-bus Bridge
+  harici slave'ler `EXT_0` …, alt sistemler `SUB_0` … adını alır. Ad hücresine çift tıklayarak yeniden adlandırılır.
+- **Taşıma**: satırlar sürükle-bırak ile bus içinde sıralanır ya da başka bir bus'a taşınır (bir alt sistem
   satırının üstüne bırakılan satır onun içine girer); sağ tık → **Taşı** da aynı işi yapar, ↑/↓ bus içinde kaydırır.
-  Başka bir bus'a taşınan satırın sabit adresi otomatiğe döner; taşınan bir bridge içindekilerle gider, içindeki sabit
-  adresler bridge'e göre yerlerini korur. Bir bridge kendi içine taşınamaz.
-- **Adresler globaldir**: her interconnect adresin tamamını çözer, Sub-bus Bridge adresi değiştirmeden iletir; bir
+  Başka bir bus'a taşınan satırın sabit adresi otomatiğe döner; taşınan bir alt sistem içindekilerle gider, içindeki
+  sabit adresler alt sisteme göre yerlerini korur. Bir alt sistem kendi içine taşınamaz.
+- **Adresler globaldir**: her interconnect adresin tamamını çözer, alt sistem adresi değiştirmeden iletir; bir
   IP'nin adresi her yerde (C header, Debug Bridge, dokümanlar) aynıdır. Her satır ya *otomatik* ya *sabit*tir.
-  Otomatikler, üst bus'ta başlangıç adresinden, bir bridge'in içinde bridge'in kendi penceresinden sonra liste
+  Otomatikler, üst bus'ta başlangıç adresinden, bir alt sistemin içinde onun kendi penceresinden sonra liste
   sırasıyla ardışık ve boyutlarına hizalı adres alır; sabitlerin aralığını atlar. Adres hücresine yazılan değer
-  kilitlenir; adresin yanındaki **kilit düğmesi** adresi kilitler (sabit) ya da otomatiğe döndürür. Bir bridge'in içindekiler her zaman onun
-  penceresinin iletilen kısmında olmalıdır (değilse hata).
-- **Sub-bus Bridge**: adres haritasında bir pencere kaplar; penceresinin başı isteğe bağlı olarak köprünün kendisine
-  ayrılır (**kendi penceresi**: yok, 256 B … 256 MB; register haritası bağlanmaz), geri kalanı arkasındaki
-  interconnect'e iletilir. **Pencere** *otomatik* ise kendi penceresini ve içindekileri kapsayan en küçük 2'nin
+  kilitlenir; adresin yanındaki **kilit düğmesi** adresi kilitler (sabit) ya da otomatiğe döndürür. Bir alt sistemin
+  içindekiler her zaman onun penceresinin iletilen kısmında olmalıdır (değilse hata).
+- **Alt sistem**: slave'leri bus'ındaki tek bir pencerede toplar; penceresinin başı isteğe bağlı olarak alt sistemin
+  kendisine ayrılır (**kendi penceresi**: yok, 256 B … 256 MB; register haritası bağlanmaz), geri kalanı içindekilere
+  iletilir. **Birden fazla slave'i (ya da ek master'ı) varsa kendi crossbar'ı üretilir**: üst bus'taki SLAVE portu
+  bu crossbar'ın MASTER0'ına bağlanır. **Tek slave'i varsa crossbar üretilmez**: üst bus'taki SLAVE portu doğrudan o
+  slave'e bağlanır (Type / IP sütununda *Alt sistem · doğrudan* yazar). İkinci bir slave ya da ek master eklenince
+  crossbar kendiliğinden oluşur. **Pencere** *otomatik* ise kendi penceresini ve içindekileri kapsayan en küçük 2'nin
   kuvvetidir; içerik büyüdükçe büyür ve ondan sonraki otomatik adresler yeniden dizilir. Elle seçilen (kilitli) pencere
-  sabit kalır; sığmayan bir ekleme, taşıma ya da boyut değişikliği yapılmaz ve hata gösterilir. Bridge için HDL
-  üretilmez: yerine konacak blok, üst interconnect'in SLAVE portuna ve arkasındaki interconnect'in MASTER0 portuna
-  bağlanır.
-- Üstteki şerit haritayı adres sırasıyla çizer; bridge'ler çerçeveli blok olarak, kendi penceresi taralı, içindekiler
-  içinde gösterilir. Renkler blok diyagramıyla aynıdır: IP mavi, harici slave gri, Sub-bus Bridge şeftali.
+  sabit kalır; sığmayan bir ekleme, taşıma ya da boyut değişikliği yapılmaz ve hata gösterilir. Tek slave'li alt
+  sistemde adres çözülmediği için penceresinin slave'in penceresinden büyük olan kısmı da o slave'e gider.
+- Üstteki şerit haritayı adres sırasıyla çizer; alt sistemler çerçeveli blok olarak, kendi penceresi taralı, içindekiler
+  içinde gösterilir. Renkler blok diyagramıyla aynıdır: IP mavi, harici slave gri, alt sistem şeftali.
 - **Varsayılan pencere** (başlangıç adresinin altında): boyutu elle seçilmemiş her slave'in adres aralığı, 4 KB ile
   başlar. **Boyut** hücresinden seçilen boyut ya da boyutun yanındaki **kilit düğmesi** o slave'in
   boyutunu kilitler, varsayılan değişse de değişmez; kilit açılınca (ya da *varsayılan* seçilince) yeniden bu ayarı
@@ -215,25 +219,27 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   kilitlerini birden kapatır ya da açar (üzerine gelince açıklar). Satırlardaki kilitler kendi sütunlarında sağa,
   değerin hemen yanına yaslıdır; başlıktaki ikon onlarla aynı hizadadır. IP pencereden büyükse pencere kendiliğinden büyür.
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
-- **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (bridge içindeki IP'lerin
+- **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (alt sistem içindeki IP'lerin
   bus'ı Özet sayfasında yazar).
 
 ## Interconnect Configurator
 
-- Her bus bir interconnect'tir: üst bus ve her Sub-bus Bridge'in arkasındaki bus. Solda **Interconnect'ler** listesi
-  hiyerarşiyi gösterir; seçilen interconnect'in **modül adı** (bridge'lerde varsayılan `axil_xbar_<bridge>`) ve
-  **master'ları** ayarlanır. Bir bridge'in arkasındaki interconnect'te MASTER0 her zaman o bridge'dir; ek master'lar
-  (ör. yerel DMA) eklenebilir ve yalnızca o interconnect'in slave'lerine erişir. **Wrapper** stili tüm
-  interconnect'ler için ortaktır.
-- Slave portları adres haritasından gelir (salt okunur liste; satıra çift tık Address Map Editor'u açar, bridge
-  satırına çift tık arkasındaki interconnect'e geçer). Master'larda satırdaki kalem adı değiştirir, çöp kutusu siler;
+- Crossbar gereken her bus bir interconnect'tir: üst bus ve birden fazla slave'i ya da ek master'ı olan her alt
+  sistem. Solda **Interconnect'ler** listesi hiyerarşiyi gösterir; tek slave'li alt sistemler listede soluk ve
+  *(doğrudan)* olarak görünür, seçilince crossbar üretilmediği ve slave'in doğrudan bağlandığı yazar (modül adı
+  kapalıdır, blok diyagramı tüm sistemi gösterir). Seçilen interconnect'in **modül adı** (alt sistemlerde varsayılan
+  `axil_xbar_<alt sistem>`) ve **master'ları** ayarlanır. Bir alt sistemin crossbar'ında MASTER0 her zaman üst bus'tan
+  gelen isteklerdir; ek master'lar (ör. yerel DMA) eklenebilir ve yalnızca o crossbar'ın slave'lerine erişir (tek
+  slave'li alt sisteme master eklemek ona crossbar kazandırır). **Wrapper** stili tüm interconnect'ler için ortaktır.
+- Slave portları adres haritasından gelir (salt okunur liste; satıra çift tık Address Map Editor'u açar, alt sistem
+  satırına çift tık o alt sistemi seçer). Master'larda satırdaki kalem adı değiştirir, çöp kutusu siler;
   ada çift tık da olur.
 - **Blok diyagramı**: *Tüm sistem* görünümü bütün hiyerarşiyi soldan sağa çizer: master'lar → interconnect →
-  slave'ler; Sub-bus Bridge ayrı bir bloktur (üst bus'ın slave'i, arkasındaki interconnect'in MASTER0'ı), ek
-  master'lar onun altında durur. Bir interconnect'e ya da master'a tıklamak onu seçer, bridge'e çift tık arkasındaki
-  interconnect'i seçer. *Seçili interconnect (pinlerle)* görünümü tek crossbar'ı üretilen HDL'deki pin adları,
+  slave'ler; alt sistem ayrı bir bloktur (üst bus'ın slave'i; kendi crossbar'ının MASTER0'ı ya da tek slave'ine
+  doğrudan bağlı), ek master'lar onun altında durur. Bir interconnect'e ya da master'a tıklamak onu seçer, alt
+  sisteme çift tık onu seçer. *Seçili interconnect (pinlerle)* görünümü tek crossbar'ı üretilen HDL'deki pin adları,
   genişlikleri ve yönleriyle çizer. Bloklar türüne göre pastel renklidir (master yeşil, interconnect lila, IP mavi,
-  harici slave gri, Sub-bus Bridge şeftali), zemin beyazdır. **Gösterim** seçimi bağlantıların ayrıntısını belirler: *Master / slave*
+  harici slave gri, alt sistem şeftali), zemin beyazdır. **Gösterim** seçimi bağlantıların ayrıntısını belirler: *Master / slave*
   (bağlantı başına tek ok, varsayılan), *AXI Lite (Basitleştirilmiş Görünüm)* (tüm sistemde AW / W / B / AR / R
   kanalları, tek crossbar'da yöne göre gruplu sinyaller), *AXI Lite (Detaylı Görünüm)* (tüm pinler) ve *HDL
   Designer (REQ / RSP)*; üretilen dosyaları değiştirmez. **PDF…** ve **draw.io…** gösterilen diyagramı o anki görünüm
@@ -243,10 +249,10 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - **Spec** sekmesi (salt okunur) seçili interconnect'in ya da hepsinin **HDL spec**'ini gösterir: wrapper Verilog'una giden verinin tamamı ve yalnızca o: modül adı, master sayısı, her slave'in adresi ve maskesi, HDL Designer wrapper'ı, axilxbar parametreleri (`OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST`). Port adları koda etki etmediği için yoktur. **Kopyala**, **Kaydet (.hdlspec.json)** (hepsi seçiliyse her biri ayrı dosya).
 - **Verilog önizleme** sekmesi her interconnect'in üretilecek wrapper'larını gösterir. **Wrapper** seçimi:
   *Yalnızca ayrık AXI portları* (`<ad>.v`) ya da *Ayrık portlar + HDL Designer* (`<ad>.v` ve onu saran `<ad>_pk.v`).
-- **Üret…** her interconnect için ayrı dosyalar yazar (`axil_xbar.v`, `axil_xbar_SBB_0.v` …, `.md`, `.hdlspec.json`);
-  bridge'ler ve sistem bağlantısı için dosya üretilmez.
-- Üst interconnect'in ayarları proje dosyasında (`.axproj.json` içindeki `interconnect`), bir bridge'in arkasındakinin
-  ayarları bridge'in kaydında (`xbar`) saklanır. **İçe aktar** `.xbar.json` dosyasından seçili interconnect'in modül
+- **Üret…** her crossbar için ayrı dosyalar yazar (`axil_xbar.v`, `axil_xbar_SUB_0.v` …, `.md`, `.hdlspec.json`);
+  tek slave'li alt sistemler ve sistem bağlantısı için dosya üretilmez.
+- Üst interconnect'in ayarları proje dosyasında (`.axproj.json` içindeki `interconnect`), bir alt sistemin crossbar
+  ayarları alt sistemin kaydında (`xbar`) saklanır. **İçe aktar** `.xbar.json` dosyasından seçili interconnect'in modül
   adını, stilini ve master'larını alır (slave'ler ve adresler adres haritasından gelir); **Dışa aktar** seçili
   interconnect'in tam ayarını yazar (komut satırı için).
 
@@ -277,7 +283,7 @@ da çıkarmak için Address Map Editor'da değiştirip yeniden üret. Generic'i 
 adres haritasını da güncelle.
 
 Komut satırı arayüzün **Üret…** düğmesiyle aynı dosyaları üretir (arayüz olmadan doğrulamak için): projedeki
-her interconnect (üst bus ve her Sub-bus Bridge'in arkasındaki), projedeki modül adları, master'lar ve port stiliyle;
+her crossbar (üst bus ve birden fazla slave'i ya da ek master'ı olan her alt sistem), projedeki modül adları, master'lar ve port stiliyle;
 önce adres haritası ve interconnect'ler denetlenir, hata varsa hiçbir dosya yazılmaz. `--xbar-name`, `--nm` ve
 `--xbar-style` yalnızca verildiklerinde projedeki ayarın yerine geçer (`--xbar-name`, `--nm`: üst interconnect).
 
@@ -426,13 +432,14 @@ Bir hata çıkınca yeri böylece ayrılır: HDL spec yanlışsa Parça 1, HDL s
 
 - `tests/part1/` (girdi → HDL spec): `tests/data/ip` (register haritaları) ve `tests/data/xbar` (crossbar ayarları)
   ile örnek bir hiyerarşik projeden çıkan HDL spec'lerin `tests/data/hdl` altındaki beklenen dosyalarla aynı olması;
-  açıklama, isim gibi verilerin HDL spec'i değiştirmemesi; adres haritası kuralları (kilitler, Sub-bus Bridge, taşıma,
+  açıklama, isim gibi verilerin HDL spec'i değiştirmemesi; adres haritası kuralları (kilitler, alt sistemler, crossbar gerekip gerekmediği, taşıma,
   çakışmalar, rastgele haritalar); araçlarda yapılan işlemlerin (register ekleme, adres yazma, taşıma…) beklenen HDL
   spec'i vermesi; araçlardaki Spec görünümleri, `--dump-spec` ve üretilen dosyaların birebir aynı olması.
 - `tests/part2/` (HDL spec → Verilog): yalnızca `tests/data/hdl` altındaki HDL spec dosyalarından başlar: üretilen
   Verilog'un `tests/golden` altındaki kayıtlı dosyalarla aynı olması; `hdlspec` komutunun aynı dosyaları yazması;
   hatalı HDL spec'lerin reddedilmesi; IP testbench'lerinin iverilog'da geçmesi; her dosyanın derlenmesi; üç seviyeli
-  bir Sub-bus Bridge zincirinde yazma/okumaların doğru IP'ye ulaşması ve haritada olmayan adreslerin DECERR alması.
+  bir alt sistem zincirinde (biri crossbar'sız, tek slave'li) yazma/okumaların doğru IP'ye ulaşması ve haritada
+  olmayan adreslerin DECERR alması.
 
 ```
 pip install pytest

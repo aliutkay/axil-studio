@@ -70,13 +70,14 @@ def xbar_hdlspec(spec: "X.XbarSpec", parameters=None):
 
 
 def project_xbar_specs(project, style=None):
-    """One XbarSpec per interconnect of a project, top first (the address map is laid out first)."""
+    """One XbarSpec per crossbar of a project, top first (the address map is laid out first; a
+    subsystem with a single slave and no extra master has none)."""
     from . import addrmap
     try:
         addrmap.readdress(project)
     except ValueError:
         pass                    # reported by addrmap.validate()
-    return [addrmap.xbar_spec(project, b, style) for b in addrmap.levels(project)]
+    return [addrmap.xbar_spec(project, b, style) for b in addrmap.xbar_levels(project)]
 
 
 def project_hdlspecs(project):

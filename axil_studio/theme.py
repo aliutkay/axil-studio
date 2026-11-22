@@ -145,6 +145,8 @@ QPushButton[variant="ghost"]:hover, QToolButton[variant="ghost"]:hover {{ backgr
 QPushButton[variant="ghost"]:disabled, QToolButton[variant="ghost"]:disabled {{ background: transparent; border-style: dashed; color: {muted}; }}
 QPushButton:disabled {{ border-style: dashed; }}
 #ActionBar QPushButton:disabled {{ border-color: transparent; background: transparent; color: {muted}; }}
+#DetachButton, #DetachButton:disabled {{ border-color: transparent; background: transparent; }}
+#DetachButton:hover {{ background: {hover}; border-color: transparent; }}
 #HelpButton {{ min-height: 0; padding: 0; border: 1px solid {border}; border-radius: 9px; background: transparent;
               color: {muted}; font-size: 11px; font-weight: 700; }}
 #HelpButton:hover {{ color: {accent}; border-color: {accent}; background: {accent_soft}; }}

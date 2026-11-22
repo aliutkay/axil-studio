@@ -124,9 +124,10 @@ def _pack(fields, prefix):
 
 def cascade_testbench(project, xspecs, ip_module):
     """A testbench for the whole hierarchy: one master on the top crossbar; every IP instance is a
-    tst_reg slave; every bridge connects its port on the upper crossbar to MASTER0 of its own."""
+    tst_reg slave; every subsystem with a crossbar connects its port on the upper crossbar to
+    MASTER0 of its own, one without connects that port straight to its single slave."""
     from axil_studio.core import addrmap as A
-    lv = A.levels(project)
+    lv = A.xbar_levels(project)
     spec_of = {(b.name if b else ""): s for b, s in zip(lv, xspecs)}
     L = ["`timescale 1ns/1ps", "`default_nettype none", "module tb;",
          "    reg clk = 0, rstn = 0;", "    always #5 clk = ~clk;"]
@@ -152,9 +153,8 @@ def cascade_testbench(project, xspecs, ip_module):
         if key == "":
             conns += [".MASTER0_AXI_REQ(m_req)", ".MASTER0_AXI_RSP(m_rsp)"]
         else:
-            parent = project.parent_of(project.get_instance(key))
+            parent, j = A.xbar_of(project, project.get_instance(key))
             ps = spec_of[parent.name if parent else ""]
-            j = [x.name for x in ps.slaves].index(key)
             conns += [f".MASTER0_AXI_REQ({ps.module}_s{j}_req)", f".MASTER0_AXI_RSP({ps.module}_s{j}_rsp)"]
         for i in range(1, s.nm):                       # extra masters stay idle
             conns += [f".MASTER{i}_AXI_REQ({PK.REQ_W}'b0)", f".MASTER{i}_AXI_RSP({s.module}_m{i}_rsp)"]
@@ -163,11 +163,11 @@ def cascade_testbench(project, xspecs, ip_module):
         L.append(f"    {s.module}_pk u_{s.module} ({', '.join(conns)});")
     for key, s in spec_of.items():
         for j, sl in enumerate(s.slaves):
-            inst = project.get_instance(sl.name)
+            inst = A.endpoint(project, project.get_instance(sl.name))
             if inst.bridge:
                 continue
-            L.append(f"    {ip_module}_pk u_{sl.name} (.S_AXI_ACLK(clk), .S_AXI_ARESETN(rstn), "
-                     f".SLAVE_AXI_REQ({s.module}_s{j}_req), .SLAVE_AXI_RSP({s.module}_s{j}_rsp), .o_val(val_{sl.name}));")
+            L.append(f"    {ip_module}_pk u_{inst.name} (.S_AXI_ACLK(clk), .S_AXI_ARESETN(rstn), "
+                     f".SLAVE_AXI_REQ({s.module}_s{j}_req), .SLAVE_AXI_RSP({s.module}_s{j}_rsp), .o_val(val_{inst.name}));")
     L += ["    integer errors = 0;",
           "    task wr(input [31:0] a, input [31:0] d, input [1:0] exp);",
           "        begin",
@@ -214,10 +214,11 @@ def cascade_testbench(project, xspecs, ip_module):
 
 
 def unmapped(project):
-    """Addresses no slave answers: past the top bus, and in each bridge's unused room."""
+    """Addresses no slave answers: past the top bus, and in the unused room of each subsystem with
+    a crossbar (without one, the whole window goes to its single slave)."""
     from axil_studio.core import addrmap as A
     out = [0xF0000000]
-    for b in project.bridges():
+    for b in A.xbar_levels(project)[1:]:
         end = A.content_end(project, b)
         if end < A.window_of(project, b):
             out.append(b.base + end)                    # inside the bridge window, behind every child
@@ -226,11 +227,12 @@ def unmapped(project):
 
 @needs_iverilog
 def test_cascaded_crossbars_route_global_addresses(tmp_path):
-    """top: ip_0, SBB_0 (ip_1, ip_2, SBB_1 (ip_3)), ip_4: writes and reads reach the right IP through
-    up to three crossbars; addresses nobody decodes get DECERR at the bus that has no slave for them."""
+    """top: ip_0, SUB_0 (ip_1, ip_2, SUB_1 (ip_3, ip_5), SUB_2 (ip_6)), ip_4: writes and reads reach
+    the right IP through up to three crossbars and through SUB_2, which has none; addresses nobody
+    decodes get DECERR at the bus that has no slave for them."""
     spec = tiny_spec()
     p = hier_project(spec)
-    b0 = p.get_instance("SBB_0")
+    b0 = p.get_instance("SUB_0")
     b0.window = 0x10000                                  # room behind the children: an unmapped hole
     from axil_studio.core import addrmap as A
     A.readdress(p)

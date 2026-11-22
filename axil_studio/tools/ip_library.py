@@ -35,8 +35,8 @@ class IPLibraryPage(ToolPage):
     tool_id = "library"
     title = "IP Library"
     short_title = "IP Library"
-    subtitle = tr("See every IP of the project, create IP libraries, bring IPs from libraries into the project.")
-    description = (tr("Lists the project's IPs and their address-map instances; opens several IP libraries (.axlib.json), brings IPs into the project or stores project IPs in a library."))
+    subtitle = tr("Manage the project's IPs and reusable, versioned IP libraries.")
+    description = tr("IP management for the project and shared IP libraries (.axlib.json): versioned IPs, their address-map instances, and transfer between projects and libraries.")
     icon_name = "library"
 
     picked = Signal()          # picker mode: an IP was double-clicked

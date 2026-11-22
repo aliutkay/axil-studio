@@ -570,6 +570,7 @@ class DetachableTabs(QTabWidget):
         self.tabBar().customContextMenuRequested.connect(self._menu)
         self.detach_btn = button(tr("Separate window"), "external", "ghost", lambda: self.detach(self.currentIndex()),
                                  tr("Open this tab in a separate window (double-click works too)"))
+        self.detach_btn.setObjectName("DetachButton")
         self.setCornerWidget(self.detach_btn, Qt.Corner.TopRightCorner)
 
     def _menu(self, pos):

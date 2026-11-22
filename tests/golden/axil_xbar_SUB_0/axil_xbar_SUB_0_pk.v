@@ -1,7 +1,7 @@
 ////////////////////////////////////////////////////////////////////////////////
-// Module: axil_xbar_SBB_0_pk
+// Module: axil_xbar_SUB_0_pk
 //
-// HDL Designer block around axil_xbar_SBB_0 (AXI4-Lite crossbar on ZipCPU axilxbar). Every
+// HDL Designer block around axil_xbar_SUB_0 (AXI4-Lite crossbar on ZipCPU axilxbar). Every
 // port is one packed request/response pair; the block only packs and unpacks
 // signals:
 //   MASTER<i>_AXI_REQ/RSP  connect to a master's MASTER_AXI_REQ/RSP
@@ -12,25 +12,28 @@
 //   RSP [40:0] = AWREADY[40] WREADY[39] BRESP[38:37] BVALID[36] ARREADY[35] RDATA[34:3]
 //                RRESP[2:1] RVALID[0]
 //
-// 1 master port(s), 3 slave port(s). Address map
+// 1 master port(s), 4 slave port(s). Address map
 // (SLAVE<j>_ADDR / SLAVE<j>_MASK defaults):
 //   Port     Base        Mask        Window
-//   SLAVE0   0x00004000  0xFFFFF000     0x1000
-//   SLAVE1   0x00005000  0xFFFFF000     0x1000
-//   SLAVE2   0x00006000  0xFFFFF000     0x1000
+//   SLAVE0   0x00008000  0xFFFFF000     0x1000
+//   SLAVE1   0x00009000  0xFFFFF000     0x1000
+//   SLAVE2   0x0000A000  0xFFFFE000     0x2000
+//   SLAVE3   0x0000C000  0xFFFFF000     0x1000
 //
-// Requires axil_xbar_SBB_0.v, axilxbar.v, addrdecode.v, skidbuffer.v.
+// Requires axil_xbar_SUB_0.v, axilxbar.v, addrdecode.v, skidbuffer.v.
 ////////////////////////////////////////////////////////////////////////////////
 
 `default_nettype none
 
-module axil_xbar_SBB_0_pk #(
-    parameter [32-1:0] SLAVE0_ADDR = 32'h0000_4000,
+module axil_xbar_SUB_0_pk #(
+    parameter [32-1:0] SLAVE0_ADDR = 32'h0000_8000,
     parameter [32-1:0] SLAVE0_MASK = 32'hFFFF_F000,
-    parameter [32-1:0] SLAVE1_ADDR = 32'h0000_5000,
+    parameter [32-1:0] SLAVE1_ADDR = 32'h0000_9000,
     parameter [32-1:0] SLAVE1_MASK = 32'hFFFF_F000,
-    parameter [32-1:0] SLAVE2_ADDR = 32'h0000_6000,
-    parameter [32-1:0] SLAVE2_MASK = 32'hFFFF_F000,
+    parameter [32-1:0] SLAVE2_ADDR = 32'h0000_A000,
+    parameter [32-1:0] SLAVE2_MASK = 32'hFFFF_E000,
+    parameter [32-1:0] SLAVE3_ADDR = 32'h0000_C000,
+    parameter [32-1:0] SLAVE3_MASK = 32'hFFFF_F000,
     parameter [0:0]   OPT_LOWPOWER = 1'b1,
     parameter integer OPT_LINGER   = 4,
     parameter integer LGMAXBURST   = 5
@@ -48,7 +51,10 @@ module axil_xbar_SBB_0_pk #(
     input  wire [40:0]  SLAVE1_AXI_RSP,
     // Slave port 2
     output wire [110:0] SLAVE2_AXI_REQ,
-    input  wire [40:0]  SLAVE2_AXI_RSP
+    input  wire [40:0]  SLAVE2_AXI_RSP,
+    // Slave port 3
+    output wire [110:0] SLAVE3_AXI_REQ,
+    input  wire [40:0]  SLAVE3_AXI_RSP
 );
 
     // MASTER0: packed <-> signals
@@ -143,7 +149,30 @@ module axil_xbar_SBB_0_pk #(
     assign SLAVE2_AXI_REQ = {SLAVE2_AXI_AWADDR, SLAVE2_AXI_AWPROT, SLAVE2_AXI_AWVALID, SLAVE2_AXI_WDATA, SLAVE2_AXI_WSTRB, SLAVE2_AXI_WVALID, SLAVE2_AXI_BREADY, SLAVE2_AXI_ARADDR, SLAVE2_AXI_ARPROT, SLAVE2_AXI_ARVALID, SLAVE2_AXI_RREADY};
     assign {SLAVE2_AXI_AWREADY, SLAVE2_AXI_WREADY, SLAVE2_AXI_BRESP, SLAVE2_AXI_BVALID, SLAVE2_AXI_ARREADY, SLAVE2_AXI_RDATA, SLAVE2_AXI_RRESP, SLAVE2_AXI_RVALID} = SLAVE2_AXI_RSP;
 
-    axil_xbar_SBB_0 #(
+    // SLAVE3: packed <-> signals
+    wire [31:0]  SLAVE3_AXI_AWADDR;
+    wire [2:0]   SLAVE3_AXI_AWPROT;
+    wire         SLAVE3_AXI_AWVALID;
+    wire         SLAVE3_AXI_AWREADY;
+    wire [31:0]  SLAVE3_AXI_WDATA;
+    wire [3:0]   SLAVE3_AXI_WSTRB;
+    wire         SLAVE3_AXI_WVALID;
+    wire         SLAVE3_AXI_WREADY;
+    wire [1:0]   SLAVE3_AXI_BRESP;
+    wire         SLAVE3_AXI_BVALID;
+    wire         SLAVE3_AXI_BREADY;
+    wire [31:0]  SLAVE3_AXI_ARADDR;
+    wire [2:0]   SLAVE3_AXI_ARPROT;
+    wire         SLAVE3_AXI_ARVALID;
+    wire         SLAVE3_AXI_ARREADY;
+    wire [31:0]  SLAVE3_AXI_RDATA;
+    wire [1:0]   SLAVE3_AXI_RRESP;
+    wire         SLAVE3_AXI_RVALID;
+    wire         SLAVE3_AXI_RREADY;
+    assign SLAVE3_AXI_REQ = {SLAVE3_AXI_AWADDR, SLAVE3_AXI_AWPROT, SLAVE3_AXI_AWVALID, SLAVE3_AXI_WDATA, SLAVE3_AXI_WSTRB, SLAVE3_AXI_WVALID, SLAVE3_AXI_BREADY, SLAVE3_AXI_ARADDR, SLAVE3_AXI_ARPROT, SLAVE3_AXI_ARVALID, SLAVE3_AXI_RREADY};
+    assign {SLAVE3_AXI_AWREADY, SLAVE3_AXI_WREADY, SLAVE3_AXI_BRESP, SLAVE3_AXI_BVALID, SLAVE3_AXI_ARREADY, SLAVE3_AXI_RDATA, SLAVE3_AXI_RRESP, SLAVE3_AXI_RVALID} = SLAVE3_AXI_RSP;
+
+    axil_xbar_SUB_0 #(
         .C_AXI_ADDR_WIDTH (32),
         .C_AXI_DATA_WIDTH (32),
         .SLAVE0_ADDR      (SLAVE0_ADDR),
@@ -152,6 +181,8 @@ module axil_xbar_SBB_0_pk #(
         .SLAVE1_MASK      (SLAVE1_MASK),
         .SLAVE2_ADDR      (SLAVE2_ADDR),
         .SLAVE2_MASK      (SLAVE2_MASK),
+        .SLAVE3_ADDR      (SLAVE3_ADDR),
+        .SLAVE3_MASK      (SLAVE3_MASK),
         .OPT_LOWPOWER     (OPT_LOWPOWER),
         .OPT_LINGER       (OPT_LINGER),
         .LGMAXBURST       (LGMAXBURST)
@@ -233,7 +264,26 @@ module axil_xbar_SBB_0_pk #(
         .SLAVE2_AXI_RDATA   (SLAVE2_AXI_RDATA),
         .SLAVE2_AXI_RRESP   (SLAVE2_AXI_RRESP),
         .SLAVE2_AXI_RVALID  (SLAVE2_AXI_RVALID),
-        .SLAVE2_AXI_RREADY  (SLAVE2_AXI_RREADY)
+        .SLAVE2_AXI_RREADY  (SLAVE2_AXI_RREADY),
+        .SLAVE3_AXI_AWADDR  (SLAVE3_AXI_AWADDR),
+        .SLAVE3_AXI_AWPROT  (SLAVE3_AXI_AWPROT),
+        .SLAVE3_AXI_AWVALID (SLAVE3_AXI_AWVALID),
+        .SLAVE3_AXI_AWREADY (SLAVE3_AXI_AWREADY),
+        .SLAVE3_AXI_WDATA   (SLAVE3_AXI_WDATA),
+        .SLAVE3_AXI_WSTRB   (SLAVE3_AXI_WSTRB),
+        .SLAVE3_AXI_WVALID  (SLAVE3_AXI_WVALID),
+        .SLAVE3_AXI_WREADY  (SLAVE3_AXI_WREADY),
+        .SLAVE3_AXI_BRESP   (SLAVE3_AXI_BRESP),
+        .SLAVE3_AXI_BVALID  (SLAVE3_AXI_BVALID),
+        .SLAVE3_AXI_BREADY  (SLAVE3_AXI_BREADY),
+        .SLAVE3_AXI_ARADDR  (SLAVE3_AXI_ARADDR),
+        .SLAVE3_AXI_ARPROT  (SLAVE3_AXI_ARPROT),
+        .SLAVE3_AXI_ARVALID (SLAVE3_AXI_ARVALID),
+        .SLAVE3_AXI_ARREADY (SLAVE3_AXI_ARREADY),
+        .SLAVE3_AXI_RDATA   (SLAVE3_AXI_RDATA),
+        .SLAVE3_AXI_RRESP   (SLAVE3_AXI_RRESP),
+        .SLAVE3_AXI_RVALID  (SLAVE3_AXI_RVALID),
+        .SLAVE3_AXI_RREADY  (SLAVE3_AXI_RREADY)
     );
 
 endmodule

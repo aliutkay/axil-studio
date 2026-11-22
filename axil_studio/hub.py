@@ -16,7 +16,6 @@ from axil_studio.tools import TOOLS, TOOLS_BY_ID
 from axil_studio import errors, i18n
 from axil_studio.i18n import tr
 
-EXAMPLE_PROJECT = os.path.join(ROOT, "examples", "gpio_demo.axproj.json")
 
 
 # ============================================================================ project menu
@@ -279,7 +278,6 @@ class HomePage(QWidget):
         btns.setSpacing(8)
         btns.addWidget(ui.button(tr("New"), "file", None, hub.actions.new))
         btns.addWidget(ui.button(tr("Open…"), "folder", None, lambda: hub.actions.open()))
-        btns.addWidget(ui.button(tr("Example project"), "play", "ghost", lambda: hub.actions.open(EXAMPLE_PROJECT)))
         btns.addSpacing(8)
         self.lib_btn = ui.button(tr("Manage IPs"), "library", "primary", lambda: hub.open_tool_window("library"),
                                  tr("IP Library: the project's IPs and their address-map instances, IP libraries (Ctrl+6)"))
@@ -307,12 +305,12 @@ class HomePage(QWidget):
         # ---- flow hint
         flow = ui.Card(tr("Workflow"), margins=18)
         steps = [
-            ("1", "Register Map Editor", tr("Design the IP's register map and save it to the project (no address).")),
-            ("2", "Slave Interface Wrapper", tr("Generate the HDL, testbench, C header and document from the register map.")),
-            ("3", "Address Map Editor", tr("Place IPs in the address map; an IP can be used more than once.")),
-            ("4", "Interconnect Configurator", tr("Choose masters and port style, generate the axilxbar wrappers.")),
-            ("5", "UART-to-AXI Debug Bridge", tr("Access the registers on the hardware with the same address map.")),
-            ("·", tr("Manage IPs (IP Library)"), tr("From the project card: see every IP of the project; store IPs in libraries, bring library IPs into the project.")),
+            ("1", "Register Map Editor", tr("Define the IP's registers and bit fields and save it to the project.")),
+            ("2", "Slave Interface Wrapper", tr("Generate the slave HDL, testbench, C header and documentation.")),
+            ("3", "Address Map Editor", tr("Place IP instances, external slaves and subsystems on the system bus.")),
+            ("4", "Interconnect Configurator", tr("Configure the masters and generate the crossbar HDL.")),
+            ("5", "UART-to-AXI Debug Bridge", tr("Access the registers on hardware through the same address map.")),
+            ("·", tr("Manage IPs (IP Library)"), tr("Reuse IPs across projects through versioned IP libraries.")),
         ]
         for num, name, text in steps:
             r = QHBoxLayout()

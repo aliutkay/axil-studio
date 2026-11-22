@@ -99,30 +99,34 @@ def test_address_map_edits_reach_the_crossbar_specs(ctx, monkeypatch):
     from axil_studio.tools import address_map as AM
     page = AM.AddressMapPage(ctx)
     p = ctx.project
-    b1 = p.get_instance("SBB_1")
+    b1 = p.get_instance("SUB_1")
     k = p.get_instance("ip_3")
     k.fixed = True
-    p.get_instance("SBB_0").fixed = True           # so that it stays where it is when it grows
+    p.get_instance("SUB_0").fixed = True           # so that it stays where it is when it grows
     ctx.mark_modified()
-    # a typed bridge address (inside SBB_0): SBB_1 and its locked child move together
+    # a typed bridge address (inside SUB_0): SUB_1 and its locked child move together
     new_base = b1.base + 2 * A.window_of(p, b1)
-    queue(monkeypatch, AM.BridgeDialog, [("SBB_1", new_base, 0, 0, True)])
+    queue(monkeypatch, AM.BridgeDialog, [("SUB_1", new_base, 0, 0, True)])
     old_off = k.base - b1.base
     page.edit_slave(b1)
-    b1, k = p.get_instance("SBB_1"), p.get_instance("ip_3")
+    b1, k = p.get_instance("SUB_1"), p.get_instance("ip_3")
     assert (b1.base, k.base - b1.base, k.fixed) == (new_base, old_off, True)
     top, s0, s1 = [H.xbar_hdlspec(s) for s in H.project_xbar_specs(p)]
-    assert s0["slaves"][2]["addr"] == "0x%08X" % new_base                        # SBB_1 is SLAVE2 of SBB_0
-    assert [s["addr"] for s in s1["slaves"]] == ["0x%08X" % k.base]
+    assert s0["slaves"][2]["addr"] == "0x%08X" % new_base                        # SUB_1 is SLAVE2 of SUB_0
+    assert s1["slaves"][0]["addr"] == "0x%08X" % k.base
     # a refused edit leaves everything unchanged (the name too)
     before = H.project_hdlspecs(p)
     names = [i.name for i in p.all_instances()]
     queue(monkeypatch, AM.BridgeDialog, [("OTHER", b1.base, 0, 0x100, False)])   # window too small
     page.edit_slave(b1)
     assert H.project_hdlspecs(p) == before and [i.name for i in p.all_instances()] == names
-    # moving an entry to another bus: SBB_1's interconnect gets a second slave
-    page._move_to(p.get_instance("ip_4"), p.get_instance("SBB_1"), None)
-    assert len(H.xbar_hdlspec(H.project_xbar_specs(p)[2])["slaves"]) == 2
+    # moving an entry to another bus: SUB_1's interconnect gets a third slave
+    page._move_to(p.get_instance("ip_4"), p.get_instance("SUB_1"), None)
+    assert len(H.xbar_hdlspec(H.project_xbar_specs(p)[2])["slaves"]) == 3
+    # a second slave in SUB_2 gives it a crossbar of its own
+    assert len(H.project_xbar_specs(p)) == 3
+    page._move_to(p.get_instance("ip_0"), p.get_instance("SUB_2"), None)
+    assert [s.module for s in H.project_xbar_specs(p)][-1] == "axil_xbar_SUB_2"
 
 
 # ------------------------------------------------------------------ Interconnect Configurator
@@ -138,7 +142,7 @@ def test_interconnect_spec_view_and_generation_match_the_command_line(ctx, tmp_p
                                      cwd=ROOT, capture_output=True, text=True, check=True).stdout)
     assert json.loads(page.spec_view.text.toPlainText()) == {"interconnects": dump["interconnects"]}
     assert "name" not in page.spec_view.text.toPlainText()                    # port names are not HDL data
-    page.select_level("SBB_0")
+    page.select_level("SUB_0")
     page.spec_scope.setCurrentIndex(page.spec_scope.findData("level"))
     assert json.loads(page.spec_view.text.toPlainText()) == dump["interconnects"][1]
     monkeypatch.setattr(QFileDialog, "getExistingDirectory", staticmethod(lambda *a, **k: str(tmp_path / "gui")))
@@ -169,3 +173,44 @@ def test_data_specs_load_in_the_wrapper(ctx):
         spec = G.ModuleSpec.load(os.path.join(DATA, "ip", name))
         page.load_spec(copy.deepcopy(spec), "test")
         assert page.spec_data() == H.ip_hdlspec(spec)
+
+
+# ------------------------------------------------------------------ commands per tool
+def _commands(page):
+    from PySide6.QtWidgets import QAbstractButton
+    return {b.text() for b in page.header.findChildren(QAbstractButton)}
+
+
+def test_excel_export_only_in_the_map_editors(ctx, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    from axil_studio.core import regmap_xlsx
+    from axil_studio.tools import address_map, interconnect, regmap, wrapper
+    from axil_studio.i18n import tr
+    xl = tr("Export to Excel…")
+    rme = regmap.RegMapEditorPage(ctx)
+    assert xl in _commands(rme) and tr("Add to address map") not in _commands(rme)
+    assert xl in _commands(address_map.AddressMapPage(ctx))
+    assert xl not in _commands(wrapper.WrapperPage(ctx))
+    assert xl not in _commands(interconnect.InterconnectPage(ctx))
+    spec = G.spec_from_ipblock(ctx.project.ips[0])
+    assert not any(n.endswith(".xlsx") for n in wrapper.output_files(spec))
+    if regmap_xlsx.available():
+        rme.spec = copy.deepcopy(spec)
+        rme._load_spec()
+        out = tmp_path / "r.xlsx"
+        monkeypatch.setattr(QFileDialog, "getSaveFileName", staticmethod(lambda *a, **k: (str(out), "")))
+        rme.export_xlsx()
+        assert out.exists()
+
+
+def test_subsystem_with_one_slave_has_no_crossbar_in_the_configurator(ctx):
+    from axil_studio.tools.interconnect import InterconnectPage
+    page = InterconnectPage(ctx)
+    page.view_cb.setCurrentIndex(page.view_cb.findData("level"))
+    page.select_level("SUB_2")
+    assert page._system_view() and not page.module_ed.isEnabled()
+    assert page.spec_data("level")["crossbar"] is None
+    assert [k for k, _ in page._files() if k[1] == "main"] == [("", "main"), ("SUB_0", "main"), ("SUB_1", "main")]
+    page.add_master()                                          # an extra master: now it needs one
+    assert not page._system_view() and page.module_ed.isEnabled()
+    assert page.spec_data("level")["module"] == "axil_xbar_SUB_2"

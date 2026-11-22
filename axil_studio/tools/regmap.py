@@ -22,6 +22,7 @@ from axil_studio.core import axilgen as G
 from axil_studio.core import numfmt as N
 from axil_studio.core import portparse as PP
 from axil_studio.core import hdlspec as H
+from axil_studio.core import regmap_xlsx
 from axil_studio.history import History
 from axil_studio import ROOT, theme, ui
 from axil_studio.dialogs import KIND_SHORT, FieldDialog, RegDialog, ValueDialog
@@ -828,8 +829,8 @@ class RegMapEditorPage(ToolPage):
     tool_id = "regmap"
     title = "Register Map Editor"
     short_title = "Register Map Editor"
-    subtitle = tr("Design an IP's registers, bit fields, data types and value meanings.")
-    description = (tr("Designs the IP's register map: registers, bit fields, data types and value meanings. It has no address; the IP is placed in the Address Map Editor."))
+    subtitle = tr("Define the registers, bit fields, access types and value encodings of an AXI4-Lite IP.")
+    description = tr("Register map design for AXI4-Lite IPs: registers, bit fields, access types, reset values and value encodings, with port import from Verilog and VHDL and Excel export.")
     icon_name = "regmap"
 
     def __init__(self, ctx, parent=None):
@@ -858,10 +859,10 @@ class RegMapEditorPage(ToolPage):
         bar.add(tr("Open IP…"), "library", self.choose_ip, tr("Open an IP of the project or of a library (IP Library)"))
         bar.add(tr("Import…"), "folder", self.open_spec, tr("Open a .regspec.json file"))
         bar.sep()
-        bar.add(tr("Add to address map"), "addrmap", self.add_to_address_map,
-                tr("Save the IP to the project and place it in the address map (Address Map Editor)"))
         bar.add(tr("Open in Wrapper"), "wrapper", self.open_in_wrapper, tr("Generate the HDL in the Slave Interface Wrapper"))
         bar.add("Spec", "file", self.show_spec, tr("Show the HDL spec of this register map (read-only); follows the edits"))
+        bar.sep()
+        bar.add(tr("Export to Excel…"), "file", self.export_xlsx, tr("Register map (.xlsx)"), regmap_xlsx.available())
 
         split = QSplitter(Qt.Orientation.Horizontal)
         split.setChildrenCollapsible(False)
@@ -1081,7 +1082,7 @@ class RegMapEditorPage(ToolPage):
         act(tr("New bit field"), lambda: self.add_field())
         act(tr("Import ports (Verilog / VHDL)…"), self.import_ports, "Ctrl+I")
         m.addSeparator()
-        act(tr("Add to address map"), self.add_to_address_map)
+        act(tr("Export to Excel…"), self.export_xlsx)
         act(tr("Open in Slave Interface Wrapper"), self.open_in_wrapper)
 
     # ================================================================ state
@@ -2152,19 +2153,27 @@ class RegMapEditorPage(ToolPage):
         self.status(tr("Saved: {0}").format(path))
         return True
 
-    def _ensure_in_project(self):
-        if self.origin and self.origin[0] == "project" and not self.dirty:
-            return True
-        return self.save_to_project()
-
     # ================================================================ other tools
-    def add_to_address_map(self):
-        if not self._ensure_in_project():
+    def export_xlsx(self):
+        if not regmap_xlsx.available():
+            return self.error(tr("Could not export"), tr("openpyxl is not installed"))
+        errs = self.spec.validate()
+        if errs:
+            QMessageBox.warning(self, self.title, tr("The register map has errors. Fix the errors shown in the status bar and try again."))
             return
-        inst = self.ctx.add_instance(self.spec.module, source=self.tool_id)
-        self._show_origin()
-        self.edit_address_map(inst.name)
-        self.status(tr("{0} added to the address map").format(inst.name))
+        folder = os.path.dirname(self.ctx.path or "") or ROOT
+        path, _ = QFileDialog.getSaveFileName(self, tr("Register map (Excel)"),
+                                              os.path.join(folder, f"{self.spec.module}_regmap.xlsx"), "Excel (*.xlsx)")
+        if not path:
+            return
+        base = 0
+        if self.origin and self.origin[0] == "project" and self.ctx.project.get_ip(self.origin[1]) is not None:
+            base = H.ip_base(self.ctx.project, self.origin[1])
+        try:
+            G.export_xlsx(self.spec, path, base)
+        except (OSError, RuntimeError) as exc:
+            return self.error(tr("Could not export"), exc)
+        self.status(tr("Exported to Excel: {0} (base {1}; can be changed in the yellow cell of the Summary sheet)").format(path, f"0x{base:08X}"))
 
     def open_in_wrapper(self):
         w = self.open_tool("wrapper")

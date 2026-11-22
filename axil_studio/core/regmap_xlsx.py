@@ -138,7 +138,7 @@ def _put(ws, row, values, fill=None, bold=False, italic=False, color=None, align
 
 def export_xlsx(ips, path, title=None, bus_of=None):
     """Write the register map of one or more IPBlocks to an .xlsx file. bus_of: {IP name: bus name}
-    (the Sub-bus Bridge an instance sits behind), written next to its base address."""
+    (the subsystem an instance sits in), written next to its base address."""
     if not HAVE_OPENPYXL:
         raise RuntimeError(tr("Excel output needs openpyxl: pip install openpyxl"))
     ips = list(ips)

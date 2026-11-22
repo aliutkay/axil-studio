@@ -1,19 +1,23 @@
 """Project address map: where each IP instance (and external slave) sits on the bus.
 
 The address map is a tree of model.IPInstance entries. The top list is the top interconnect's
-slave ports in order (SLAVE0, SLAVE1 …). A Sub-bus Bridge (inst.bridge) is one slave of its
-bus; its window starts with `self_window` bytes of its own, the rest is forwarded to the
-interconnect behind it, whose slave ports are inst.children (in port order, any depth).
+slave ports in order (SLAVE0, SLAVE1 …). A subsystem (inst.bridge) is one slave of its bus that
+groups the entries behind it (inst.children, in port order, any depth); its window starts with
+`self_window` bytes of its own, the rest is forwarded unchanged to its contents.
 
-Addresses are global: every bus decodes the whole address and a bridge forwards it unchanged,
-so the children of a bridge always lie inside the bridge's window.
+A subsystem gets an interconnect of its own only when it needs one (has_xbar): more than one
+slave behind it, or extra masters. With a single slave and no extra master, the upper bus port
+connects straight to that slave and no crossbar is generated.
+
+Addresses are global: every bus decodes the whole address and a subsystem forwards it
+unchanged, so its contents always lie inside its window.
 
 An entry is either automatic (consecutive, window-aligned, in list order: from the start
-address on the top bus, after the bridge's own window inside a bridge) or fixed (base typed by
-hand). A bridge's window grows with its contents unless its size was chosen by hand (then
-contents that do not fit are an error). The same IP definition can be placed any number of
-times. The Address Map Editor edits the tree, the Interconnect Configurator turns every level
-into one crossbar, the Debug Bridge reads registers through it.
+address on the top bus, after the subsystem's own window inside a subsystem) or fixed (base
+typed by hand). A subsystem's window grows with its contents unless its size was chosen by hand
+(then contents that do not fit are an error). The same IP definition can be placed any number of
+times. The Address Map Editor edits the tree, the Interconnect Configurator turns every bus that
+needs one into a crossbar, the Debug Bridge reads registers through it.
 """
 
 from . import xbargen as X
@@ -22,8 +26,8 @@ from axil_studio.i18n import tr
 
 MIN_WINDOW = 0x1000          # default slave window: 4 KB, larger when the IP needs it (changeable per project)
 DEFAULT_START = 0x00000000
-BRIDGE_STEM = "SBB"          # Sub-bus Bridge names: SBB_0, SBB_1 …
-BRIDGE_LABEL = "Sub-bus Bridge"
+BRIDGE_STEM = "SUB"          # subsystem names: SUB_0, SUB_1 …
+BRIDGE_LABEL = tr("Subsystem")
 
 
 def need_window(span, min_window=MIN_WINDOW):
@@ -166,8 +170,39 @@ def xbar_spec(project, bridge=None, style=None):
 
 
 def levels(project):
-    """Every interconnect of the project, top first, then depth first: [None, bridge, …]."""
+    """Every bus of the project, top first, then depth first: [None, subsystem, …]."""
     return [None] + project.bridges()
+
+
+def has_xbar(project, bridge=None):
+    """True when a bus is a crossbar: always the top bus; a subsystem only with more than one
+    slave behind it or extra masters (otherwise its port connects straight to its one slave)."""
+    if bridge is None:
+        return True
+    return len(bridge.children) > 1 or bool(bridge.xbar_masters)
+
+
+def xbar_levels(project):
+    """The buses that are generated as crossbars, in levels() order."""
+    return [b for b in levels(project) if has_xbar(project, b)]
+
+
+def xbar_of(project, inst):
+    """The crossbar whose slave port `inst` is reached through, and that port:
+    (bus, j) with bus None for the top one. Subsystems without a crossbar are passed through."""
+    while True:
+        parent = project.parent_of(inst)
+        if has_xbar(project, parent):
+            return parent, project.level(parent).index(inst)
+        inst = parent
+
+
+def endpoint(project, inst):
+    """What a slave port leads to: `inst`, or for a subsystem without a crossbar the entry behind
+    it (followed down to an IP, an external slave or a subsystem with a crossbar)."""
+    while inst.bridge and not has_xbar(project, inst) and inst.children:
+        inst = inst.children[0]
+    return inst
 
 
 # ============================================================================ addressing
@@ -296,9 +331,9 @@ def validate(project):
                 o = sl[k]
                 if not ((s.base ^ o.base) & s.mask & o.mask):
                     errs.append(tr("{0} overlaps {1}SLAVE{2} ({3})").format(tag, where, k, o.name))
-        if bridge is not None:
-            if not items:
-                errs.append(tr("{0}: {1} is empty; add at least one slave to the interconnect behind it").format(bridge.name, BRIDGE_LABEL))
+        if bridge is not None and not items:
+            errs.append(tr("{0}: the subsystem is empty; add at least one slave to it").format(bridge.name))
+        if bridge is not None and has_xbar(project, bridge):
             if not X.IDENT.match(bridge.xbar_module):
                 errs.append(tr("{0}: interconnect module name is not valid").format(bridge.name))
             if not 1 <= 1 + len(bridge.xbar_masters) <= 16:
@@ -317,7 +352,7 @@ def module_clashes(project):
     errs = []
     style = (project.interconnect or {}).get("style") or "packed"
     owners = {}                                   # lower-case name -> [who defines it]
-    for b in levels(project):
+    for b in xbar_levels(project):
         m = xbar_module(project, b)
         what = tr("top interconnect") if b is None else tr("{0} interconnect").format(b.name)
         names = [m] + ([f"{m}_pk"] if style == "packed" else [])
@@ -359,7 +394,7 @@ def add_instance(project, ip_name, name=None, parent=None):
 
 
 def add_bridge(project, parent=None, self_window=0, window=0, name=None):
-    """A new Sub-bus Bridge at the end of a bus."""
+    """A new subsystem at the end of a bus."""
     inst = IPInstance(name or unique_name(project, BRIDGE_STEM), bridge=True, self_window=self_window,
                       window=window, xbar={"module": "", "masters": []})
     project.level(parent).append(inst)

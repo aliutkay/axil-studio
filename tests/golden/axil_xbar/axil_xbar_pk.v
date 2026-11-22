@@ -16,8 +16,8 @@
 // (SLAVE<j>_ADDR / SLAVE<j>_MASK defaults):
 //   Port     Base        Mask        Window
 //   SLAVE0   0x00000000  0xFFFFF000     0x1000
-//   SLAVE1   0x00004000  0xFFFFC000     0x4000
-//   SLAVE2   0x00008000  0xFFFFF000     0x1000
+//   SLAVE1   0x00008000  0xFFFF8000     0x8000
+//   SLAVE2   0x00010000  0xFFFFF000     0x1000
 //
 // Requires axil_xbar.v, axilxbar.v, addrdecode.v, skidbuffer.v.
 ////////////////////////////////////////////////////////////////////////////////
@@ -27,9 +27,9 @@
 module axil_xbar_pk #(
     parameter [32-1:0] SLAVE0_ADDR = 32'h0000_0000,
     parameter [32-1:0] SLAVE0_MASK = 32'hFFFF_F000,
-    parameter [32-1:0] SLAVE1_ADDR = 32'h0000_4000,
-    parameter [32-1:0] SLAVE1_MASK = 32'hFFFF_C000,
-    parameter [32-1:0] SLAVE2_ADDR = 32'h0000_8000,
+    parameter [32-1:0] SLAVE1_ADDR = 32'h0000_8000,
+    parameter [32-1:0] SLAVE1_MASK = 32'hFFFF_8000,
+    parameter [32-1:0] SLAVE2_ADDR = 32'h0001_0000,
     parameter [32-1:0] SLAVE2_MASK = 32'hFFFF_F000,
     parameter [0:0]   OPT_LOWPOWER = 1'b1,
     parameter integer OPT_LINGER   = 4,

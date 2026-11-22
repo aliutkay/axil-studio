@@ -1027,12 +1027,12 @@ def _rw_bits(reg, state):
 
 
 # ============================================================================
-def output_texts_names(spec: ModuleSpec):
-    """Names of every file generate_all() writes, in order."""
+def output_texts_names(spec: ModuleSpec, xlsx=True):
+    """Names of every file generate_all() writes, in order (`xlsx`: with the Excel workbook)."""
     from . import regmap_xlsx
     m = spec.module
     names = verilog_files(spec) + [f"{m}_regs.h", f"{m}_regs.md", f"{m}.hdlspec.json", f"{m}.regspec.json"]
-    return names + ([f"{m}_regmap.xlsx"] if regmap_xlsx.available() else [])
+    return names + ([f"{m}_regmap.xlsx"] if xlsx and regmap_xlsx.available() else [])
 
 
 def output_texts(spec: ModuleSpec, only=None, base=0):
@@ -1060,7 +1060,7 @@ def verilog_files(spec: ModuleSpec):
     return H.verilog_names(H.ip_hdlspec(spec))
 
 
-def generate_all(spec: ModuleSpec, outdir, base=0):
+def generate_all(spec: ModuleSpec, outdir, base=0, xlsx=True):
     """Write every output file (output_texts_names); returns the list of paths. The Verilog files
     come from <module>.hdlspec.json (written too); <module>.regspec.json is the full register map
     (to open it again). `base`: the IP's address for the C header and Excel (not in either spec)."""
@@ -1083,7 +1083,7 @@ def generate_all(spec: ModuleSpec, outdir, base=0):
     spec.save(spec_path)
     paths.append(spec_path)
     from . import regmap_xlsx
-    if regmap_xlsx.available():
+    if xlsx and regmap_xlsx.available():
         paths.append(export_xlsx(spec, os.path.join(outdir, f"{m}_regmap.xlsx"), base))
     return paths
 
@@ -1132,7 +1132,7 @@ def main():
     ap.add_argument("--signals", action="store_true", help="IP: do not write the HDL Designer wrapper <module>_pk.v")
     ap.add_argument("--xbar", metavar="AXPROJ",
                     help="generate the axilxbar wrappers of a project (.axproj.json: every interconnect, the top one "
-                         "and the one behind each Sub-bus Bridge, with the project's module names and masters, "
+                         "and the one of each subsystem with more than one slave, with the project's module names and masters, "
                          "exactly as the Interconnect Configurator does) or of one .xbar.json")
     ap.add_argument("--nm", type=int, default=None, help="--xbar: override the top interconnect's masters with "
                                                          "this many (hexbus, master1, ...)")
@@ -1181,9 +1181,10 @@ def main():
                 addrmap.readdress(proj)
             except ValueError as exc:
                 raise SystemExit(f"error: {exc}")
-            specs = [addrmap.xbar_spec(proj, b) for b in addrmap.levels(proj)]
+            lv = addrmap.xbar_levels(proj)
+            specs = [addrmap.xbar_spec(proj, b) for b in lv]
             errs = list(addrmap.validate(proj))
-            for b, xs in zip(addrmap.levels(proj), specs):
+            for b, xs in zip(lv, specs):
                 where = "" if b is None else f"{xs.module}: "
                 errs += [where + e for e in (xs.validate() if xs.slaves else [tr("no slaves")]) if e not in errs]
         if errs:

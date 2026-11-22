@@ -2,7 +2,7 @@
 
 The register map itself is designed in the Register Map Editor; this tool takes one (a project
 IP, a .regspec.json file or an IP handed over by another tool) and generates the wrapper,
-testbench, instantiation templates, C header, documentation and Excel map, runs the testbench
+testbench, instantiation templates, C header and documentation, runs the testbench
 with iverilog and packs existing AXI4-Lite modules for HDL Designer.
 """
 
@@ -19,7 +19,6 @@ from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, Q
 
 from axil_studio.core import axilgen as G
 from axil_studio.core import axilpack
-from axil_studio.core import regmap_xlsx
 from axil_studio.core import hdlspec as H
 from axil_studio import ROOT, theme, ui
 from axil_studio.tools.base import ToolPage
@@ -38,15 +37,15 @@ def verilog_label(spec, name):
 
 def output_files(spec):
     """Names of the files generate_all() writes for `spec`."""
-    return G.output_texts_names(spec)
+    return G.output_texts_names(spec, xlsx=False)
 
 
 class WrapperPage(ToolPage):
     tool_id = "wrapper"
     title = "Slave Interface Wrapper"
     short_title = "Slave Interface Wrapper"
-    subtitle = tr("Generate AXI4-Lite slave HDL, testbench, header and documentation from the register map.")
-    description = (tr("Generates AXI4-Lite slave HDL, testbench, C header, document and Excel register map from the IP designed in the Register Map Editor; makes HDL Designer wrappers for ready-made IPs."))
+    subtitle = tr("Generate AXI4-Lite slave HDL, testbench, C header and documentation from a register map.")
+    description = tr("AXI4-Lite slave generation from a register map: synthesizable Verilog, a self-checking testbench, a C header and register documentation, plus HDL Designer wrappers for existing AXI4-Lite modules.")
     icon_name = "wrapper"
 
     def __init__(self, ctx, parent=None):
@@ -60,7 +59,7 @@ class WrapperPage(ToolPage):
         self.has_iverilog = bool(shutil.which("iverilog"))
 
         self.gen_btn = self.header.add_right(ui.button(tr("Generate…"), "play", "primary", self.generate,
-                                                 tr("Generate the wrapper, testbench, header, document and Excel (Ctrl+G)")))
+                                                 tr("Generate the HDL, testbench, C header and document (Ctrl+G)")))
 
         bar = self.header       # the tool's commands sit in the top bar
         bar.add(tr("Select IP…"), "library", self.choose_ip, tr("Select an IP of the project or of a library (IP Library)"))
@@ -69,8 +68,6 @@ class WrapperPage(ToolPage):
         self.edit_btn = bar.add(tr("Edit register map"), "regmap", self.edit_regmap,
                                 tr("Open in Register Map Editor"))
         bar.sep()
-        self.xlsx_btn = bar.add(tr("Export to Excel…"), "file", self.export_xlsx, tr("Register map (.xlsx)"),
-                                regmap_xlsx.available())
         self.tb_btn = bar.add(tr("Run testbench"), "play", self.run_testbench,
                               tr("Self-checking testbench with iverilog") if self.has_iverilog
                               else tr("iverilog not found"), self.has_iverilog)
@@ -169,7 +166,6 @@ class WrapperPage(ToolPage):
         act(tr("Edit register map"), self.edit_regmap)
         m.addSeparator()
         act(tr("Generate…"), self.generate, "Ctrl+G")
-        act(tr("Export to Excel…"), self.export_xlsx, None, regmap_xlsx.available())
         act(tr("Run the testbench (iverilog)"), self.run_testbench, None, self.has_iverilog)
         act(tr("HDL Designer wrapper for a ready-made IP…"), self.pack_existing)
 
@@ -260,7 +256,6 @@ class WrapperPage(ToolPage):
         has = spec is not None
         for w in (self.gen_btn, self.edit_btn, self.packed_cb):
             w.setEnabled(has)
-        self.xlsx_btn.setEnabled(has and regmap_xlsx.available())
         self.tb_btn.setEnabled(has and self.has_iverilog)
         self.files.clear()
         if not has:
@@ -382,7 +377,7 @@ class WrapperPage(ToolPage):
             return
         self.outdir = outdir
         try:
-            paths = G.generate_all(self.spec, outdir, self._project_base())
+            paths = G.generate_all(self.spec, outdir, self._project_base(), xlsx=False)
         except Exception as exc:  # noqa: BLE001
             return self.error(tr("Generation failed"), exc)
         names = "\n".join(os.path.basename(p) for p in paths)
@@ -404,21 +399,6 @@ class WrapperPage(ToolPage):
         self._refresh()
         self.status(tr("{0} added to the project; place it in the address map with the Address Map Editor").format(name))
 
-    def export_xlsx(self):
-        if not self._ready():
-            return
-        path, _ = QFileDialog.getSaveFileName(self, tr("Register map (Excel)"),
-                                              os.path.join(self.outdir or ROOT, f"{self.spec.module}_regmap.xlsx"),
-                                              "Excel (*.xlsx)")
-        if not path:
-            return
-        base = self._project_base()
-        try:
-            G.export_xlsx(self.spec, path, base)
-        except (OSError, RuntimeError) as exc:
-            return self.error(tr("Could not export"), exc)
-        self.status(tr("Exported to Excel: {0} (base {1}; can be changed in the yellow cell of the Summary sheet)").format(path, hex32(base)))
-
     def run_testbench(self):
         if not self._ready():
             return
@@ -427,7 +407,7 @@ class WrapperPage(ToolPage):
         self.status(tr("Running the testbench…"), 0)
 
         def job():
-            G.generate_all(spec, d, base)
+            G.generate_all(spec, d, base, xlsx=False)
             m = spec.module
             exe = os.path.join(d, f"{m}_tb.vvp")
             srcs = [os.path.join(d, f) for f in [f"{m}_tb.v"] + G.hdl_files(spec)]

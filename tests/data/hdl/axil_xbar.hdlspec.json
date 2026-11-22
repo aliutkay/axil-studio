@@ -10,11 +10,11 @@
       "mask": "0xFFFFF000"
     },
     {
-      "addr": "0x00004000",
-      "mask": "0xFFFFC000"
+      "addr": "0x00008000",
+      "mask": "0xFFFF8000"
     },
     {
-      "addr": "0x00008000",
+      "addr": "0x00010000",
       "mask": "0xFFFFF000"
     }
   ],

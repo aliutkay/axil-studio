@@ -1,13 +1,14 @@
 """Interconnect Configurator: the project's address map -> axilxbar crossbar wrappers.
 
-Every bus of the address map is one interconnect: the top bus and the bus behind every
-Sub-bus Bridge. The slave ports come from the Address Map Editor (port j = entry j of that bus,
-with its base and window; a bridge is one port with its whole window); this tool sets each
-crossbar itself: module name and masters (behind a bridge MASTER0 is the bridge, more can be
-added), the port style (all of them), shows the whole system's or one crossbar's block diagram
-and the Verilog, and generates one wrapper per interconnect (nothing for the bridges). The top's
-settings are stored in the project file ("interconnect"), a bridge's on the bridge ("xbar");
-addresses are only edited in the Address Map Editor.
+Every bus of the address map that needs one is a crossbar: the top bus and every subsystem with
+more than one slave or extra masters (a subsystem with a single slave connects straight to it).
+The slave ports come from the Address Map Editor (port j = entry j of that bus, with its base and
+window; a subsystem is one port with its whole window); this tool sets each crossbar itself:
+module name and masters (in a subsystem MASTER0 carries the requests from the upper bus, more can
+be added), the port style (all of them), shows the whole system's or one crossbar's block diagram
+and the Verilog, and generates one wrapper per crossbar. The top's settings are stored in the
+project file ("interconnect"), a subsystem's on the subsystem ("xbar"); addresses are only edited
+in the Address Map Editor.
 """
 
 import os
@@ -39,20 +40,20 @@ class InterconnectPage(ToolPage):
     tool_id = "interconnect"
     title = "Interconnect Configurator"
     short_title = "Interconnect Configurator"
-    subtitle = (tr("Configure the axilxbar crossbars of the address map's buses and generate their wrappers (one interconnect behind every Sub-bus Bridge)."))
-    description = (tr("Sets every interconnect's module name and masters, takes its slave ports from the address map, draws the block diagram of the whole system and generates wrappers with named ports for ZipCPU axilxbar."))
+    subtitle = tr("Configure the system's AXI4-Lite crossbars and generate their HDL.")
+    description = tr("Crossbar configuration for every bus of the address map: masters, module names and port style, with slave ports and address decoding that follow the address map, system and crossbar block diagrams (PDF, draw.io) and HDL wrappers for ZipCPU axilxbar.")
     icon_name = "interconnect"
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
-        self.level_name = ""             # "" = the top interconnect, else a Sub-bus Bridge's name
+        self.level_name = ""             # "" = the top interconnect, else a subsystem's name
         self._loading = False
 
         self.gen_btn = self.header.add_right(ui.button(tr("Generate…"), "play", "primary", self.generate,
                                                  tr("Generate the axilxbar wrappers and documents of every interconnect")))
         bar = self.header       # the tool's commands sit in the top bar
         bar.add(tr("Edit address map…"), "addrmap", lambda: self.edit_address_map(),
-                tr("Slaves, Sub-bus Bridges, their addresses and order are edited in the Address Map Editor"))
+                tr("Slaves, subsystems, their addresses and order are edited in the Address Map Editor"))
         bar.sep()
         bar.add(tr("Import (.xbar.json)…"), "folder", self.import_xbar,
                 tr("Take the selected interconnect's settings from an .xbar.json file (settings are kept in the project)"))
@@ -74,7 +75,7 @@ class InterconnectPage(ToolPage):
         self.level_tree.header().setStretchLastSection(False)
         self.level_tree.header().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.level_tree.header().setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
-        self.level_tree.setToolTip(tr("The interconnect of the top bus and of every Sub-bus Bridge"))
+        self.level_tree.setToolTip(tr("The top bus and every subsystem; a subsystem with a single slave has no crossbar"))
         self.level_tree.currentItemChanged.connect(self._level_picked)
         left.lay.addWidget(self.level_tree)
         left.lay.addWidget(ui.Divider())
@@ -160,7 +161,7 @@ class InterconnectPage(ToolPage):
         self.view_cb = QComboBox()
         self.view_cb.addItem(tr("Whole system"), "system")
         self.view_cb.addItem(tr("Selected interconnect (with pins)"), "level")
-        self.view_cb.setToolTip(tr("Whole system: every bus and Sub-bus Bridge; selected interconnect: one crossbar with the pins of the generated HDL"))
+        self.view_cb.setToolTip(tr("Whole system: every bus and subsystem; selected interconnect: one crossbar with the pins of the generated HDL"))
         self.view_cb.currentIndexChanged.connect(lambda *_: self._switch_view())
         drow.addWidget(self.view_cb)
         self.sig_cb = QComboBox()
@@ -269,7 +270,7 @@ class InterconnectPage(ToolPage):
 
     @property
     def level(self):
-        """The selected interconnect: None (top) or a Sub-bus Bridge."""
+        """The selected bus: None (top) or a subsystem."""
         b = self.proj.get_instance(self.level_name) if self.level_name else None
         return b if b is not None and b.bridge else None
 
@@ -340,14 +341,22 @@ class InterconnectPage(ToolPage):
         self.level_tree.clear()
         mono = theme.mono_font()
 
+        muted = QColor(theme.manager().tokens["muted"])
+
         def add(parent_item, bridge):
             sp = self.spec(bridge)
-            label = sp.module + (tr("  (top)") if bridge is None else "")
-            it = QTreeWidgetItem([label, f"{sp.nm}M · {sp.ns}S"])
+            if A.has_xbar(self.proj, bridge):
+                label = sp.module + (tr("  (top)") if bridge is None else "")
+                it = QTreeWidgetItem([label, f"{sp.nm}M · {sp.ns}S"])
+                it.setToolTip(0, tr("The top bus's interconnect") if bridge is None else
+                              tr("Crossbar of the subsystem {0} · {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + A.window_of(self.proj, bridge) - 1)))
+            else:
+                it = QTreeWidgetItem([tr("{0}  (direct)").format(bridge.name), "1S"])
+                for c in (0, 1):
+                    it.setForeground(c, muted)
+                it.setToolTip(0, self._direct_text(bridge))
             it.setData(0, Qt.ItemDataRole.UserRole, bridge.name if bridge else "")
             it.setFont(1, mono)
-            it.setToolTip(0, tr("The top bus's interconnect") if bridge is None else
-                          tr("Interconnect behind {0} ({1}) · {2} – {3}").format(bridge.name, A.BRIDGE_LABEL, hex32(bridge.base), hex32(bridge.base + A.window_of(self.proj, bridge) - 1)))
             (parent_item.addChild if parent_item else self.level_tree.addTopLevelItem)(it)
             if (bridge.name if bridge else "") == self.level_name:
                 self.level_tree.setCurrentItem(it)
@@ -364,7 +373,9 @@ class InterconnectPage(ToolPage):
         spec = self.spec()
         self._loading = True
         self._fill_levels()
-        self.level_title.setText(tr("CROSSBAR · ") + (tr("TOP BUS") if b is None else b.name))
+        direct = not A.has_xbar(self.proj, b)
+        self.level_title.setText((tr("SUBSYSTEM · ") if direct else tr("CROSSBAR · ")) + (tr("TOP BUS") if b is None else b.name))
+        self.module_ed.setEnabled(not direct)
         self.module_ed.setText(spec.module)
         self.module_ed.setPlaceholderText(f"axil_xbar_{b.name}" if b else "axil_xbar")
         self.style_cb.setCurrentIndex(max(0, self.style_cb.findData(self.style)))
@@ -382,7 +393,7 @@ class InterconnectPage(ToolPage):
             if i < fixed:
                 name.setFlags(Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable)
                 name.setForeground(QColor(t["accent"]))
-                name.setToolTip(tr("{0} {1}: requests from the upper bus (fixed)").format(A.BRIDGE_LABEL, b.name))
+                name.setToolTip(tr("Subsystem {0}: requests from the upper bus (fixed)").format(b.name))
                 self.master_tbl.setItem(i, 1, name)
                 self.master_tbl.removeCellWidget(i, 2)
             else:
@@ -390,15 +401,19 @@ class InterconnectPage(ToolPage):
                 ui.table_row_actions(self.master_tbl, i, 2, lambda *_, i=i: self.rename_master(i),
                                      lambda *_, i=i: self.delete_master(i),
                                      edit_tip=tr("Rename master"), delete_tip=tr("Delete master"))
-        self.master_note.label.setText("" if b is None else tr("MASTER0 is {0} (requests from the upper bus).").format(b.name))
-        self.master_note.help.set_text("" if b is None else tr("MASTER0 is always {0} (requests from the upper bus). Added masters (e.g. a local DMA) reach only this interconnect's slaves.").format(b.name))
+        if direct:
+            self.master_note.label.setText(tr("No crossbar: the single slave is connected directly."))
+            self.master_note.help.set_text(self._direct_text(b) + tr("\nAdding a master (e.g. a local DMA) gives the subsystem a crossbar."))
+        else:
+            self.master_note.label.setText("" if b is None else tr("MASTER0 is {0} (requests from the upper bus).").format(b.name))
+            self.master_note.help.set_text("" if b is None else tr("MASTER0 is always {0} (requests from the upper bus). Added masters (e.g. a local DMA) reach only this interconnect's slaves.").format(b.name))
         self.master_note.setVisible(b is not None)
         if b is None:
             short = tr("Slave ports come from the address map (port j = row j).")
-            more = tr("The top bus's slave ports come from the address map (port j = row j). Name, address, size and order are changed in the Address Map Editor; double-click a row (a Sub-bus Bridge row opens the interconnect behind it).")
+            more = tr("The top bus's slave ports come from the address map (port j = row j). Name, address, size and order are changed in the Address Map Editor; double-click a row (a subsystem row selects that subsystem).")
         else:
             short = tr("Slaves inside the {0} window; addresses are global.").format(b.name)
-            more = tr("Interconnect behind {0}: its slaves are inside the {1} window ({2} – {3}); addresses are global.").format(b.name, b.name, hex32(b.base + b.self_window), hex32(b.base + A.window_of(self.proj, b) - 1))
+            more = tr("Subsystem {0}: its slaves are inside its window ({1} – {2}); addresses are global.").format(b.name, hex32(b.base + b.self_window), hex32(b.base + A.window_of(self.proj, b) - 1))
         self.slave_note.label.setText(short)
         self.slave_note.help.set_text(more)
         sel = self._sel_slave()
@@ -406,7 +421,8 @@ class InterconnectPage(ToolPage):
         insts = self.proj.level(b)
         self.slave_tbl.setRowCount(spec.ns)
         for j, (inst, s) in enumerate(zip(insts, spec.slaves)):
-            kind = A.BRIDGE_LABEL if inst.bridge else tr("external") if inst.external else inst.ip
+            kind = (A.BRIDGE_LABEL + (tr(" · crossbar") if A.has_xbar(self.proj, inst) else tr(" · direct"))
+                    if inst.bridge else tr("external") if inst.external else inst.ip)
             cells = [(f"SLAVE{j}", True), (s.name, False), (kind, False), (hex32(s.base), True),
                      (size_text(s.window), False)]
             for col, (text, is_mono) in enumerate(cells):
@@ -414,7 +430,7 @@ class InterconnectPage(ToolPage):
                 if is_mono:
                     it.setFont(mono)
                 it.setToolTip(f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}\nMASK {hex32(s.mask)}\n"
-                              + (tr("Double-click: go to the interconnect behind it") if inst.bridge
+                              + (tr("Double-click: select the subsystem") if inst.bridge
                                  else tr("Double-click: edit in the Address Map Editor")))
                 if col == 2 and inst.bridge:
                     it.setForeground(QColor(t["accent"]))
@@ -429,8 +445,8 @@ class InterconnectPage(ToolPage):
 
         errs = self.all_errors()
         if not errs:
-            n = len(A.levels(self.proj))
-            self.issues.ok_text = (tr("No errors · {0} interconnects · selected: {1} masters, {2} slaves").format(n, spec.nm, spec.ns))
+            n = len(A.xbar_levels(self.proj))
+            self.issues.ok_text = (tr("No errors · {0} crossbars · selected: {1} masters, {2} slaves").format(n, spec.nm, spec.ns))
         self.issues.set_issues(errs)
         self.gen_btn.setEnabled(not errs)
         self._update_diagram()
@@ -440,13 +456,13 @@ class InterconnectPage(ToolPage):
         if not self.proj.instances:
             return [tr("Address map is empty: add IPs in the Address Map Editor.")]
         errs = []
-        for b in A.levels(self.proj):
+        for b in A.xbar_levels(self.proj):
             sp = self.spec(b)
             where = "" if b is None else f"{sp.module}: "
             if not sp.slaves:
                 if b is None:
                     errs.append(tr("No slaves on the top bus"))
-                continue            # an empty Sub-bus Bridge is reported by the address map below
+                continue            # an empty subsystem is reported by the address map below
             errs += [where + e for e in sp.validate()]
         for e in A.validate(self.proj):
             if e not in errs:
@@ -474,15 +490,23 @@ class InterconnectPage(ToolPage):
         self._refresh()
         self.slave_tbl.selectRow(self.proj.level(par).index(inst))
 
+    def _system_view(self):
+        """The whole system is shown when asked for, and for a subsystem without a crossbar."""
+        return self.view_cb.currentData() == "system" or not A.has_xbar(self.proj, self.level)
+
+    def _direct_text(self, b):
+        child = b.children[0].name if b.children else "—"
+        return tr("{0} has a single slave ({1}) and no extra masters: no crossbar is generated; the port of {0} on the upper bus connects straight to {1}.").format(b.name, child)
+
     def _dia(self):
-        return self.system if self.view_cb.currentData() == "system" else self.diagram
+        return self.system if self._system_view() else self.diagram
 
     def _zoom_shown(self, z):
         if self.sender() is self._dia():
             self.zoom_lbl.setText(f"{round(z * 100)}%")
 
     def _switch_view(self):
-        self.dia_stack.setCurrentIndex(0 if self.view_cb.currentData() == "system" else 1)
+        self.dia_stack.setCurrentIndex(0 if self._system_view() else 1)
         self._update_diagram()
         self.zoom_lbl.setText(f"{round(self._dia()._scale * 100)}%")
 
@@ -494,7 +518,8 @@ class InterconnectPage(ToolPage):
         s = self._sel_slave()
         sel = ("s", s) if s is not None else (("m", rows[0].row()) if rows else None)
         bad = A.overlapping(self.proj, b) | (A.outside(self.proj, b) if b is not None else set())
-        if self.view_cb.currentData() == "system":
+        self.dia_stack.setCurrentIndex(0 if self._system_view() else 1)
+        if self._system_view():
             insts = self.proj.level(b)
             sel_name = insts[s].name if s is not None and s < len(insts) else None
             self.system.set_project(self.proj, self.sig_cb.currentData(), b.name if b else "", sel_name)
@@ -530,7 +555,7 @@ class InterconnectPage(ToolPage):
 
     def _files(self):
         out = []
-        for b in A.levels(self.proj):
+        for b in A.xbar_levels(self.proj):
             sp = self.spec(b)
             out.append(((b.name if b else "", "main"), tr("{0}.v  —  wrapper with separate AXI ports").format(sp.module)))
             if sp.packed:
@@ -541,7 +566,9 @@ class InterconnectPage(ToolPage):
     def spec_data(self, scope=None):
         """What the Spec tab shows (core/hdlspec.py): the selected interconnect's HDL spec, or all."""
         if (scope or self.spec_scope.currentData()) == "all":
-            return {"interconnects": [H.xbar_hdlspec(self.spec(b)) for b in A.levels(self.proj)]}
+            return {"interconnects": [H.xbar_hdlspec(self.spec(b)) for b in A.xbar_levels(self.proj)]}
+        if not A.has_xbar(self.proj, self.level):
+            return {"crossbar": None, "note": self._direct_text(self.level)}
         return H.xbar_hdlspec(self.spec())
 
     def save_spec(self):
@@ -554,9 +581,11 @@ class InterconnectPage(ToolPage):
                     return
                 for x in self.spec_data("all")["interconnects"]:
                     H.save(x, os.path.join(d, H.file_name(x)))
-                self.status(tr("{0} HDL specs saved: {1}").format(len(A.levels(self.proj)), d))
+                self.status(tr("{0} HDL specs saved: {1}").format(len(A.xbar_levels(self.proj)), d))
                 return
             x = self.spec_data("level")
+            if x.get("crossbar", 1) is None:
+                return self.status(x["note"])
             path, _ = QFileDialog.getSaveFileName(self, "HDL spec", os.path.join(start, H.file_name(x)),
                                                   "HDL spec (*.hdlspec.json);;JSON (*.json)")
             if not path:
@@ -711,11 +740,11 @@ class InterconnectPage(ToolPage):
             return
         paths = []
         try:
-            for b in A.levels(self.proj):
+            for b in A.xbar_levels(self.proj):
                 paths += X.write_xbar(self.spec(b), outdir)
         except Exception as exc:  # noqa: BLE001
             return self.error(tr("Generation failed"), exc)
-        hint = (tr("<module>.v: the MASTER<i>_AXI_* and SLAVE<j>_AXI_* ports connect to the masters' M_AXI_* and the slaves' S_AXI_* ports. A Sub-bus Bridge is the block connected to a SLAVE port of the upper interconnect and to MASTER0 of the interconnect behind it (no file is generated for it)."))
+        hint = (tr("<module>.v: the MASTER<i>_AXI_* and SLAVE<j>_AXI_* ports connect to the masters' M_AXI_* and the slaves' S_AXI_* ports. A subsystem's SLAVE port on the upper crossbar connects to MASTER0 of its own crossbar, or straight to its slave when it has a single one."))
         if self.style == "packed":
             hint += tr("\n<module>_pk.v (HDL Designer) wraps <module>.v: MASTER<i>/SLAVE<j>_AXI_REQ/RSP per port.")
         QMessageBox.information(self, tr("Generation complete"),

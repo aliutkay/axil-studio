@@ -21,7 +21,8 @@ def tiny_spec(name="tst_reg", packed=True):
 
 
 def hier_project(spec=None):
-    """top: ip_0, SBB_0 (ip_1, ip_2, SBB_1 (ip_3)), ip_4 - every IP the same definition."""
+    """top: ip_0, SUB_0 (ip_1, ip_2, SUB_1 (ip_3, ip_5), SUB_2 (ip_6)), ip_4 - every IP the same
+    definition. SUB_2 has a single slave, so no crossbar: crossbars top, SUB_0 and SUB_1."""
     spec = spec or tiny_spec()
     p = Project("hier", [to_ipblock(spec, 0, with_spec=True)])
     m = spec.module
@@ -31,6 +32,9 @@ def hier_project(spec=None):
     A.add_instance(p, m, "ip_2", parent=b0)
     b1 = A.add_bridge(p, parent=b0)
     A.add_instance(p, m, "ip_3", parent=b1)
+    A.add_instance(p, m, "ip_5", parent=b1)
+    b2 = A.add_bridge(p, parent=b0)
+    A.add_instance(p, m, "ip_6", parent=b2)
     A.add_instance(p, m, "ip_4")
     A.readdress(p)
     return p

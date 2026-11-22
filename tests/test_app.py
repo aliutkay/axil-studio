@@ -79,13 +79,13 @@ def names(ctx, bus):
 def test_project_undo_redo(ctx):
     from axil_studio.tools.address_map import AddressMapPage
     page = AddressMapPage(ctx)
-    before = names(ctx, "SBB_1")
-    page._move_to(ctx.project.get_instance("ip_4"), ctx.project.get_instance("SBB_1"), None)
-    moved = names(ctx, "SBB_1")
+    before = names(ctx, "SUB_1")
+    page._move_to(ctx.project.get_instance("ip_4"), ctx.project.get_instance("SUB_1"), None)
+    moved = names(ctx, "SUB_1")
     assert moved != before and ctx.dirty and ctx.can_undo()
-    assert ctx.undo() and names(ctx, "SBB_1") == before and not ctx.dirty
+    assert ctx.undo() and names(ctx, "SUB_1") == before and not ctx.dirty
     assert page.tree.topLevelItemCount() == 3                     # the tool followed the undo
-    assert ctx.redo() and names(ctx, "SBB_1") == moved
+    assert ctx.redo() and names(ctx, "SUB_1") == moved
     assert not ctx.redo()
 
 

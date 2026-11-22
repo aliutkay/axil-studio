@@ -11,6 +11,28 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.20 — Alt sistem (Subsystem), sadeleşen komutlar, yeni araç açıklamaları
+
+- **Sub-bus Bridge → Alt sistem (Subsystem):** adres haritasında slave'leri tek bir pencerede toplayan kayıt artık
+  *alt sistem* adını taşıyor (yeni adlar `SUB_0`, `SUB_1` …; proje dosyası biçimi değişmedi). **Crossbar yalnızca
+  gerektiğinde üretilir:** birden fazla slave'i ya da ek master'ı olan alt sistemin kendi axilxbar'ı olur; tek
+  slave'li alt sistemde crossbar üretilmez, üst bus'taki SLAVE portu doğrudan o slave'e bağlanır. Address Map Editor'da
+  tür sütunu *Alt sistem · crossbar* / *Alt sistem · doğrudan* yazar; Interconnect Configurator'da tek slave'li alt
+  sistemler listede *(doğrudan)* görünür, seçilince nedenini açıklar ve tüm sistem diyagramını gösterir; sistem
+  diyagramı doğrudan bağlantıyı crossbar'sız çizer. Üretim, HDL spec'ler, `axilgen --xbar` ve modül adı
+  çakışma denetimi yalnızca crossbar'ları kapsar.
+- **Excel'e aktar** yalnızca Register Map Editor (tek IP) ve Address Map Editor'da (tüm harita). Slave Interface
+  Wrapper'dan Excel düğmesi ve menüsü kaldırıldı, **Üret…** artık Excel yazmaz (komut satırı `axilgen` yazmaya devam
+  eder).
+- Register Map Editor'dan **Adres haritasına ekle** kaldırıldı; IP adres haritasına Address Map Editor'da yerleştirilir.
+- Hub'dan **Örnek proje** düğmesi kaldırıldı.
+- Sekme köşesindeki **Ayrı pencere** düğmesinin çerçevesi kaldırıldı.
+- Hub kartlarındaki ve araç başlıklarındaki açıklamalar ile **İş akışı** adımları yeniden yazıldı: aracın ne
+  sunduğunu anlatan kısa, ürün dili ("adres içermez" gibi olumsuz notlar yok).
+- Testler: tek slave'li alt sistemin crossbar'sız kalması ve slave ya da master eklenince crossbar'a dönüşmesi;
+  kademeli simülasyonda crossbar'sız alt sistemden geçen yazma/okumalar; Excel komutlarının yalnızca iki editörde
+  olması.
+
 ## early-alpha 0.1.19 — İngilizce arayüz, çeviri altyapısı, geri al / yinele, simge
 
 - **Tek sürüm:** araçların ayrı sürümleri kaldırıldı (hub kartları, araç başlıkları, Hakkında); yalnızca uygulama

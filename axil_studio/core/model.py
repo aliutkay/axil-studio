@@ -221,14 +221,14 @@ class IPBlock:
 @dataclass
 class IPInstance:
     """One entry of the project's address map: an IP definition placed at a base address,
-    an external slave (ip == "") that has no register map in the project, or a Sub-bus Bridge.
+    an external slave (ip == "") that has no register map in the project, or a subsystem.
 
-    A Sub-bus Bridge (bridge=True) takes one window on its bus like a slave; the first
-    `self_window` bytes of it belong to the bridge itself, the rest is forwarded unchanged
-    (global addresses) to the interconnect behind it, whose slaves are `children` (IP instances,
-    external slaves and further Sub-bus Bridges). `xbar` holds that interconnect's settings:
-    {"module": "" (= axil_xbar_<name>), "masters": [extra master names]}; the bridge itself is
-    always its MASTER0."""
+    A subsystem (bridge=True) takes one window on its bus like a slave and groups the entries
+    behind it (`children`: IP instances, external slaves and further subsystems); the first
+    `self_window` bytes of the window are its own, the rest is forwarded unchanged (global
+    addresses). With more than one child or extra masters it has a crossbar of its own; `xbar`
+    holds its settings: {"module": "" (= axil_xbar_<name>), "masters": [extra master names]}; the
+    requests from the upper bus are always its MASTER0."""
     name: str
     ip: str = ""            # IP definition name; "" = external slave (or a bridge)
     base: int = 0           # global address

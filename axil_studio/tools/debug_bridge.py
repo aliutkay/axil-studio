@@ -53,8 +53,8 @@ class DebugBridgePage(ToolPage):
     tool_id = "debug"
     title = "UART-to-AXI Debug Bridge"
     short_title = "UART-to-AXI Debug Bridge"
-    subtitle = tr("Reads and writes the AXI4-Lite registers on the hardware over UART.")
-    description = (tr("Reads and writes the registers on the hardware through the hexbus bridge on a UART. Without hardware, use the SIMULATOR port."))
+    subtitle = tr("Read and write AXI4-Lite registers on hardware over UART.")
+    description = tr("Register access on hardware through a UART hexbus bridge, organized by the project's address map: decoded register views, periodic reads and a built-in simulator for work without a board.")
     icon_name = "debug"
 
     _log = Signal(str, str)
@@ -391,7 +391,7 @@ class DebugBridgePage(ToolPage):
                 e.setForeground(0, muted)
                 e.setFlags(Qt.ItemFlag.ItemIsEnabled)
                 g.addChild(e)
-            if group == "project":           # the address map's tree: IPs under their Sub-bus Bridge
+            if group == "project":           # the address map's tree: IPs under their subsystem
                 by_name = {ip.name: ip for ip in ips}
 
                 def level(items, parent_item):
@@ -401,7 +401,7 @@ class DebugBridgePage(ToolPage):
                             node.setFont(1, mono)
                             node.setForeground(0, theme.manager().color("accent"))
                             node.setFlags(Qt.ItemFlag.ItemIsEnabled)
-                            node.setToolTip(0, tr("Sub-bus Bridge: the IPs on the interconnect behind it (addresses are global)"))
+                            node.setToolTip(0, tr("Subsystem: the IPs grouped in it (addresses are global)"))
                             parent_item.addChild(node)
                             level(inst.children, node)
                         elif inst.name in by_name:
