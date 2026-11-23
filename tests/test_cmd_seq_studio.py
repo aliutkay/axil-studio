@@ -233,3 +233,21 @@ def test_interface_texts_are_translated():
     with open(os.path.join(IFACE, "texts_tr.json"), encoding="utf-8") as fh:
         tr_ = json.load(fh)
     assert sorted(keys - set(tr_)) == []
+
+
+def test_debug_bridge_tree_opens_the_sequencer(qapp, seq_bridge, monkeypatch):
+    """The sequencer subsystem is a selectable IP row (its own registers, the interface button,
+    double-click), with its slaves under it."""
+    from axil_studio.tools.debug_bridge import ROLE
+    page = seq_bridge
+    page._fill_tree()
+    it = page._find_item(("project", "SEQ0", None))
+    assert it is not None and it.data(0, ROLE) == ("project", "SEQ0", None)
+    kids = {it.child(i).text(0) for i in range(it.childCount())}
+    assert {"CTRL", "STATUS", "UART0"} <= kids
+    page.tree.setCurrentItem(page._find_item(("project", "SEQ0", "CTRL")))   # a register of it
+    assert page.panel_btn.isVisibleTo(page) and page.ip.name == "SEQ0"
+    opened = []
+    monkeypatch.setattr(page, "open_panel", lambda g=None, n=None: opened.append((g, n)))
+    page._tree_double_click(it)
+    assert opened == [("project", "SEQ0")]

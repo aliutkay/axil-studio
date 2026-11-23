@@ -11,6 +11,12 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.31 — Debug Bridge: komut sıralayıcı satırı
+- Debug Bridge ağacında komut sıralayıcı subsystem'i tıklanamayan bir grup başlığı olarak
+  çiziliyordu; kendi registerları ve arayüz düğmesi yoktu. Artık seçilebilir bir IP satırı:
+  altında kendi registerları ve subsystem'in slave'leri var, çift tıklama ya da bir registerı
+  seçince çıkan **Komut sıralayıcı** düğmesi arayüzü açar. Test eklendi.
+
 ## early-alpha 0.1.30 — cmd_seq: indeksli D-mem, DMEM_AW düzeltmesi
 
 - **Indeksli D-mem:** `LDD Ra, D[n+Rb]`, `STD D[n+Rb], Ra`, `RD D[n+Rx], [Rb+imm]`. İndeks çalışma anında

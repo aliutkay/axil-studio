@@ -427,7 +427,13 @@ class DebugBridgePage(ToolPage):
 
                 def level(items, parent_item):
                     for inst in sorted(items, key=lambda i: i.base):
-                        if inst.bridge:
+                        if inst.bridge and inst.sequencer and inst.name in by_name:
+                            # a command sequencer: its own registers + its interface, then its slaves
+                            node = ip_item(by_name[inst.name], group)
+                            node.setForeground(0, theme.manager().color("accent"))
+                            parent_item.addChild(node)
+                            level(inst.children, node)
+                        elif inst.bridge:
                             node = QTreeWidgetItem([inst.name, hex32(inst.base), ""])
                             node.setFont(1, mono)
                             node.setForeground(0, theme.manager().color("accent"))
