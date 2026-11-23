@@ -73,7 +73,8 @@ def test_panel_survives_project_library_and_spec():
     assert spec2.panel == U.PANEL_ID and G.to_ipblock(spec2, 0, with_spec=True).panel == U.PANEL_ID
     assert "panel" not in G.ModuleSpec("x").to_dict()
     proj = Project.load(os.path.join(EX, "uart_phy_demo.axproj.json"))
-    assert [(i.name, i.base, i.panel) for i in proj.address_ips()] == [("UART0", 0x60001000, U.PANEL_ID)]
+    assert [(i.name, i.base, i.panel) for i in proj.address_ips()] == [("UART0", 0x60001000, U.PANEL_ID),
+                                                                       ("UART1", 0x60002000, U.PANEL_ID)]
 
 
 # ---------------------------------------------------------------- service and client
@@ -426,6 +427,136 @@ def test_uart_window_form(qapp, bridge, no_dialogs):
         qapp.processEvents()
         time.sleep(0.01)
     assert page.link.mem[0x60001010] == U.line_ctrl("rs422") and page.link.mem[0x60001014] == 0x00FA0032
+    assert _pump_until(qapp, lambda: w.bus.pending == 0)
+    _dispose(qapp, w, c)
+
+
+# ---------------------------------------------------------------- 4-wire pair
+def test_peers_and_peer_settings(qapp, bridge):
+    page = bridge
+    c = _in_thread(qapp, lambda: axil_client.AxilClient(page.service.port, _session(page)))
+    peers = _in_thread(qapp, c.peers)
+    assert [(p["name"], p["base"]) for p in peers] == [("UART1", 0x60002000)]
+    _in_thread(qapp, lambda: c.set_settings(ip="UART1", pair={"peer": "UART0", "role": "rx"}))
+    assert page.ctx.project.debug["interfaces"]["UART1"]["pair"]["role"] == "rx"
+    assert _in_thread(qapp, lambda: c.get_settings(ip="UART1"))["pair"]["peer"] == "UART0"
+    _in_thread(qapp, lambda: c.set_settings(ip="UART1", pair=None))
+    assert "pair" not in page.ctx.project.debug["interfaces"]["UART1"]
+    with pytest.raises(axil_client.AxilError):
+        _in_thread(qapp, lambda: c.set_settings(ip="NOPE", x=1))
+    c.close()
+
+
+def _dispose(qapp, w, c):
+    """Close an interface window and delete it now (not at interpreter exit)."""
+    from PySide6.QtCore import QEvent
     w.close()
     w.bus.shutdown()
     c.close()
+    w.deleteLater()
+    qapp.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    qapp.processEvents()
+
+
+def _pump_until(qapp, cond, t=5):
+    end = time.time() + t
+    while not cond() and time.time() < end:
+        qapp.processEvents()
+        time.sleep(0.005)
+    return cond()
+
+
+def test_pair_window(qapp, bridge, no_dialogs, monkeypatch):
+    import look
+    import uart_ui
+    page = bridge
+    c = _in_thread(qapp, lambda: axil_client.AxilClient(page.service.port, _session(page)))
+    look.use_language("en")
+    w = uart_ui.UartWindow(c)
+    assert _pump_until(qapp, lambda: w.peers_list)
+    w.mode_cb.setCurrentIndex(1)
+    w.role_cb.setCurrentIndex(w.role_cb.findData("tx"))
+    w.txde_cb.setCurrentIndex(w.txde_cb.findData("high"))
+    w.make_pair()
+    assert _pump_until(qapp, lambda: w.paired)
+    def ifs():
+        return page.ctx.project.debug["interfaces"]
+    assert ifs()["UART0"]["pair"] == {"peer": "UART1", "role": "tx", "tx_de": "high"}
+    assert ifs()["UART1"]["pair"] == {"peer": "UART0", "role": "rx", "tx_de": "high"}
+    assert w._bases() == (0x60001000, 0x60002000) and not w.line_type.isEnabled()
+    # write all: timing, receiver first, then the driver, then SETUP on both
+    page.link.ops.clear()
+    w.write_all()
+    assert _pump_until(qapp, lambda: ("w", 0x60002000, w._setup_value()) in page.link.ops)
+    ctrl = [op for op in page.link.ops if op[0] == "w" and op[1] & 0xFF == U.PHY_CTRL]
+    assert ctrl[0] == ("w", 0x60002010, U.CTRL_RX_EN) and ctrl[1] == ("w", 0x60001010, U.CTRL_TX_EN | U.CTRL_DE_HIGH)
+    # swap: UART1 drives now; UART0 (the new receiver) is set first
+    page.link.ops.clear()
+    w.swap_directions()
+    assert _pump_until(qapp, lambda: ifs()["UART0"]["pair"]["role"] == "rx" and ifs()["UART1"]["pair"]["role"] == "tx")
+    ctrl = [op for op in page.link.ops if op[0] == "w" and op[1] & 0xFF == U.PHY_CTRL]
+    assert ctrl[0] == ("w", 0x60001010, U.CTRL_RX_EN) and ctrl[1] == ("w", 0x60002010, U.CTRL_TX_EN | U.CTRL_DE_HIGH)
+    assert ifs()["UART1"]["pair"]["role"] == "tx" and w._bases() == (0x60002000, 0x60001000)
+    # validation settings of the pair
+    w.v_pc.setCurrentIndex(w.v_pc.findData("none"))
+    s = w._val_settings()
+    assert s.pair == {"a": "UART0", "a_base": 0x60001000, "b": "UART1", "b_base": 0x60002000, "tx": "b"}
+    assert s.pc == "none" and s.line_type == "rs422" and not s.loopback
+    # unpair
+    w.unpair()
+    assert _pump_until(qapp, lambda: not ifs()["UART0"].get("pair") and not ifs()["UART1"].get("pair"))
+    assert _pump_until(qapp, lambda: w.bus.pending == 0)
+    _dispose(qapp, w, c)
+
+
+class _Bus:
+    """Two FakeUart-like channels whose buses are wired to each other (external loopback)."""
+
+    class Ch(FakeUart):
+        def _release(self):
+            c = self.regs[U.PHY_CTRL]
+            if c & U.CTRL_TX_EN and c & 3 and self.peer.regs[U.PHY_CTRL] & U.CTRL_RX_EN:
+                self.peer.rx += self.tx_hold
+                self.tx_hold = []
+
+        def write(self, addr, v):
+            super().write(addr, v)
+            if addr - BASE == U.PHY_CTRL:
+                self.peer._release()
+
+    def __init__(self):
+        self.a, self.b = self.Ch(caps=0x0F), self.Ch(caps=0x0F)
+        self.a.peer, self.b.peer = self.b, self.a
+
+    def _ch(self, addr):
+        return (self.a, addr - 0x1000) if addr < 0x2000 else (self.b, addr - 0x2000)
+
+    def read(self, addr):
+        ch, off = self._ch(addr)
+        return ch.read(BASE + off)
+
+    def write(self, addr, v):
+        ch, off = self._ch(addr)
+        ch.write(BASE + off, v)
+
+
+def test_pair_validation_both_directions():
+    bus = _Bus()
+    s = V.Settings(base=0x1000, line_type="rs422", bauds=[115200], formats="8N1", count=16,
+                   pair={"a": "UART0", "a_base": 0x1000, "b": "UART1", "b_base": 0x2000, "tx": "a"}, pc="none")
+    rep = V.Report()
+    assert V.run_validation(bus, s, rep) == "done"
+    names = {(r["section"].split(" · ")[0], r["test"]): r["status"] for r in rep.rows}
+    assert names[("UART0 TX → UART1 RX", "Loopback data 115200 8N1")] == "PASS"
+    assert names[("UART1 TX → UART0 RX", "Loopback data 115200 8N1")] == "PASS"
+    assert names[("Register tests UART1", "FIFO depth")] == "PASS"
+    assert bus.a.regs[U.PHY_CTRL] == 0xC0 and bus.b.regs[U.PHY_CTRL] == 0xC0      # restored
+    # one 4-wire adapter cannot follow swapped directions
+    rep = V.Report()
+    V.run_validation(_Bus(), V.Settings(**dict(s.__dict__, pc="one")), rep)
+    assert any(r["status"] == "SKIP" and r["test"].startswith("Swapped directions") for r in rep.rows)
+
+
+def test_split_ctrl():
+    tx, rx = V.PairDut.split_ctrl(U.CTRL_TX_EN | U.CTRL_RX_EN | U.CTRL_DE_TX | U.CTRL_TX_INV | U.CTRL_RX_INV)
+    assert tx == U.CTRL_TX_EN | U.CTRL_DE_TX | U.CTRL_TX_INV and rx == U.CTRL_RX_EN | U.CTRL_RX_INV

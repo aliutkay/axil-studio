@@ -24,6 +24,12 @@ validation.
 Also required from ZipCPU/wbuart32 `rtl/`: `rxuart.v`, `rxuartlite.v`, `txuartlite.v`, `ufifo.v`
 and `skidbuffer.v` (`txuart.v` is replaced by `txuart_v2.v`).
 
+## 4-wire link from two IPs
+Two axiluart_phy instances, each with its own 2-wire RS-485 transceiver, make one 4-wire link: one
+IP sends (PHY_CTRL: DE high or DE while transmitting, TX on, RX off) and the other receives (DE low,
+TX off, RX on). The directions are swapped by writing PHY_CTRL (the receiver first). The UART
+interface pairs two instances, swaps the directions and validates both directions.
+
 ## axiluart_v2 changes
 - Module and file renamed to `axiluart_v2` so it cannot clash with the original
 - Instantiates `txuart_v2`: the original txuart sends odd parity when even is selected and vice

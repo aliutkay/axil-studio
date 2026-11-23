@@ -452,6 +452,10 @@ class DebugBridgePage(ToolPage):
                 top.setToolTip(0, single_line(ip.desc) + "\n" + (
                     tr("{0}: double-click to open").format(info.label(language())) if info
                     else tr("IP interface: {0} (not found)").format(ip.panel)))
+                pair = ((self.ctx.project.debug or {}).get("interfaces", {}).get(ip.name, {}) or {}).get("pair")
+                if pair and pair.get("peer"):
+                    top.setToolTip(0, top.toolTip(0) + "\n" + tr("4-wire pair with {0} ({1})").format(
+                        pair["peer"], "TX" if pair.get("role") == "tx" else "RX"))
             for reg in ip.registers:
                 it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
                 it.setFont(1, mono)

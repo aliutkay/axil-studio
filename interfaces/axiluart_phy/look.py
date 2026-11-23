@@ -141,6 +141,7 @@ class Pill(QLabel):
     def set(self, text, state=""):
         self.setText(text)
         self.setProperty("state", state)
+        self.setVisible(bool(text))
         repolish(self)
 
 

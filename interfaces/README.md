@@ -96,7 +96,8 @@ yanıtlar ve olayları her an gönderebilir:
 | `read_until` | `offset` / `addr`, `mask`, `value`, `max` (≤ 4096) | `(kelime & mask) == value` olan ilk kelimeye kadar okunanlar (FIFO boşaltma) |
 | `lock` / `unlock` | — | Bağlantıyı tutar: Debug Bridge'in canlı izlemesi durur, Bağlan ve register paneli kilitlenir; başka arayüzlerin istekleri `busy` alır. Arayüzün bağlantısı koparsa kilit kendiliğinden kalkar |
 | `ip` | — | Güncel IP bilgisi |
-| `settings_get` / `settings_set` | `values` (JSON nesnesi) | Bu IP örneği için projede saklanan değerler (ör. ACLK) |
+| `settings_get` / `settings_set` | `values` (JSON nesnesi; `null` anahtarı siler), isteğe bağlı `ip` | Bu IP örneği (ya da `ip` ile aynı arayüzü kullanan bir eşi) için projede saklanan değerler (ör. ACLK, 4 telli çift) |
+| `peers` | — | Projede aynı arayüzü kullanan diğer IP örnekleri: ad, `base`, register haritası, kayıtlı ayarları. Register'larına mutlak adresle (`addr`) erişilir |
 | `show_register` | `register` | Debug Bridge'de register'ı seçer ve öne getirir |
 | `add_config` | `rows`: `[{"register", "value"}]` | Debug Bridge config listesine satır ekler |
 | `status` / `log` | `text` | Durum çubuğuna / trafik günlüğüne yazar |

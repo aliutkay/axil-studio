@@ -56,12 +56,17 @@ class Worker(QObject):
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._done.connect(self._deliver)
 
+        self.pending = 0
+
     def run(self, fn, ok=None, err=None):
+        self.pending += 1
         fut = self._pool.submit(fn)
         fut.add_done_callback(lambda f: self._done.emit(f, ok, err))
 
-    @staticmethod
-    def _deliver(fut, ok, err):
+    def _deliver(self, fut, ok, err):
+        self.pending -= 1
+        if fut.cancelled():
+            return
         exc = fut.exception()
         if exc is not None:
             if err:
@@ -110,6 +115,8 @@ class UartWindow(QWidget):
         self.cancel = threading.Event()
         self.report = None
         self._io_buttons = []
+        self.peers_list = []                         # other IPs with this interface (AXIL Studio's "peers")
+        self.pair = client.settings.get("pair")      # {"peer", "role": "tx"|"rx", "tx_de": "high"|"tx"} or None
 
         outer = QVBoxLayout(self)
         outer.setContentsMargins(16, 12, 16, 12)
@@ -161,6 +168,7 @@ class UartWindow(QWidget):
         self._line_changed()
         self._on_connection()
         self._restyle()
+        self._refresh_peers()
 
     # ================================================================ AXIL Studio
     @property
@@ -181,6 +189,7 @@ class UartWindow(QWidget):
             self._on_connection()
         elif kind == "ip":
             self._update_title()
+            self._refresh_peers()
         elif kind == "ip_removed":
             QMessageBox.warning(self, tr("UART interface"), tr("{0} is no longer in the address map").format(self.ip_name))
             self.close()
@@ -197,7 +206,11 @@ class UartWindow(QWidget):
             self.close()
 
     def _update_title(self):
-        self.ip_lbl.setText(f"{self.ip_name} · 0x{int(self.ip.get('base', 0)):08X}")
+        text = f"{self.ip_name} · 0x{int(self.ip.get('base', 0)):08X}"
+        if self.paired:
+            tx = self.ip_name if self.pair["role"] == "tx" else self.pair["peer"]
+            text = tr("{0} ⇄ {1} · 4-wire ({2} TX)").format(self.ip_name, self.pair["peer"], tx)
+        self.ip_lbl.setText(text)
         self.setWindowTitle(f"{self.ip_name} — {tr('UART interface')}")
 
     def _on_connection(self):
@@ -220,6 +233,8 @@ class UartWindow(QWidget):
         self.stop_btn.setEnabled(self.validating)
         for w in self._val_inputs:
             w.setEnabled(not self.validating)
+        if hasattr(self, "swap_btn"):
+            self.swap_btn.setEnabled(self.paired and self.connected and not self.validating)
         self._update_stats()
 
     def _call(self, fn, ok=None, what=None):
@@ -269,6 +284,7 @@ class UartWindow(QWidget):
                 return
         self.cancel.set()
         self.stop_rx()
+        self.client.on_event = lambda ev: None       # no more signals to this window
         super().closeEvent(ev)
 
     def _restyle(self):
@@ -293,12 +309,225 @@ class UartWindow(QWidget):
             f.setFontWeight(QFont.Weight.Bold)
         return f
 
+    # ================================================================ 4-wire pair
+    @property
+    def paired(self):
+        return bool(self.pair) and any(p["name"] == self.pair.get("peer") for p in self.peers_list)
+
+    def _peer(self):
+        return next((p for p in self.peers_list if p["name"] == (self.pair or {}).get("peer")), None)
+
+    def _bases(self):
+        """(tx base, rx base): the same IP alone, the two IPs of a pair by their roles."""
+        own = int(self.ip.get("base", 0))
+        peer = self._peer()
+        if not self.paired or peer is None:
+            return own, own
+        other = int(peer["base"])
+        return (own, other) if self.pair["role"] == "tx" else (other, own)
+
+    def _names(self):
+        """(TX IP name, RX IP name)."""
+        if not self.paired:
+            return self.ip_name, self.ip_name
+        return (self.ip_name, self.pair["peer"]) if self.pair["role"] == "tx" else (self.pair["peer"], self.ip_name)
+
+    def _refresh_peers(self):
+        def ok(peers):
+            self.peers_list = peers or []
+            if self.pair and not self.paired:
+                self.status(tr("The paired IP {0} is no longer in the address map: single IP mode").format(
+                    self.pair.get("peer")))
+            self._fill_peer_box()
+            self._pair_changed()
+        self.bus.run(self.client.peers, ok, lambda e: None)
+
+    def _fill_peer_box(self):
+        cur = (self.pair or {}).get("peer") or self.peer_cb.currentData()
+        self.peer_cb.blockSignals(True)
+        self.peer_cb.clear()
+        for p in self.peers_list:
+            other = (p.get("settings") or {}).get("pair") or {}
+            note = ""
+            if other.get("peer") and other.get("peer") != self.ip_name:
+                note = "  " + tr("(paired with {0})").format(other["peer"])
+            self.peer_cb.addItem(f"{p['name']} · 0x{int(p['base']):08X}{note}", p["name"])
+        i = self.peer_cb.findData(cur)
+        self.peer_cb.setCurrentIndex(i if i >= 0 else 0)
+        self.peer_cb.blockSignals(False)
+
+    def _build_mode_card(self):
+        card = look.Card(tr("Operating mode"), tr("One IP as a 2-wire line, or two IPs as one 4-wire link: one sends, "
+                                                   "the other receives, and the directions can be swapped"))
+        row = QHBoxLayout()
+        row.setSpacing(8)
+        self.mode_cb = QComboBox()
+        self.mode_cb.addItem(tr("Single IP (2-wire)"), "single")
+        self.mode_cb.addItem(tr("4-wire pair"), "pair")
+        self.peer_cb = QComboBox()
+        self.peer_cb.setMinimumWidth(200)
+        self.peer_cb.setToolTip(tr("The other IP of the pair: IPs of this project that use this interface"))
+        self.role_cb = QComboBox()
+        self.role_cb.addItem(tr("This IP sends (TX)"), "tx")
+        self.role_cb.addItem(tr("This IP receives (RX)"), "rx")
+        self.txde_cb = QComboBox()
+        self.txde_cb.addItem(tr("TX DE always on (point-to-point)"), "high")
+        self.txde_cb.addItem(tr("TX DE while transmitting (multidrop)"), "tx")
+        self.pair_btn = look.button(tr("Pair"), "primary", self.make_pair, tr("Store the pair in the project, for both IPs"))
+        self.unpair_btn = look.button(tr("Unpair"), "ghost", self.unpair, tr("Both IPs go back to single IP mode"))
+        self.swap_btn = look.button(tr("Swap directions"), None, self.swap_directions,
+                                    tr("The TX IP becomes RX and the RX IP TX (the receiver is set first, so two "
+                                       "drivers are never on); both FIFOs are reset"))
+        for w in (self.mode_cb, self.peer_cb, self.role_cb, self.txde_cb, self.pair_btn, self.unpair_btn, self.swap_btn):
+            row.addWidget(w)
+        row.addStretch(1)
+        card.lay.addLayout(row)
+        self.pair_lbl = look.label("", "muted", wrap=True)
+        card.lay.addWidget(self.pair_lbl)
+        if self.pair:
+            self.mode_cb.setCurrentIndex(1)
+            self.role_cb.setCurrentIndex(self.role_cb.findData(self.pair.get("role", "tx")))
+            self.txde_cb.setCurrentIndex(max(0, self.txde_cb.findData(self.pair.get("tx_de", "high"))))
+        self.mode_cb.currentIndexChanged.connect(self._pair_changed)
+        return card
+
+    def _pair_changed(self, *_):
+        if not hasattr(self, "pair_lbl"):
+            return
+        want_pair = self.mode_cb.currentData() == "pair"
+        for w in (self.peer_cb, self.role_cb, self.txde_cb, self.pair_btn):
+            w.setVisible(want_pair)
+        self.unpair_btn.setVisible(bool(self.pair))
+        self.swap_btn.setVisible(self.paired)
+        self.swap_btn.setEnabled(self.paired and self.connected and not self.validating)
+        self.pair_btn.setEnabled(bool(self.peers_list))
+        if self.paired:
+            tx, rx = self._names()
+            de = tr("DE always on") if self.pair.get("tx_de") == "high" else tr("DE while transmitting")
+            self.pair_lbl.setText(tr("Paired: {0} sends, {1} receives · {2}. Character format and timing are written "
+                                     "to both IPs.").format(tx, rx, de))
+        elif want_pair and not self.peers_list:
+            self.pair_lbl.setText(tr("No other IP in this project uses this interface: place a second axiluart_phy "
+                                     "in the address map."))
+        elif want_pair:
+            self.pair_lbl.setText(tr("Choose the other IP and this IP's role, then Pair."))
+        else:
+            self.pair_lbl.setText(tr("One IP drives its own transceiver (TTL, RS-232, RS-422, RS-485 2-wire)."))
+        # the role decides the line interface of a pair: the form shows the TX IP's view
+        if self.paired:
+            tx_de = self.pair.get("tx_de", "high")
+            self._loading_line = True
+            self.line_type.setCurrentIndex(self.line_type.findData("rs485-4w" if tx_de == "tx" else "rs422"))
+            self.de_mode.setCurrentIndex(self.de_mode.findData(tx_de))
+            self.half.setChecked(False)
+            self.echo.setChecked(False)
+            self.tx_en.setChecked(True)
+            self.rx_en.setChecked(True)
+            self._loading_line = False
+        for w in (self.line_type, self.de_mode, self.half, self.echo, self.tx_en, self.rx_en):
+            w.setEnabled(not self.paired)
+        self._line_changed()
+        self._update_title()
+        if hasattr(self, "v_pc"):
+            self._val_mode()
+
+    def make_pair(self):
+        peer = self.peer_cb.currentData()
+        if not peer:
+            return
+        role, tx_de = self.role_cb.currentData(), self.txde_cb.currentData()
+        info = next(p for p in self.peers_list if p["name"] == peer)
+        old_of_peer = ((info.get("settings") or {}).get("pair") or {}).get("peer")
+        if old_of_peer and old_of_peer != self.ip_name and not look.confirm(
+                self, tr("4-wire pair"), tr("{0} is paired with {1}. Break that pair?").format(peer, old_of_peer), tr("Pair")):
+            return
+        old_mine = (self.pair or {}).get("peer")
+        me = {"peer": peer, "role": role, "tx_de": tx_de}
+        other = {"peer": self.ip_name, "role": "rx" if role == "tx" else "tx", "tx_de": tx_de}
+
+        def job():
+            for name in {old_of_peer, old_mine} - {None, self.ip_name, peer}:
+                self.client.set_settings(ip=name, pair=None)
+            self.client.set_settings(pair=me)
+            self.client.set_settings(ip=peer, pair=other)
+
+        def ok(_):
+            self.pair = me
+            self._pair_changed()
+            self._refresh_peers()
+        self.bus.run(job, ok, lambda e: QMessageBox.critical(self, tr("4-wire pair"), str(e)))
+
+    def unpair(self):
+        peer = (self.pair or {}).get("peer")
+
+        def job():
+            self.client.set_settings(pair=None)
+            if peer and any(p["name"] == peer for p in self.peers_list):
+                self.client.set_settings(ip=peer, pair=None)
+
+        def ok(_):
+            self.pair = None
+            self.mode_cb.setCurrentIndex(0)
+            self._refresh_peers()
+        self.bus.run(job, ok)
+
+    def _pair_ctrls(self):
+        """(TX IP PHY_CTRL, RX IP PHY_CTRL) of the pair."""
+        logical = U.ctrl_value(self.pair.get("tx_de", "high"), False, False, self.tx_inv.isChecked(),
+                               self.rx_inv.isChecked(), True, True)
+        return V.PairDut.split_ctrl(logical | (U.CTRL_APPLY_NOW if self.apply_now.isChecked() else 0))
+
+    def _pair_writes(self, setup=None):
+        """Writes for both IPs in a safe order: timing, the receiver's PHY_CTRL, the driver's PHY_CTRL,
+        then SETUP (which also resets both FIFOs)."""
+        tx_base, rx_base = self._bases()
+        tx_ctrl, rx_ctrl = self._pair_ctrls()
+        timing = self._timing_value()
+        w = [(rx_base + U.PHY_TIMING, timing), (tx_base + U.PHY_TIMING, timing),
+             (rx_base + U.PHY_CTRL, rx_ctrl), (tx_base + U.PHY_CTRL, tx_ctrl)]
+        if setup is not None:
+            w += [(rx_base + U.SETUP, setup), (tx_base + U.SETUP, setup)]
+        return w
+
+    def _write_abs(self, writes, ok=None):
+        self._call(lambda: self.client.batch([{"op": "write", "addr": a, "value": v} for a, v in writes]), ok,
+                   tr("Write error"))
+
+    def swap_directions(self):
+        if not self.paired:
+            return
+        try:
+            setup = self._setup_value()
+        except ValueError as exc:
+            return QMessageBox.warning(self, tr("Character format"), str(exc))
+        role = "rx" if self.pair["role"] == "tx" else "tx"
+        me = dict(self.pair, role=role)
+        other = {"peer": self.ip_name, "role": "rx" if role == "tx" else "tx", "tx_de": me.get("tx_de", "high")}
+        peer = self.pair["peer"]
+        self.pair = me                       # _pair_writes uses the new roles: the new receiver is set first
+        writes = self._pair_writes(setup)
+        self.role_cb.setCurrentIndex(self.role_cb.findData(role))
+
+        def job():
+            self.client.batch([{"op": "write", "addr": a, "value": v} for a, v in writes])
+            self.client.set_settings(pair=me)
+            self.client.set_settings(ip=peer, pair=other)
+
+        def ok(_):
+            self.stop_rx()
+            self.tx_queue.clear()
+            self._pair_changed()
+            self.read_status()
+            self.status(tr("Directions swapped: {0} sends, {1} receives").format(*self._names()))
+        self._call(job, ok, tr("Swap directions"))
+
     # ================================================================ line settings
     def _build_line_tab(self):
         page = QWidget()
         lay = QVBoxLayout(page)
         lay.setContentsMargins(16, 14, 16, 14)
         lay.setSpacing(12)
+        lay.addWidget(self._build_mode_card())
         cols = QHBoxLayout()
         cols.setSpacing(12)
 
@@ -419,7 +648,8 @@ class UartWindow(QWidget):
         b2 = look.button(tr("Clear CFG_ERR"), "ghost", lambda: self._write([(U.PHY_STATUS, U.ST_CFG_ERR)],
                                                                          lambda _: self.read_status()))
         b3 = look.button(tr("RX reset"), "ghost", self.rx_reset, tr("Reset the receiver and the RX FIFO (clears OVFL)"))
-        b4 = look.button(tr("TX reset"), "ghost", lambda: self._write([(U.TXREG, U.TX_RESET)], lambda _: self.read_status()),
+        b4 = look.button(tr("TX reset"), "ghost", lambda: self._write_abs([(self._bases()[0] + U.TXREG, U.TX_RESET)],
+                                                                         lambda _: self.read_status()),
                          tr("Reset the transmitter and the TX FIFO"))
         self._io_buttons += [b1, b2, b3, b4]
         stat.lay.addLayout(look.hline(b1))
@@ -442,6 +672,8 @@ class UartWindow(QWidget):
                                      "muted", wrap=True))
         lay.addWidget(pre)
         self._line_type_picked()
+        self.pair_status = look.label("", "muted", wrap=True)
+        stat.lay.insertWidget(stat.lay.count() - 2, self.pair_status)
         return page
 
     @staticmethod
@@ -526,6 +758,11 @@ class UartWindow(QWidget):
         ctrl, timing = self._ctrl_value(), self._timing_value()
         t = U.decode_timing(timing, self.clk_hz)
         txt = tr("PHY_CTRL = {0} · PHY_TIMING = {1}").format(f"0x{ctrl:08X}", f"0x{timing:08X}")
+        if getattr(self, "pair", None) and self.paired:
+            tx_ctrl, rx_ctrl = self._pair_ctrls()
+            tx, rx = self._names()
+            txt = tr("{0} (TX) PHY_CTRL = {1} · {2} (RX) PHY_CTRL = {3} · PHY_TIMING = {4}").format(
+                tx, f"0x{tx_ctrl & 0xFF:08X}", rx, f"0x{rx_ctrl & 0xFF:08X}", f"0x{timing:08X}")
         if de_tx:
             txt += "\n" + tr("lead {0} clk ({1:.2f} µs) · tail {2} clk ({3:.2f} µs)").format(
                 t["lead"], t["lead_us"], t["tail"], t["tail_us"])
@@ -583,7 +820,10 @@ class UartWindow(QWidget):
         except ValueError as exc:
             return QMessageBox.warning(self, tr("Character format"), str(exc))
         self._save_settings(clk_mhz=self.clk.value())
-        self._write([(U.SETUP, v)], lambda _: self.status(tr("SETUP written: {0}").format(f"0x{v:08X}")))
+        done = lambda _: self.status(tr("SETUP written: {0}").format(f"0x{v:08X}"))  # noqa: E731
+        if self.paired:
+            return self._write_abs([(b + U.SETUP, v) for b in sorted(set(self._bases()))], done)
+        self._write([(U.SETUP, v)], done)
 
     def read_line(self):
         self._read([U.PHY_CTRL, U.PHY_TIMING], lambda v: self._set_line_form(*v))
@@ -595,10 +835,29 @@ class UartWindow(QWidget):
     def write_line(self):
         ctrl = self._ctrl_value() | (U.CTRL_APPLY_NOW if self.apply_now.isChecked() else 0)
         self._save_line_settings()
+        if self.paired:
+            return self._write_abs(self._pair_writes(), lambda _: self.read_status())
         self._write([(U.PHY_TIMING, self._timing_value()), (U.PHY_CTRL, ctrl)], lambda _: self.read_status())
 
     def read_status(self):
-        self._read([U.PHY_STATUS, U.FIFO], lambda v: self._show_status(*v))
+        if not self.paired:
+            self.pair_status.setText("")
+            return self._read([U.PHY_STATUS, U.FIFO], lambda v: self._show_status(*v))
+        tx_base, rx_base = self._bases()
+        own = int(self.ip.get("base", 0))
+        steps = [{"op": "read", "addr": b + o} for b in (tx_base, rx_base) for o in (U.PHY_STATUS, U.FIFO)]
+
+        def ok(v):
+            mine = (v[0], v[1]) if tx_base == own else (v[2], v[3])
+            self._show_status(*mine)
+            tx, rx = self._names()
+            parts = []
+            for name, role, (st, fifo) in ((tx, "TX", (v[0], v[1])), (rx, "RX", (v[2], v[3]))):
+                f = U.decode_fifo(fifo)
+                parts.append(tr("{0} ({1}): DE {2}, /RE {3}, RX {4} B, TX free {5}").format(
+                    name, role, int(bool(st & U.ST_DE)), int(bool(st & U.ST_RE_N)), f["rx_fill"], f["tx_free"]))
+            self.pair_status.setText(" · ".join(parts))
+        self._call(lambda: self.client.batch(steps), ok, tr("Read error"))
 
     def read_all(self):
         def ok(v):
@@ -614,12 +873,14 @@ class UartWindow(QWidget):
             return QMessageBox.warning(self, tr("Character format"), str(exc))
         ctrl = self._ctrl_value() | (U.CTRL_APPLY_NOW if self.apply_now.isChecked() else 0)
         self._save_line_settings()
+        if self.paired:
+            return self._write_abs(self._pair_writes(setup), lambda _: self.read_status())
         self._write([(U.PHY_TIMING, self._timing_value()), (U.PHY_CTRL, ctrl), (U.SETUP, setup)],
                     lambda _: self.read_status())
 
     def rx_reset(self):
         self._last_ovfl = False
-        self._write([(U.RXREG, U.RX_OVFL)], lambda _: self.read_status())
+        self._write_abs([(self._bases()[1] + U.RXREG, U.RX_OVFL)], lambda _: self.read_status())
 
     # ---------------------------------------------------------------- presets (Debug Bridge config files)
     def _preset_writes(self):
@@ -934,13 +1195,13 @@ class UartWindow(QWidget):
         if self.tx_busy or not self.tx_queue or not self.connected:
             return
         chunk = bytes(self.tx_queue[:MAX_TX_CHUNK])
-        c = self.client
+        c, base = self.client, self._bases()[0]
 
         def job():
-            free = (c.read(U.FIFO, quiet=True) >> U.TX_FREE_SHIFT) & U.TX_FREE_MASK
+            free = (c.read(addr=base + U.FIFO, quiet=True) >> U.TX_FREE_SHIFT) & U.TX_FREE_MASK
             n = min(free, len(chunk))
             if n:
-                c.batch([("write", U.TXREG, b) for b in chunk[:n]], quiet=True)
+                c.batch([{"op": "write", "addr": base + U.TXREG, "value": b} for b in chunk[:n]], quiet=True)
             return n
 
         def done(sent):
@@ -985,10 +1246,10 @@ class UartWindow(QWidget):
             return
         if not self.connected or self.validating:
             return self.stop_rx()
-        c, quiet = self.client, not self.log_poll.isChecked()
+        c, quiet, base = self.client, not self.log_poll.isChecked(), self._bases()[1]
 
         def job():
-            words = c.read_until(U.RXREG, U.RX_EMPTY, U.RX_EMPTY, MAX_RX_PER_POLL, quiet=quiet)
+            words = c.read_until(0, U.RX_EMPTY, U.RX_EMPTY, MAX_RX_PER_POLL, addr=base + U.RXREG, quiet=quiet)
             data, bad, flags = bytearray(), set(), 0
             for v in words:
                 flags |= v & (U.RX_PERR | U.RX_FERR | U.RX_BREAK | U.RX_OVFL)
@@ -1037,10 +1298,11 @@ class UartWindow(QWidget):
             self.err_count += 1
             self._mark("RX " + ", ".join(names))
         if flags & (U.RX_PERR | U.RX_FERR):
-            self.bus.run(lambda: self.client.write(U.RXREG, U.RX_PERR | U.RX_FERR, quiet=True))
+            a = self._bases()[1] + U.RXREG
+            self.bus.run(lambda: self.client.write(addr=a, value=U.RX_PERR | U.RX_FERR, quiet=True))
 
     def clear_flags(self):
-        self._write([(U.RXREG, U.RX_PERR | U.RX_FERR)])
+        self._write_abs([(self._bases()[1] + U.RXREG, U.RX_PERR | U.RX_FERR)])
 
     # ================================================================ validation
     def _build_validation_tab(self):
@@ -1065,10 +1327,29 @@ class UartWindow(QWidget):
         r = QHBoxLayout()
         r.addWidget(self.v_line, 1)
         r.addWidget(self.v_refresh)
+        self.v_pc = QComboBox()
+        self.v_pc.addItem(tr("One COM for both directions (4-wire adapter)"), "one")
+        self.v_pc.addItem(tr("A COM on each bus (two 2-wire adapters)"), "two")
+        self.v_pc.addItem(tr("No PC: the two buses wired to each other"), "none")
+        self.v_pc.setToolTip(tr("How the PC is connected to the pair's two RS-485 buses"))
+        self.v_pc.setCurrentIndex(max(0, self.v_pc.findData(st.get("pc", "one"))))
+        form.addRow(tr("PC connection"), self.v_pc)
         form.addRow(tr("Line adapter"), r)
+        self._line_row = r
+        self.v_com_a, self.v_com_b = QComboBox(), QComboBox()
+        for w in (self.v_com_a, self.v_com_b):
+            w.setEditable(True)
+        form.addRow("A", self.v_com_a)
+        form.addRow("B", self.v_com_b)
         self.v_loop = QCheckBox(tr("TX wired to RX (loopback, no adapter)"))
         self.v_loop.setChecked(bool(st.get("loopback", False)))
         form.addRow("", self.v_loop)
+        self.v_swap = QCheckBox(tr("Swap the directions and run again"))
+        self.v_swap.setToolTip(tr("Both transceivers are tested as sender and as receiver"))
+        self.v_swap.setChecked(bool(st.get("swap", True)))
+        form.addRow("", self.v_swap)
+        self._conn_form = form
+        self.v_pc.currentIndexChanged.connect(self._val_mode)
         conn.lay.addLayout(form)
         ll.addWidget(conn)
 
@@ -1092,6 +1373,7 @@ class UartWindow(QWidget):
         self.v_tail.setEnabled(not self.v_tail_auto.isChecked())
         form.addRow(tr("Line type"), self.v_type)
         form.addRow(tr("DE mode"), self.v_de)
+        self._lt_form = form
         form.addRow(tr("DE lead"), self.v_lead)
         r = QHBoxLayout()
         r.addWidget(self.v_tail, 1)
@@ -1151,7 +1433,7 @@ class UartWindow(QWidget):
             look.button(tr("Save settings…"), "ghost", self.save_val_settings, tr("Save the validation settings (JSON)"))))
         ll.addStretch(1)
         self.v_mode.currentIndexChanged.connect(self._mode_changed)
-        self._val_inputs = [self.v_line, self.v_refresh, self.v_loop, self.v_type, self.v_de, self.v_lead, self.v_tail,
+        self._val_inputs = [self.v_pc, self.v_com_a, self.v_com_b, self.v_swap, self.v_line, self.v_refresh, self.v_loop, self.v_type, self.v_de, self.v_lead, self.v_tail,
                             self.v_tail_auto, self.v_mode, self.v_bauds, self.v_formats, self.v_count, self.v_quick,
                             self.v_burst, self.v_trials, self.v_res, self.v_smode, self.v_traffic]
         split.addWidget(left)
@@ -1197,17 +1479,45 @@ class UartWindow(QWidget):
         self._fill_line_ports()
         if st.get("line"):
             self.v_line.setCurrentText(st["line"])
+        lines = st.get("lines") or {}
+        self._val_lines = lines
         self._mode_changed()
+        self._val_mode()
         return page
 
+    def _val_mode(self, *_):
+        """Show the connection fields of a single IP or of a pair."""
+        pair = self.paired
+        pc = self.v_pc.currentData()
+        f = self._conn_form
+        f.setRowVisible(self.v_pc, pair)
+        f.setRowVisible(self._line_row, (not pair) or pc == "one")
+        f.setRowVisible(self.v_com_a, pair and pc == "two")
+        f.setRowVisible(self.v_com_b, pair and pc == "two")
+        f.setRowVisible(self.v_loop, not pair)
+        f.setRowVisible(self.v_swap, pair)
+        self._lt_form.setRowVisible(self.v_type, not pair)
+        self._lt_form.setRowVisible(self.v_de, not pair)
+        if pair:
+            peer = self.pair["peer"]
+            for w, name in ((self.v_com_a, self.ip_name), (self.v_com_b, peer)):
+                lbl = f.labelForField(w)
+                if lbl is not None:
+                    lbl.setText(tr("COM on {0}'s bus").format(name))
+            self.v_com_a.setCurrentText(self._val_lines.get(self.ip_name, self.v_com_a.currentText()))
+            self.v_com_b.setCurrentText(self._val_lines.get(peer, self.v_com_b.currentText()))
+
     def _fill_line_ports(self):
-        cur = self.v_line.currentText()
-        self.v_line.clear()
-        self.v_line.addItem(tr("None"), "")
-        for p in serial_ports():
-            self.v_line.addItem(p, p)
-        if cur:
-            self.v_line.setCurrentText(cur)
+        ports = serial_ports()
+        for box, none in ((self.v_line, True), (self.v_com_a, False), (self.v_com_b, False)):
+            cur = box.currentText()
+            box.clear()
+            if none:
+                box.addItem(tr("None"), "")
+            for p in ports:
+                box.addItem(p, p)
+            if cur:
+                box.setCurrentText(cur)
 
     def _line_port(self):
         t = self.v_line.currentText().strip()
@@ -1224,9 +1534,21 @@ class UartWindow(QWidget):
         self.v_burst.setEnabled(not sweep and not self.validating)
 
     def _val_settings(self):
-        return V.Settings(base=int(self.ip.get("base", 0)), clk=self.clk_hz, line=self._line_port(),
-                          loopback=self.v_loop.isChecked(), line_type=self.v_type.currentData(),
-                          de=self.v_de.currentData(), lead_us=self.v_lead.value(),
+        pair, pc, lines, line_type, de, loop = None, "one", {}, self.v_type.currentData(), self.v_de.currentData(), \
+            self.v_loop.isChecked()
+        if self.paired:
+            peer = self._peer()
+            pair = {"a": self.ip_name, "a_base": int(self.ip.get("base", 0)), "b": peer["name"],
+                    "b_base": int(peer["base"]), "tx": "a" if self.pair["role"] == "tx" else "b"}
+            pc = self.v_pc.currentData()
+            lines = {self.ip_name: self.v_com_a.currentText().strip(), peer["name"]: self.v_com_b.currentText().strip()}
+            tx_de = self.pair.get("tx_de", "high")
+            line_type, de, loop = ("rs485-4w" if tx_de == "tx" else "rs422"), "", False
+        return V.Settings(base=int(self.ip.get("base", 0)), clk=self.clk_hz,
+                          line=self._line_port() if not pair or pc == "one" else "",
+                          loopback=loop, line_type=line_type, pair=pair, pc=pc, lines=lines,
+                          swap=self.v_swap.isChecked(),
+                          de=de, lead_us=self.v_lead.value(),
                           tail_us="auto" if self.v_tail_auto.isChecked() else self.v_tail.value(),
                           bauds=self.v_bauds.text(), formats=self.v_formats.text(), count=self.v_count.value(),
                           quick=self.v_quick.isChecked(), burst_all=self.v_burst.isChecked(),
@@ -1291,11 +1613,18 @@ class UartWindow(QWidget):
             s = self._val_settings()
         except ValueError as exc:
             return QMessageBox.warning(self, tr("Validation"), str(exc))
-        if s.sweep and not s.line:
+        used = [s.line] if s.line else []
+        if s.pair and s.pc == "two":
+            used = [v for v in s.lines.values() if v]
+            if len(used) != 2 or used[0] == used[1]:
+                return QMessageBox.warning(self, tr("Validation"), tr("Choose a different COM port for each bus."))
+        if s.sweep and not used:
             return QMessageBox.warning(self, tr("Validation"), tr("The DE sweep needs the line adapter."))
-        if s.line and V.serial is None:
+        if s.pair and s.pc == "one" and not s.line and not s.sweep:
+            return QMessageBox.warning(self, tr("Validation"), tr("Choose the 4-wire adapter's COM port."))
+        if used and V.serial is None:
             return QMessageBox.critical(self, tr("Validation"), "pyserial is not installed (pip install pyserial)")
-        if s.line and s.line == self.client.port:
+        if self.client.port and self.client.port in used:
             return QMessageBox.warning(self, tr("Validation"), tr("The line adapter cannot be the Debug Bridge's own port."))
         self._save_settings(clk_mhz=self.clk.value(), validation=s.to_dict())
         self.stop_rx()
@@ -1309,20 +1638,24 @@ class UartWindow(QWidget):
         self._update_controls()
         self._mode_changed()
         self.v_summary.set(tr("Running…"), "accent")
-        self.v_status.setText(tr("Running on {0} @ {1}…").format(self.ip_name, f"0x{s.base:08X}"))
+        self.v_status.setText(tr("Running on {0} @ {1}…").format(
+            " ⇄ ".join(self._names()) if s.pair else self.ip_name, f"0x{s.base:08X}"))
         self._t0 = time.monotonic()
         client, report, quiet = self.client, self.report, not self.v_traffic.isChecked()
 
         def job():
-            port = None
+            port, ports = None, {}
             client.lock()
             try:
                 if s.line:
                     port = V.open_line(s.line)
-                return V.run_validation(ValidationLink(client, quiet), s, report, port)
+                if s.pair and s.pc == "two":
+                    ports = {name: V.open_line(com) for name, com in s.lines.items()}
+                return V.run_validation(ValidationLink(client, quiet), s, report, port, ports)
             finally:
-                if port is not None:
-                    port.close()
+                for p in [port] + list(ports.values()):
+                    if p is not None:
+                        p.close()
                 try:
                     client.unlock()
                 except AxilError:

@@ -82,13 +82,15 @@ class AxilClient:
                         self._dispatch(json.loads(line.decode("utf-8")))
         except (OSError, ValueError):
             pass
+        closed_by_us = self._closed
         self._closed = True
         with self._plock:
             for slot in self._pending.values():
                 if slot[1] is None:        # an answer that came before the close stays
                     slot[1] = {"ok": False, "error": {"code": "closed", "message": "AXIL Studio closed the connection"}}
                 slot[0].set()
-        self._event({"event": "closing"})
+        if not closed_by_us:
+            self._event({"event": "closing"})
 
     def _dispatch(self, msg):
         if "event" in msg:
@@ -218,14 +220,28 @@ class AxilClient:
         """A line in the Debug Bridge traffic log."""
         self.request("log", text=str(text))
 
-    def get_settings(self):
+    def get_settings(self, ip=None):
+        """Values kept in the project for this IP instance, or (ip=name) for a peer."""
+        if ip:
+            return self.request("settings_get", ip=ip)
         self.settings = self.request("settings_get")
         return self.settings
 
-    def set_settings(self, **values):
-        """Values kept in the project for this IP instance (JSON types)."""
+    def set_settings(self, ip=None, **values):
+        """Store values (JSON types) in the project for this IP instance, or (ip=name) for a peer;
+        a value None removes the key."""
+        if ip:
+            self.request("settings_set", ip=ip, values=values)
+            return
         self.request("settings_set", values=values)
         self.settings.update(values)
+        for k in [k for k, v in values.items() if v is None]:
+            self.settings.pop(k, None)
+
+    def peers(self):
+        """The other IP instances (same project) that use the same interface: their name, base,
+        register map and stored settings. Their registers are reached by absolute address."""
+        return self.request("peers")
 
     def refresh_ip(self):
         self.ip = self.request("ip")

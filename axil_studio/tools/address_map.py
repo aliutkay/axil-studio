@@ -315,6 +315,9 @@ class AddressMapPage(ToolPage):
                                 tr("Open the selected IP's register map in the Register Map Editor"))
         bar.add(tr("Export to Excel…"), "file", self.export_xlsx, tr("The whole address map and its registers (.xlsx)"),
                 regmap_xlsx.available())
+        bar.add(tr("C header…"), "file", self.export_header,
+                tr("C header of the address map: every instance's base address and register addresses, and the "
+                   "offsets, masks and shifts of the register maps (.h)"))
         bar.sep()
         bar.add("Interconnect Configurator", "interconnect", lambda: self.open_tool("interconnect"),
                 tr("Configure and generate the crossbars of this address map"))
@@ -403,7 +406,7 @@ class AddressMapPage(ToolPage):
                            (tr("Lock / unlock every address"), self.toggle_all_addr_locks),
                            (tr("Lock / unlock every size"), self.toggle_all_size_locks), (None, None),
                            (tr("Edit register map"), self.edit_regs),
-                           (tr("Export to Excel…"), self.export_xlsx), (None, None),
+                           (tr("Export to Excel…"), self.export_xlsx), (tr("C header…"), self.export_header), (None, None),
                            ("Interconnect Configurator", lambda: self.open_tool("interconnect"))):
             if text is None:
                 m.addSeparator()
@@ -956,6 +959,27 @@ class AddressMapPage(ToolPage):
         inst = self._sel_inst()
         if inst and not inst.external and not inst.bridge and self.proj.get_ip(inst.ip):
             self.edit_register_map(inst.ip)
+
+    def export_header(self):
+        from axil_studio.core import cheader
+        if not self.proj.all_instances():
+            QMessageBox.information(self, self.title, tr("The address map is empty."))
+            return
+        errs = A.validate(self.proj)
+        if errs and not ui.confirm(self, tr("C header"), tr("The address map has errors:\n{0}\n\nWrite the header anyway?").format(
+                "\n".join(str(e) for e in errs[:8])), tr("Write")):
+            return
+        path, _ = QFileDialog.getSaveFileName(self, tr("C header of the address map"),
+                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), cheader.header_name(self.proj)),
+                                              tr("C header (*.h)"))
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(cheader.gen_system_header(self.proj))
+        except OSError as exc:
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("C header written: {0}").format(path))
 
     def export_xlsx(self):
         ips = self.ctx.address_ips()

@@ -2,7 +2,7 @@
 
 The register map itself is designed in the Register Map Editor; this tool takes one (a project
 IP, a .regspec.json file or an IP handed over by another tool) and generates the wrapper,
-testbench, instantiation templates, C header and documentation, runs the testbench
+testbench, instantiation templates and documentation, runs the testbench
 with iverilog and packs existing AXI4-Lite modules for HDL Designer.
 """
 
@@ -44,8 +44,8 @@ class WrapperPage(ToolPage):
     tool_id = "wrapper"
     title = "Slave Interface Wrapper"
     short_title = "Slave Interface Wrapper"
-    subtitle = tr("Generate AXI4-Lite slave HDL, testbench, C header and documentation from a register map.")
-    description = tr("AXI4-Lite slave generation from a register map: synthesizable Verilog, a self-checking testbench, a C header and register documentation, plus HDL Designer wrappers for existing AXI4-Lite modules.")
+    subtitle = tr("Generate AXI4-Lite slave HDL, testbench and documentation from a register map.")
+    description = tr("AXI4-Lite slave generation from a register map: synthesizable Verilog, a self-checking testbench and register documentation, plus HDL Designer wrappers for existing AXI4-Lite modules.")
     icon_name = "wrapper"
 
     def __init__(self, ctx, parent=None):
@@ -59,7 +59,7 @@ class WrapperPage(ToolPage):
         self.has_iverilog = bool(shutil.which("iverilog"))
 
         self.gen_btn = self.header.add_right(ui.button(tr("Generate…"), "play", "primary", self.generate,
-                                                 tr("Generate the HDL, testbench, C header and document (Ctrl+G)")))
+                                                 tr("Generate the HDL, testbench and document (Ctrl+G)")))
 
         bar = self.header       # the tool's commands sit in the top bar
         bar.add(tr("Select IP…"), "library", self.choose_ip, tr("Select an IP of the project or of a library (IP Library)"))
@@ -110,7 +110,7 @@ class WrapperPage(ToolPage):
         rl.addWidget(self.regs)
         self.tabs.addTab(rtab, tr("Register map"))
         self.previews = {}
-        for key, title in (("verilog", tr("Verilog preview")), ("header", "C header"), ("doc", tr("Document"))):
+        for key, title in (("verilog", tr("Verilog preview")), ("doc", tr("Document"))):
             tab = QWidget()
             tl = QVBoxLayout(tab)
             tl.setContentsMargins(12, 12, 12, 12)
@@ -337,8 +337,6 @@ class WrapperPage(ToolPage):
                     if key == "verilog":
                         name = self.vfile_cb.currentData() or f"{spec.module}.v"
                         text = G.output_texts(spec, name, base)
-                    elif key == "header":
-                        text = G.gen_header(spec, base)
                     else:
                         text = G.gen_markdown(spec)
                 except G.SpecError as exc:

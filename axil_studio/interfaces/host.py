@@ -378,23 +378,54 @@ class InterfaceService(QObject):
     def _op_ip(self, s, sock, rid, req):
         self._reply(sock, rid, self.ip_info(s))
 
-    def _settings(self, s):
+    def _settings(self, s, name=None):
         d = (self.host.ctx.project.debug or {}).get("interfaces", {})
-        return dict(d.get(s.ip_name, {}))
+        return dict(d.get(name or s.ip_name, {}))
+
+    def _peer_ips(self, s):
+        """The other IPs of the same group that use the same interface."""
+        if s.group == "project":
+            ips = self.host.ctx.address_ips()
+        else:
+            ips = [ip for ip in (self.host.find_ip(s.group, n) for n in self._group_names(s.group)) if ip]
+        return [ip for ip in ips if ip.name != s.ip_name and ip.panel == s.iface.id]
+
+    def _group_names(self, group):
+        return [ip.name for ip in self.host._extra()] if group == "extra" else []
+
+    def _target(self, s, req):
+        """The instance a settings request is for: this IP, or (with "ip") one of its peers."""
+        name = req.get("ip") or s.ip_name
+        if name != s.ip_name and name not in [p.name for p in self._peer_ips(s)]:
+            raise RequestError("bad_request", tr("{0} is not an IP with the same interface").format(name))
+        return name
+
+    def _op_peers(self, s, sock, rid, req):
+        out = []
+        for ip in self._peer_ips(s):
+            d = ip.to_dict()
+            d.pop("regspec", None)
+            d["base"] = ip.base
+            d["settings"] = self._settings(s, ip.name)
+            out.append(d)
+        self._reply(sock, rid, out)
 
     def _op_settings_get(self, s, sock, rid, req):
-        self._reply(sock, rid, self._settings(s))
+        self._reply(sock, rid, self._settings(s, self._target(s, req)))
 
     def _op_settings_set(self, s, sock, rid, req):
         values = req["values"]
         if not isinstance(values, dict):
             raise RequestError("bad_request", "values must be an object")
-        cur = self._settings(s)
+        name = self._target(s, req)
+        cur = self._settings(s, name)
         if any(cur.get(k) != v for k, v in values.items()):
             cur.update(values)
+            for k in [k for k, v in values.items() if v is None]:
+                cur.pop(k, None)              # None removes a value
             dbg = dict(self.host.ctx.project.debug or {})
             ifs = dict(dbg.get("interfaces", {}))
-            ifs[s.ip_name] = cur
+            ifs[name] = cur
             dbg["interfaces"] = ifs
             self.host.ctx.project.debug = dbg
             self.host.ctx.mark_modified("interface")

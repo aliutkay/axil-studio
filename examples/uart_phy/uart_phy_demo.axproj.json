@@ -468,6 +468,12 @@
       "ip": "axiluart_phy",
       "base": "0x60001000",
       "fixed": true
+    },
+    {
+      "name": "UART1",
+      "ip": "axiluart_phy",
+      "base": "0x60002000",
+      "fixed": true
     }
   ]
 }

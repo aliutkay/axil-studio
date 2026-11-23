@@ -7,7 +7,7 @@ görünüm, açık/koyu tema):
 | Araç | Ne yapar |
 |---|---|
 | **Register Map Editor** | AXI4-Lite IP'ler için register haritası tasarımı: registerlar, bit alanları, erişim türleri, reset değerleri ve değer kodlamaları; Verilog / VHDL'den port aktarma ve Excel'e aktarma |
-| **Slave Interface Wrapper** | Register haritasından AXI4-Lite slave üretimi: sentezlenebilir Verilog, kendini denetleyen testbench, C header ve register dokümanı; hazır modüller için HDL Designer wrapper'ları |
+| **Slave Interface Wrapper** | Register haritasından AXI4-Lite slave üretimi: sentezlenebilir Verilog, kendini denetleyen testbench ve register dokümanı; hazır modüller için HDL Designer wrapper'ları |
 | **Address Map Editor** | Sistem adres haritası: bus hiyerarşisinde IP örnekleri, harici slave'ler ve alt sistemler; otomatik / sabit taban adres, pencere boyutlandırma, hizalama ve çakışma denetimi, Excel'e aktarma |
 | **Interconnect Configurator** | Adres haritasındaki her bus için crossbar yapılandırması (master'lar, modül adları, port stili), sistem ve crossbar blok diyagramları, ZipCPU axilxbar wrapper'ları |
 | **UART-to-AXI Debug Bridge** | UART hexbus köprüsü üzerinden donanımda register erişimi: çözümlenmiş register görünümleri, periyodik okuma, yerleşik simülatör; kendi arayüzü olan IP'ler için **IP arayüzü** (ör. axiluart_phy'nin UART arayüzü) |
@@ -120,8 +120,8 @@ AXI el sıkışması (skidbuffer'lı ve skidbuffer'sız iki dal, `OPT_SKIDBUFFER
 `OPT_SKIDBUFFER=1` için `hdl/skidbuffer.v` gerekir. Üretilen dosyayı `hdl/easyaxil.v` ile karşılaştırarak farklar
 görülebilir. `FORMAL` bölümü yalnızca formal doğrulama araçlarında (SymbiYosys) derlenir; sentez ve simülasyon
 onu görmez. **IP seç** (IP Library) ya da
-**Dosyadan aç** (`.regspec.json`) ile kaynak seçilir; sağda register haritası özeti ile Verilog, C header ve
-doküman önizlemesi vardır. Register haritasını değiştirmek için **Register haritasını düzenle** (ya da özette
+**Dosyadan aç** (`.regspec.json`) ile kaynak seçilir; sağda register haritası özeti ile Verilog ve
+doküman önizlemesi vardır (C header adres haritasından üretilir: Address Map Editor → *C header…*). Register haritasını değiştirmek için **Register haritasını düzenle** (ya da özette
 bir registera çift tık) Register Map Editor'u açar; değişiklikler Wrapper'a anında yansır.
 
 ```
@@ -150,14 +150,14 @@ Register seçenekleri: `o_<reg>_wr` / `o_<reg>_rd` strobe'ları (FIFO push/pop i
 **HDL Designer için paketli AXI wrapper'ı** (kutu işaretliyse): IP her zaman normal `S_AXI_*` portlu `<ip>.v` olarak üretilir; üstüne `<ip>_pk.v` HDL Designer bloğu (`SLAVE_AXI_REQ/RSP`, içinde normal IP) ve onun `_pk_inst.v` örnekleme şablonu eklenir. Hazır IP'ler için aynı blok **Hazır IP için HDL Designer wrapper'ı…** ile üretilir.
 
 **Üretilen dosyalar:** `<ip>.v` (normal S_AXI_* portlu IP), `<ip>_pk.v` + `_pk_inst.v` (HDL Designer wrapper'ı, isteğe bağlı), `<ip>_tb.v` (kendini kontrol eden testbench),
-`<ip>_inst.v`, `<ip>_regs.h`, `<ip>_regs.md`, `<ip>.hdlspec.json` (Verilog dosyalarının tek girdisi),
+`<ip>_inst.v`, `<ip>_regs.md`, `<ip>.hdlspec.json` (Verilog dosyalarının tek girdisi),
 `<ip>.regspec.json` (register haritasının tamamı, yeniden açmak için). Excel register haritası Register Map Editor'dan
 (ya da tüm harita için Address Map Editor'dan) aktarılır; komut satırı `axilgen` ayrıca `<ip>_regmap.xlsx` yazar.
 
 **Spec sekmesi** (salt okunur): IP'nin **HDL spec**'ini gösterir, yani Verilog'u üreten koda giden verinin tamamını
 ve yalnızca onu: modül adı, HDL Designer wrapper'ı, registerlar (ad, offset, strobe'lar) ve bit alanları (ad, konum,
 genişlik, tür, reset, irq, sync). Açıklamalar, değer anlamları, gösterim biçimleri, sürüm ve adres koda etki etmediği
-için içinde yoktur (bunlar C header, doküman ve Excel'e gider). **Kopyala** ve **Kaydet (.hdlspec.json)** vardır.
+için içinde yoktur (bunlar doküman, Excel ve adres haritasının C header'ına gider). **Kopyala** ve **Kaydet (.hdlspec.json)** vardır.
 Register Map Editor'da üst bardaki **Spec** aynı görünümü ayrı bir pencerede açar, düzenledikçe güncellenir.
 Bkz. [İki parçalı yapı ve testler](#iki-parçalı-yapı-ve-testler).
 
@@ -172,7 +172,7 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - *Bit Görünümü*: 32 bitlik yerleşim, tipe göre renkli
 
 **Notlar**
-- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın C header ve testbench çıktıları ile Excel IP'nin adres haritasındaki ilk adresini kullanır, yerleşmemişse 0; komut satırında `--base` ile verilir, varsayılan 0). Eski `.regspec.json` dosyalarındaki `base` okunurken yok sayılır. Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir; header'daki `<IP>_BASE` `#ifndef` ile ezilebilir.
+- Adres çözümü yalnızca alt bitlerle yapılır; interconnect'in tam adresi bağlanabilir. Register haritasında ve Wrapper'da base adres yoktur; adresler yalnızca Address Map Editor'da verilir (Wrapper'ın testbench çıktısı ile Excel IP'nin adres haritasındaki ilk adresini kullanır, yerleşmemişse 0; komut satırında `--base` ile verilir, varsayılan 0). Eski `.regspec.json` dosyalarındaki `base` okunurken yok sayılır. Excel'de Özet sayfasındaki sarı hücre değişince tüm adresler formülle güncellenir.
 - `i_reset` ve `o_irq` port adları ayrılmıştır (easyaxil'in iç reset sinyali ve kesme çıkışı); bunları üretecek register / alan adları doğrulamada reddedilir (ör. `RESET` registerında `RESET` RO alanı).
 - Libero: `C_AXI_ADDR_WIDTH` parametresini interconnect slave adres genişliğine eşitle; BIF tipi AXI4, slave slotu AXI4-Lite.
 - Tüm registerlar `S_AXI_ARESETN` ile resetlenir (PolarFire `initial` bloğunu yok sayar).
@@ -222,6 +222,12 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 - **Harici slave**: projede register haritası olmayan slave'ler (bellek, hazır IP) ad, adres ve kullanılan alanla girilir.
 - **Excel'e aktar…** tüm adres haritasını register ayrıntılarıyla `.xlsx` olarak yazar (alt sistem içindeki IP'lerin
   bus'ı Özet sayfasında yazar).
+
+- **C header…** adres haritasının C header'ını yazar (`<proje>_map.h`): her IP tanımı için bir kez register
+  offset'leri, bit alanlarının shift / mask tanımları ve IP sürümü; her örnek için `<ÖRNEK>_BASE`, `<ÖRNEK>_SIZE` ve
+  register adresleri (`UART0_PHY_CTRL = UART0_BASE + AXILUART_PHY_PHY_CTRL_OFFSET`); harici slave'ler ve alt sistemler
+  için taban ve pencere. Register haritasının kendi adresi olmadığı için (bir IP birden çok yerde olabilir) header
+  Wrapper'da değil burada üretilir. Komut satırı: `python -m axil_studio.core.cheader proje.axproj.json -o map.h`.
 
 ## Interconnect Configurator
 
@@ -347,6 +353,15 @@ uygulama); IP `examples/uart_phy/uart_phy.axlib.json` kütüphanesinde, örnek p
 `examples/uart_phy/uart_phy_demo.axproj.json`. Üstte ACLK frekansı (baud bölücüleri ve DE zamanlaması buna göre
 hesaplanır; projede saklanır). Pencere AXIL Studio'nun temasını ve dilini kullanır.
 
+- **Çalışma modu:** *Tek IP (2 telli)* ya da *4 telli çift*. Çift, aynı projede bu arayüzü kullanan iki axiluart_phy
+  örneğinden oluşur: biri gönderir (TX: DE sürekli açık ya da gönderirken açık, alıcı kapalı), diğeri alır (RX: DE
+  kapalı, alıcı açık). Eş IP, bu IP'nin rolü ve TX'teki DE seçilip **Eşleştir** ile çift iki IP'nin ayarlarına birden
+  kaydedilir (projede; iki IP'nin arayüzü de aynı çifti gösterir, Debug Bridge ağacının ipucu da belirtir).
+  **Yönleri değiştir** rolleri güvenli sırayla takas eder (önce yeni alıcı ayarlanır, iki sürücü aynı anda açık
+  kalmaz) ve iki FIFO'yu sıfırlar. Karakter formatı ve zamanlama iki IP'ye birlikte yazılır; durum kartı iki IP'nin
+  DE, /RE ve FIFO değerlerini gösterir; terminal TX IP'sinden gönderir, RX IP'sinden alır. Eş IP adres haritasından
+  çıkarılırsa arayüz tek IP moduna döner.
+
 - **Hat ayarları:** baud, veri biti, parity, stop biti ve RTS/CTS → SETUP (bölücü ve gerçek baud hatası gösterilir);
   hat tipi (TTL / RS-232, RS-422, RS-485 4 telli, 2 telli, echo'lu), DE modu, half duplex, echo, polarite, TX/RX açık,
   DE lead / tail (µs; tail istenirse 1 bit süresi) → PHY_CTRL / PHY_TIMING. Durum: PHY_STATUS pinleri ve hat durumu,
@@ -355,7 +370,10 @@ hesaplanır; projede saklanır). Pencere AXIL Studio'nun temasını ve dilini ku
 - **Terminal:** ASCII / HEX gönderme (sonuna CR, LF ya da CR+LF; `\r \n \t \xNN` kaçışları; ↑ ↓ geçmiş; dosya gönderme),
   RXREG'in periyodik okunmasıyla alım; ASCII, HEX ya da ASCII+HEX gösterim, RX satır sonu seçimi, zaman damgası.
   Parity / frame hatasıyla gelen byte'lar kırmızı zeminle işaretlenir; break ve overflow ayrıca bildirilir.
-- **Doğrulama:** aşağıdaki donanım testlerinin arayüzü. Hat adaptörü portu (ya da loopback), test edilen hat, test
+- **Doğrulama:** aşağıdaki donanım testlerinin arayüzü. Çift modunda PC bağlantısı seçilir: *iki yön için tek COM*
+  (4 telli adaptör), *her bus'ta bir COM* (iki 2 telli adaptör) ya da *PC yok* (iki bus dışarıda birbirine bağlı).
+  Önce iki IP'nin register testleri çalışır, sonra hat testleri; istenirse yönler değiştirilip tekrarlanır (tek 4
+  telli adaptörle ters yön atlanır: adaptörün çiftleri sabittir). Hat adaptörü portu (ya da loopback), test edilen hat, test
   matrisi ya da DE lead / tail taraması seçilir; **Başlat** ile testler arka planda çalışır, sonuçlar canlı tabloya ve
   günlüğe düşer, **Durdur** testi keser. Çalışırken Debug Bridge'in canlı izlemesi durur ve bağlantısı kilitlenir; test
   bitince (durdurulsa da) kartın register'ları eski değerlerine döner. Ayarlar ve rapor JSON olarak kaydedilir.

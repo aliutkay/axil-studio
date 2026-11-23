@@ -11,6 +11,21 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.24 — C header adres haritasından, UART 4 telli çift
+
+- **C header Address Map Editor'a taşındı.** Register haritasının adresi olmadığı için C header artık adres
+  haritasından üretilir (*C header…*, `<proje>_map.h`): IP tanımı başına offset / shift / mask ve sürüm; örnek başına
+  `_BASE`, `_SIZE` ve register adresleri; harici slave ve alt sistemler. Komut satırı:
+  `python -m axil_studio.core.cheader`. Slave Interface Wrapper'dan C header önizlemesi ve `<ip>_regs.h` çıktısı
+  kaldırıldı.
+- **UART arayüzü: 4 telli çift.** Aynı projedeki iki axiluart_phy örneği eşleştirilir (çift iki IP'nin ayarlarına
+  kaydedilir); biri TX, diğeri RX olur, TX'te DE sürekli açık ya da gönderirken açık seçilir. *Yönleri değiştir*
+  rolleri güvenli sırayla takas eder. Format ve zamanlama iki IP'ye yazılır; durum ve terminal çifte göre çalışır.
+- **Doğrulama çift modunda:** PC bağlantısı tek COM (4 telli adaptör), her bus'ta bir COM ya da PC'siz dış loopback;
+  iki IP'nin register testleri, ardından hat testleri ve isteğe bağlı olarak ters yönde tekrar.
+- Servis protokolüne `peers` isteği ve eş IP için `settings_get` / `settings_set` eklendi.
+- Örnek proje `examples/uart_phy/uart_phy_demo.axproj.json` artık iki UART içerir (UART0, UART1).
+
 ## early-alpha 0.1.23 — IP arayüzleri ayrı uygulama
 
 - **IP arayüzleri artık AXIL Studio'nun dışında çalışan ayrı uygulamalar.** Debug Bridge arayüzü bir süreç olarak

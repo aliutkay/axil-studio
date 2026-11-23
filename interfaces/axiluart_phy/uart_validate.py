@@ -25,7 +25,7 @@ import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from uart_phy import (CTRL_APPLY_NOW, CTRL_DE_HIGH, CTRL_DE_LOW, CTRL_DE_TX, CTRL_ECHO, CTRL_HALF,
+from uart_phy import (CTRL_APPLY_NOW, CTRL_RX_INV, CTRL_TX_INV, CTRL_DE_HIGH, CTRL_DE_LOW, CTRL_DE_TX, CTRL_ECHO, CTRL_HALF,
                        CTRL_RX_EN, CTRL_TX_EN, DE_CODES, FIFO, LINE_TYPES, PHY_CTRL, PHY_STATUS, PHY_TIMING,
                        RX_BREAK, RX_BYTE_FERR, RX_BYTE_PERR, RX_EMPTY, RX_FERR, RX_OVFL, RX_PERR, RXREG, SETUP,
                        SETUP_NO_FLOW, ST_CFG_ERR, ST_DE, ST_DRIVING, ST_HAS_DE, ST_HAS_FLOW, ST_HAS_RE, ST_HAS_RX,
@@ -73,6 +73,11 @@ class Settings:
     sweep_mode: str = "smart"
     sweep_trials: int = 3
     sweep_resolution: float = 5.0
+    # 4-wire pair of two IPs: {"a": name, "a_base": int, "b": name, "b_base": int, "tx": "a" | "b"}
+    pair: Optional[dict] = None
+    pc: str = "one"                 # pair: "one" COM for both directions | "two" COMs (one per bus) | "none"
+    lines: dict = field(default_factory=dict)    # pc "two": {IP name: COM port on its bus}
+    swap: bool = True               # pair: run again with the directions swapped
     # command line only
     hexbus: str = ""
     hexbus_baud: int = 115200
@@ -118,7 +123,7 @@ class Settings:
     def to_dict(self):
         d = {k: getattr(self, k) for k in CONFIG_KEYS if hasattr(self, k)}
         d.update(base=f"0x{self.base:08X}", formats=[str(f) for f in self.formats], bauds=list(self.bauds))
-        for k in ("sweep", "sweep_mode", "sweep_trials", "sweep_resolution"):
+        for k in ("sweep", "sweep_mode", "sweep_trials", "sweep_resolution", "pair", "pc", "lines", "swap"):
             d[k] = getattr(self, k)
         return d
 
@@ -281,6 +286,69 @@ class Dut:
             self.wr(PHY_TIMING, timing)
         self.wr(PHY_CTRL, ctrl | CTRL_APPLY_NOW)
 
+    # registers kept before the run and written back at its end
+    def snapshot(self):
+        return [(self.base, off, self.link.read(self.base + off)) for off in (SETUP, PHY_CTRL, PHY_TIMING)]
+
+    def restore(self, snap):
+        for base, off, v in snap:
+            self.link.write(base + off, (v | CTRL_APPLY_NOW) if off == PHY_CTRL else v)
+
+
+class PairDut(Dut):
+    """Two axiluart_phy IPs used as one 4-wire link: the TX IP drives its transceiver and only
+    sends, the RX IP only receives. The tests see one UART: TXREG and the TX half of FIFO go to the
+    TX IP, RXREG and the RX half to the RX IP, SETUP / PHY_TIMING to both, and a PHY_CTRL value is
+    split into the two roles (DE, TX_EN, TX polarity -> TX IP; RX_EN, RX polarity -> RX IP)."""
+
+    def __init__(self, link, tx_base, rx_base, clk_hz, cancel=None, names=("TX", "RX")):
+        super().__init__(link, tx_base, clk_hz, cancel)
+        self.tx_base, self.rx_base = tx_base, rx_base
+        self.names = names
+
+    def _r(self, base, off):
+        self._check()
+        return self.link.read(base + off)
+
+    def _w(self, base, off, value):
+        self._check()
+        self.link.write(base + off, value & 0xFFFFFFFF)
+
+    def rd(self, off):
+        if off == RXREG:
+            return self._r(self.rx_base, off)
+        if off == FIFO:
+            return (self._r(self.rx_base, FIFO) & 0xFFFF) | (self._r(self.tx_base, FIFO) & 0xFFFF0000)
+        return self._r(self.tx_base, off)
+
+    def wr(self, off, value):
+        if off == TXREG:
+            self._w(self.tx_base, off, value)
+        elif off == RXREG:
+            self._w(self.rx_base, off, value)
+        elif off == PHY_CTRL:
+            tx, rx = self.split_ctrl(value)
+            self._w(self.rx_base, off, rx)            # the receiver first: never two drivers
+            self._w(self.tx_base, off, tx)
+        else:                                         # SETUP, PHY_TIMING, PHY_STATUS (W1C)
+            self._w(self.rx_base, off, value)
+            self._w(self.tx_base, off, value)
+
+    @staticmethod
+    def split_ctrl(value):
+        apply = value & CTRL_APPLY_NOW
+        tx = value & (3 | CTRL_TX_EN | CTRL_TX_INV) | apply
+        rx = value & (CTRL_RX_EN | CTRL_RX_INV) | apply          # DE low, TX off
+        return tx, rx
+
+    def caps(self):
+        """Capabilities both IPs have (PHY_STATUS [4:0])."""
+        return self._r(self.tx_base, PHY_STATUS) & self._r(self.rx_base, PHY_STATUS) & 0x1F
+
+    def snapshot(self):
+        return [(b, off, self.link.read(b + off)) for b in (self.tx_base, self.rx_base)
+                for off in (SETUP, PHY_CTRL, PHY_TIMING)]
+
 
 # ----------------------------------------------------------------------------
 # PC side of the line
@@ -293,14 +361,19 @@ def serial_kwargs(fmt):
 
 
 class Line:
-    def __init__(self, port):
+    """The PC end of the UART line: `port` sends to the FPGA, `rport` (default the same port)
+    receives from it. Two ports: a 4-wire link made of two 2-wire buses, one adapter on each."""
+
+    def __init__(self, port, rport=None):
         self.port = port
+        self.rport = rport if rport is not None else port
 
     def configure(self, baud, fmt):
-        self.port.baudrate = baud
-        for k, v in serial_kwargs(fmt).items():
-            setattr(self.port, k, v)
-        self.port.reset_input_buffer()
+        for p in {id(self.port): self.port, id(self.rport): self.rport}.values():
+            p.baudrate = baud
+            for k, v in serial_kwargs(fmt).items():
+                setattr(p, k, v)
+            p.reset_input_buffer()
 
     def write(self, data):
         self.port.write(bytes(data))
@@ -309,12 +382,12 @@ class Line:
     def read(self, n, timeout):
         buf, deadline = bytearray(), time.monotonic() + timeout
         while len(buf) < n and time.monotonic() < deadline:
-            buf += self.port.read(n - len(buf))
+            buf += self.rport.read(n - len(buf))
         return bytes(buf)
 
     def idle(self, seconds):
         time.sleep(seconds)
-        self.port.reset_input_buffer()
+        self.rport.reset_input_buffer()
 
 
 def pattern(n, mask, seed):
@@ -344,6 +417,7 @@ class Validator:
     def __init__(self, dut, line, rep, args):
         self.dut, self.line, self.rep, self.args = dut, line, rep, args
         self.loopback = args.loopback
+        self.pair = isinstance(dut, PairDut)
         self.caps = 0
         self.depth = self.tx_depth = 16
 
@@ -867,10 +941,15 @@ class Validator:
     # -------------------------------------------------------------- runner
     def run(self):
         d, r = self.dut, self.rep
-        saved = [d.rd(SETUP), d.rd(PHY_CTRL), d.rd(PHY_TIMING)]
+        saved = d.snapshot()
         try:
-            r.section("Register tests")
-            self.test_registers()
+            if self.pair:              # the register tests ran on each IP before
+                self.caps = d.caps()
+                f = d.fifo()
+                self.depth, self.tx_depth = 1 << f["rx_lg"], 1 << f["tx_lg"]
+            else:
+                r.section("Register tests")
+                self.test_registers()
             self.test_throughput()
             if self.args.de_mode != "low" and not self.caps & ST_HAS_DE:
                 r.add("INFO", "DE mode", f"'{self.args.de_mode}' requested but HAS_DE=0: using DE low")
@@ -883,7 +962,8 @@ class Validator:
                 return
             for baud in self.args.bauds:
                 for fmt in self.args.formats:
-                    r.section(f"{baud} baud {fmt}")
+                    r.section(f"{getattr(self, 'section_prefix', '') + ' · ' if getattr(self, 'section_prefix', '') else ''}"
+                              f"{baud} baud {fmt}")
                     if self.line and not self._pc_format(baud, fmt):
                         continue
                     d.configure(baud, fmt)
@@ -907,9 +987,7 @@ class Validator:
         finally:
             d.cancellable = False           # the registers are restored even after Stop
             try:
-                d.wr(SETUP, saved[0])
-                d.wr(PHY_TIMING, saved[2])
-                d.wr(PHY_CTRL, saved[1] | CTRL_APPLY_NOW)
+                d.restore(saved)
                 d.drain()
                 d.clear_flags()
             except LinkError as exc:
@@ -920,19 +998,22 @@ class Validator:
 # ----------------------------------------------------------------------------
 # Running
 # ----------------------------------------------------------------------------
-def run_validation(link, settings: Settings, report: Report, line_port=None):
-    """Run the tests (or the DE sweep) on an open hexbus link. `line_port` is an open pyserial
-    port on the UART line, or None. Raises nothing: communication errors and Stop end up in the
-    report; returns "done", "stopped" or "error"."""
-    dut = Dut(link, settings.base, settings.clk, report.cancel)
-    line = Line(line_port) if line_port is not None else None
+def run_validation(link, settings: Settings, report: Report, line_port=None, ports=None):
+    """Run the tests (or the DE sweep) on an open link. `line_port` is an open pyserial port on the
+    UART line, or None; `ports` ({IP name: open port}) the two adapters of a pair with pc "two".
+    Raises nothing: communication errors and Stop end up in the report; returns "done", "stopped"
+    or "error"."""
     tail = "1 bit" if settings.tail_us == "auto" else f"{settings.tail_us:g} us"
-    report.on_log(f"UART @ 0x{settings.base:08X}, ACLK {settings.clk / 1e6:g} MHz, "
-                  f"{'PC adapter ' + settings.line if line else 'no PC adapter'}"
-                  f"{', loopback' if settings.loopback else ''}")
-    report.on_log(f"Line {settings.line_type}: DE {settings.de_mode}, {'half' if settings.half else 'full'} duplex, "
-                  f"lead {settings.lead_us:g} us, tail {tail}")
     try:
+        if settings.pair:
+            return _run_pair(link, settings, report, line_port, ports or {}, tail)
+        dut = Dut(link, settings.base, settings.clk, report.cancel)
+        line = Line(line_port) if line_port is not None else None
+        report.on_log(f"UART @ 0x{settings.base:08X}, ACLK {settings.clk / 1e6:g} MHz, "
+                      f"{'PC adapter ' + settings.line if line else 'no PC adapter'}"
+                      f"{', loopback' if settings.loopback else ''}")
+        report.on_log(f"Line {settings.line_type}: DE {settings.de_mode}, {'half' if settings.half else 'full'} "
+                      f"duplex, lead {settings.lead_us:g} us, tail {tail}")
         Validator(dut, line, report, settings).run()
     except Cancelled:
         report.add("INFO", "Stopped", "the run was stopped; the registers were restored")
@@ -943,6 +1024,56 @@ def run_validation(link, settings: Settings, report: Report, line_port=None):
     except SERIAL_ERRORS + (OSError,) as exc:
         report.add("FAIL", "Line adapter", str(exc))
         return "error"
+    return "done"
+
+
+def _run_pair(link, s, report, line_port, ports, tail):
+    """4-wire pair: register tests on each IP, then the line tests with the stored roles and,
+    unless switched off, again with the directions swapped."""
+    pr = s.pair
+    ips = {"a": (pr["a"], int(pr["a_base"])), "b": (pr["b"], int(pr["b_base"]))}
+    first = pr.get("tx", "a")
+    report.on_log(f"4-wire pair {ips['a'][0]} @ 0x{ips['a'][1]:08X} + {ips['b'][0]} @ 0x{ips['b'][1]:08X}, "
+                  f"ACLK {s.clk / 1e6:g} MHz, TX DE {s.de_mode}, lead {s.lead_us:g} us, tail {tail}, "
+                  f"PC: {s.pc}")
+    # each IP's own registers
+    for key in ("a", "b"):
+        name, base = ips[key]
+        dut = Dut(link, base, s.clk, report.cancel)
+        v = Validator(dut, None, report, s)
+        snap = dut.snapshot()
+        try:
+            report.section(f"Register tests {name}")
+            v.test_registers()
+        finally:
+            dut.cancellable = False
+            dut.restore(snap)
+            dut.cancellable = True
+    passes = [first] + ([("b" if first == "a" else "a")] if s.swap else [])
+    for n, tx in enumerate(passes):
+        rx = "b" if tx == "a" else "a"
+        (tx_name, tx_base), (rx_name, rx_base) = ips[tx], ips[rx]
+        label = f"{tx_name} TX → {rx_name} RX"
+        line, loop = None, False
+        if s.pc == "one":
+            if n > 0:
+                report.section(label)
+                report.add("SKIP", f"Swapped directions {label}",
+                           "one 4-wire adapter cannot follow swapped directions (its pairs are fixed): "
+                           "use one adapter per bus or the external loopback")
+                continue
+            line = Line(line_port) if line_port is not None else None
+        elif s.pc == "two":
+            wport, rport = ports.get(rx_name), ports.get(tx_name)     # PC sends on the RX IP's bus
+            line = Line(wport, rport) if wport is not None and rport is not None else None
+        else:
+            loop = True                                               # FPGA bus to FPGA bus
+        report.section(label)
+        dut = PairDut(link, tx_base, rx_base, s.clk, report.cancel, (tx_name, rx_name))
+        run = dataclasses.replace(s, loopback=loop)
+        v = Validator(dut, line, report, run)
+        v.section_prefix = label
+        v.run()
     return "done"
 
 
