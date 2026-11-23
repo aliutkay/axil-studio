@@ -10,6 +10,7 @@ Format strings:  hex  udec  sdec  bin  oct  bool  ascii  ufix<N>  sfix<N>  enum
 bool for 1-bit fields, hex otherwise.
 """
 
+import math
 import re
 from axil_studio.i18n import tr
 
@@ -106,46 +107,62 @@ def parse_value(text, width, fmt="", meanings=None):
     number is read in the field's own format. Raises ValueError with a readable message."""
     width = max(1, width)
     base, frac = split(fmt, width)
-    s = str(text).strip().replace("_", "").replace(" ", "")
-    if not s:
+    raw = str(text).strip()
+    if not raw:
         raise ValueError(tr("Empty value"))
     mask = (1 << width) - 1
-    low = s.lower()
 
     if meanings:
+        raw_low = raw.lower()
         for v, meaning in meanings.items():
-            if meaning and s.lower() == meaning.strip().lower():
+            if meaning and raw_low == meaning.strip().lower():
                 return v
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
+        return _check(_parse_ascii(raw[1:-1]), width)
+
+    s = raw.replace("_", "").replace(" ", "")
+    if not s:
+        raise ValueError(tr("Empty value"))
+    low = s.lower()
+
     if low in ("true", "false", "on", "off", "yes", "no", "evet", "hayır", "açık", "kapalı"):
         return 1 if low in ("true", "on", "yes", "evet", "açık") else 0
-    if len(s) >= 2 and s[0] == s[-1] and s[0] in "'\"":
-        return _check(_parse_ascii(s[1:-1]), width)
     if re.match(r"^-?0[xbo]", low):
         neg = low.startswith("-")
         v = int(low.lstrip("-"), 0)
-        return _check(-v if neg else v, width)
+        return _check(-v if neg else v, width, signed=(base in ("sdec", "sfix")),
+                      allow_negative=(base not in ("udec", "ufix")))
 
     if base in ("ufix", "sfix"):
         try:
             x = float(s)
         except ValueError:
             raise ValueError(tr("'{0}' is not a number").format(text)) from None
-        return _check(round(x * (1 << frac)), width, signed=base == "sfix")
+        if not math.isfinite(x):
+            raise ValueError(tr("'{0}' is not a number").format(text))
+        return _check(round(x * (1 << frac)), width, signed=(base == "sfix"), allow_negative=(base == "sfix"))
     radix = {"hex": 16, "bin": 2, "oct": 8}.get(base, 10)
     try:
         v = int(s, radix)
     except ValueError:
         raise ValueError(tr("'{0}' cannot be read as {1}").format(text, LABELS.get(base, base))) from None
-    if v < 0 or base == "sdec":
+    if base == "sdec":
+        return _check(v, width, signed=True)
+    if base == "udec":
+        return _check(v, width, signed=False, allow_negative=False)
+    if v < 0:
         return _check(v, width, signed=True)
     return v if v <= mask else _check(v, width)
 
 
-def _check(v, width, signed=False):
+def _check(v, width, signed=False, allow_negative=True):
+    if v < 0 and not signed and not allow_negative:
+        raise ValueError(tr("{0} cannot be negative (unsigned {1}-bit range: 0..{2})").format(v, width, (1 << width) - 1))
     if v < 0 or signed:
         lo = -(1 << (width - 1))
-        if not lo <= v < (1 << width):
-            raise ValueError(tr("{0} does not fit in the {1}-bit signed range ({2}..{3})").format(v, width, lo, (1 << (width - 1)) - 1))
+        hi = (1 << (width - 1)) - 1
+        if not lo <= v <= hi:
+            raise ValueError(tr("{0} does not fit in the {1}-bit signed range ({2}..{3})").format(v, width, lo, hi))
         return v & ((1 << width) - 1)
     if v >> width:
         raise ValueError(tr("{0} ({1:#x}) does not fit in {2} bits (at most {3})").format(v, v, width, (1 << width) - 1))
@@ -160,7 +177,7 @@ def _parse_ascii(body):
     return v
 
 
-def all_views(value, width, frac=0):
+def all_views(value, width, frac=0, signed_fix=False):
     """[(label, text)] of the value in every format, for tooltips and the debug panel."""
     rows = [("Hex", format_value(value, width, "hex")), ("Unsigned", format_value(value, width, "udec")),
             ("Signed", format_value(value, width, "sdec")), ("Binary", format_value(value, width, "bin")),
@@ -168,7 +185,8 @@ def all_views(value, width, frac=0):
     if width % 8 == 0:
         rows.append(("ASCII", format_value(value, width, "ascii")))
     if frac:
-        rows.append((f"Q{width - frac}.{frac}", format_value(value, width, f"ufix{frac}")))
+        qfmt = f"{'sfix' if signed_fix else 'ufix'}{frac}"
+        rows.append((label(qfmt, width), format_value(value, width, qfmt)))
     return rows
 
 

@@ -175,7 +175,7 @@ class IPLibraryPage(ToolPage):
         for ip in sorted(proj.ips, key=lambda i: i.name.lower()):
             insts = proj.instances_of(ip.name)
             top = QTreeWidgetItem([ip.name, ip.version or "—",
-                                   tr("{0} instances").format(len(insts)) if insts else tr("not placed"), ip.source or "projede"])
+                                   tr("{0} instances").format(len(insts)) if insts else tr("not placed"), ip.source or tr("in project")])
             bf = top.font(0)
             bf.setBold(True)
             top.setFont(0, bf)
@@ -256,7 +256,7 @@ class IPLibraryPage(ToolPage):
         else:
             self._show(None)
         if self.ctx.library_errors:
-            self.status(tr("Library that could not be opened:") + "; ".join(self.ctx.library_errors), 10000)
+            self.status(tr("Library that could not be opened:").rstrip() + " " + "; ".join(self.ctx.library_errors), 10000)
             self.ctx.library_errors.clear()
 
     def _picked(self, tree, item):
@@ -307,7 +307,7 @@ class IPLibraryPage(ToolPage):
             insts = self.ctx.project.instances_of(ip.name)
             self.d_title.setText(f"{ip.name}" + (tr("   ·   version {0}").format(ip.version) if ip.version else ""))
             self.d_sub.setText(tr("In the project") + (tr(" · source: {0}").format(ip.source) if ip.source else "")
-                               + (tr(" · in the address map:") + ", ".join(f"{i.name} @ {hex32(i.base)}" for i in insts)
+                               + (tr(" · in the address map:").rstrip() + " " + ", ".join(f"{i.name} @ {hex32(i.base)}" for i in insts)
                                   if insts else tr(" · not in the address map")))
         else:
             inst = key[1]
@@ -403,8 +403,13 @@ class IPLibraryPage(ToolPage):
                 self, self.title, tr("The library {0} already has {1} {2}. Overwrite it?").format(lib.name, spec.module, spec.version),
                 ok=tr("Overwrite")):
             return
+        keep = list(lib.entries)
         replaced = lib.put(LibEntry(G.to_ipblock(spec, 0), spec.to_dict()))
-        self.ctx.save_library(lib)
+        try:
+            self.ctx.save_library(lib)
+        except OSError as exc:
+            lib.entries = keep
+            return self.error(tr("Could not save"), exc)
         self.status(tr("{0} {1}: {3} in the library {2}").format(spec.module, spec.version, lib.name, tr("updated") if replaced else tr("added")))
 
     def import_project(self):
@@ -425,12 +430,17 @@ class IPLibraryPage(ToolPage):
         choice, ok = QInputDialog.getItem(self, tr("Import"), "IP:", [tr("All")] + names, 0, False)
         if not ok:
             return
+        keep = list(lib.entries)
         for ip in proj.ips if choice == tr("All") else [proj.ips[names.index(choice)]]:
             spec = ip.regspec
             ip.source, ip.regspec, ip.base = "", None, 0
             ip.version = ip.version or "1.0.0"
             lib.put(LibEntry(ip, spec))
-        self.ctx.save_library(lib)
+        try:
+            self.ctx.save_library(lib)
+        except OSError as exc:
+            lib.entries = keep
+            return self.error(tr("Could not save"), exc)
         self.status(tr("Imported into the library {0}").format(lib.name))
 
     # ================================================================ library <-> project
@@ -497,7 +507,10 @@ class IPLibraryPage(ToolPage):
         stored = copy.deepcopy(ip)
         stored.version = version
         spec = dict(ip.regspec, ip_version=version) if ip.regspec else None
-        self.ctx.store_in_library(lib, stored, spec)
+        try:
+            self.ctx.store_in_library(lib, stored, spec)
+        except OSError as exc:
+            return self.error(tr("Could not store in the library"), exc)
         ip.version = version
         if ip.regspec:
             ip.regspec = dict(ip.regspec, ip_version=version)
@@ -517,11 +530,20 @@ class IPLibraryPage(ToolPage):
         if lib.get(new):
             QMessageBox.warning(self, self.title, tr("The library {0} already has {1}.").format(lib.name, new))
             return
-        for x in lib.versions(e.name):      # every version takes the new name
+        old_name = e.name
+        affected = list(lib.versions(old_name))
+        for x in affected:      # every version takes the new name
             x.ip.name = new
             if x.regspec:
                 x.regspec["module"] = new
-        self.ctx.save_library(lib)
+        try:
+            self.ctx.save_library(lib)
+        except OSError as exc:
+            for x in affected:
+                x.ip.name = old_name
+                if x.regspec:
+                    x.regspec["module"] = old_name
+            return self.error(tr("Could not save"), exc)
 
     def delete_selected(self):
         if not self._sel:
@@ -529,9 +551,14 @@ class IPLibraryPage(ToolPage):
         if self._sel[0] == "lib":
             lib, e = self._sel[1], self._sel[2]
             if ui.confirm(self, tr("Delete from library"), tr("{0} {1} will be deleted from the library {2}. Other versions and copies in projects are not affected.").format(e.name, e.version, lib.name)):
+                keep = list(lib.entries)
                 lib.remove(e.name, e.version)
+                try:
+                    self.ctx.save_library(lib)
+                except OSError as exc:
+                    lib.entries = keep
+                    return self.error(tr("Could not save"), exc)
                 self._sel = ("libroot", lib, None)
-                self.ctx.save_library(lib)
         elif self._sel[0] == "proj":
             ip = self._sel[1]
             n = len(self.ctx.project.instances_of(ip.name))
@@ -787,7 +814,7 @@ class ProjectPane(QWidget):
             n = len(ctx.project.instances_of(ip.name))
             it = QTreeWidgetItem([ip.name, ip.version or "—", str(len(ip.registers)),
                                   ", ".join(i.name for i in ctx.project.instances_of(ip.name)) if n else tr("not placed"),
-                                  ip.source or "projede"])
+                                  ip.source or tr("in project")])
             it.setData(0, ROLE, ip.name)
             if ip.name == current:
                 for c in range(5):

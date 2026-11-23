@@ -31,7 +31,7 @@ def settings_path():
     if sys.platform.startswith("win"):
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
     elif sys.platform == "darwin":
-        base = os.path.expanduser("~/Library/Application Support")
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
     return os.path.join(base, "AXIL Studio", "settings.json")

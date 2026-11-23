@@ -91,15 +91,27 @@ class XbarSpec:
         errs = []
         if self.style not in STYLES:
             errs.append(tr("Unknown port style: {0}").format(self.style))
+        from .axilgen import RESERVED_MODULES, VERILOG_KEYWORDS, VHDL_KEYWORDS
         if not IDENT.match(self.module or ""):
             errs.append(tr("Module name is not a valid Verilog identifier"))
+        elif self.module.lower() in VERILOG_KEYWORDS or self.module.lower() in VHDL_KEYWORDS:
+            errs.append(tr("Module name '{0}': cannot be a Verilog/VHDL keyword").format(self.module))
+        elif "__" in self.module or self.module.endswith("_"):
+            errs.append(tr("{0} '{1}': must not contain '__' or end with '_' (VHDL compatibility)").format(tr("Module name"), self.module))
+        elif self.module.lower() in RESERVED_MODULES or self.module.lower().removesuffix("_pk") in RESERVED_MODULES:
+            errs.append(tr("Module name '{0}': clashes with ZipCPU {1}.v").format(self.module, self.module.lower().removesuffix("_pk")))
         if not 1 <= self.nm <= 16:
             errs.append(tr("Masters must be 1..16"))
         if not 1 <= self.ns <= 64:
             errs.append(tr("Slaves must be 1..64"))
         for i, s in enumerate(self.slaves):
-            inv = (~s.mask) & 0xFFFFFFFF
             tag = f"SLAVE{i} ({s.name})"
+            if not 0 <= s.base <= 0xFFFFFFFF:
+                errs.append(tr("{0}: base address must fit in 32 bits").format(tag))
+            if not 0 < s.mask <= 0xFFFFFFFC:
+                errs.append(tr("{0}: mask must be contiguous (e.g. 0xFFFFF000)").format(tag))
+                continue
+            inv = (~s.mask) & 0xFFFFFFFF
             if inv & (inv + 1):
                 errs.append(tr("{0}: mask must be contiguous (e.g. 0xFFFFF000)").format(tag))
             if s.base & inv:
@@ -180,12 +192,17 @@ def xbar_ports(spec):
     import copy
     probe = copy.deepcopy(spec)
     if probe.validate():
-        if not IDENT.match(probe.module or ""):
-            probe.module = "axil_xbar"
+        probe.module = "axil_xbar"
+        if probe.style not in STYLES:
+            probe.style = "packed"
         if not probe.slaves:
             probe.slaves.append(XbarSlave("slave0"))
+        elif len(probe.slaves) > 64:
+            probe.slaves = probe.slaves[:64]
         if not probe.masters:
             probe.masters.append(XbarMaster("master0"))
+        elif len(probe.masters) > 16:
+            probe.masters = probe.masters[:16]
         for j, sl in enumerate(probe.slaves):
             sl.base, sl.mask, sl.span = j * 0x1000, 0xFFFFF000, 0
     v = gen_xbar_pk(probe) if probe.packed else gen_xbar(probe)

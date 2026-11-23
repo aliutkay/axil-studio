@@ -9,6 +9,7 @@ register access goes through the Debug Bridge's connection over the local servic
 
 import concurrent.futures
 import json
+import math
 import os
 import sys
 import threading
@@ -54,18 +55,29 @@ class Worker(QObject):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        self._closed = False
         self._done.connect(self._deliver)
 
         self.pending = 0
 
+    def _emit_done(self, fut, ok, err):
+        if self._closed:
+            return
+        try:
+            self._done.emit(fut, ok, err)
+        except RuntimeError:
+            pass
+
     def run(self, fn, ok=None, err=None):
+        if self._closed:
+            return
         self.pending += 1
         fut = self._pool.submit(fn)
-        fut.add_done_callback(lambda f: self._done.emit(f, ok, err))
+        fut.add_done_callback(lambda f: self._emit_done(f, ok, err))
 
     def _deliver(self, fut, ok, err):
         self.pending -= 1
-        if fut.cancelled():
+        if self._closed or fut.cancelled():
             return
         exc = fut.exception()
         if exc is not None:
@@ -75,6 +87,7 @@ class Worker(QObject):
             ok(fut.result())
 
     def shutdown(self):
+        self._closed = True
         self._pool.shutdown(wait=False, cancel_futures=True)
 
 
@@ -317,14 +330,17 @@ class UartWindow(QWidget):
     def _peer(self):
         return next((p for p in self.peers_list if p["name"] == (self.pair or {}).get("peer")), None)
 
-    def _bases(self):
+    def _bases(self, pair=None):
         """(tx base, rx base): the same IP alone, the two IPs of a pair by their roles."""
         own = int(self.ip.get("base", 0))
-        peer = self._peer()
-        if not self.paired or peer is None:
+        p = self.pair if pair is None else pair
+        if not p:
+            return own, own
+        peer = next((x for x in self.peers_list if x["name"] == p.get("peer")), None)
+        if peer is None:
             return own, own
         other = int(peer["base"])
-        return (own, other) if self.pair["role"] == "tx" else (other, own)
+        return (own, other) if p["role"] == "tx" else (other, own)
 
     def _names(self):
         """(TX IP name, RX IP name)."""
@@ -444,9 +460,10 @@ class UartWindow(QWidget):
         old_mine = (self.pair or {}).get("peer")
         me = {"peer": peer, "role": role, "tx_de": tx_de}
         other = {"peer": self.ip_name, "role": "rx" if role == "tx" else "tx", "tx_de": tx_de}
+        known_peers = {p["name"] for p in self.peers_list}
 
         def job():
-            for name in {old_of_peer, old_mine} - {None, self.ip_name, peer}:
+            for name in ({old_of_peer, old_mine} & known_peers) - {self.ip_name, peer}:
                 self.client.set_settings(ip=name, pair=None)
             self.client.set_settings(pair=me)
             self.client.set_settings(ip=peer, pair=other)
@@ -469,19 +486,20 @@ class UartWindow(QWidget):
             self.pair = None
             self.mode_cb.setCurrentIndex(0)
             self._refresh_peers()
-        self.bus.run(job, ok)
+        self.bus.run(job, ok, lambda e: QMessageBox.critical(self, tr("4-wire pair"), str(e)))
 
-    def _pair_ctrls(self):
+    def _pair_ctrls(self, pair=None):
         """(TX IP PHY_CTRL, RX IP PHY_CTRL) of the pair."""
-        logical = U.ctrl_value(self.pair.get("tx_de", "high"), False, False, self.tx_inv.isChecked(),
+        p = self.pair if pair is None else pair
+        logical = U.ctrl_value(p.get("tx_de", "high"), False, False, self.tx_inv.isChecked(),
                                self.rx_inv.isChecked(), True, True)
         return V.PairDut.split_ctrl(logical | (U.CTRL_APPLY_NOW if self.apply_now.isChecked() else 0))
 
-    def _pair_writes(self, setup=None):
+    def _pair_writes(self, setup=None, pair=None):
         """Writes for both IPs in a safe order: timing, the receiver's PHY_CTRL, the driver's PHY_CTRL,
         then SETUP (which also resets both FIFOs)."""
-        tx_base, rx_base = self._bases()
-        tx_ctrl, rx_ctrl = self._pair_ctrls()
+        tx_base, rx_base = self._bases(pair)
+        tx_ctrl, rx_ctrl = self._pair_ctrls(pair)
         timing = self._timing_value()
         w = [(rx_base + U.PHY_TIMING, timing), (tx_base + U.PHY_TIMING, timing),
              (rx_base + U.PHY_CTRL, rx_ctrl), (tx_base + U.PHY_CTRL, tx_ctrl)]
@@ -504,9 +522,7 @@ class UartWindow(QWidget):
         me = dict(self.pair, role=role)
         other = {"peer": self.ip_name, "role": "rx" if role == "tx" else "tx", "tx_de": me.get("tx_de", "high")}
         peer = self.pair["peer"]
-        self.pair = me                       # _pair_writes uses the new roles: the new receiver is set first
-        writes = self._pair_writes(setup)
-        self.role_cb.setCurrentIndex(self.role_cb.findData(role))
+        writes = self._pair_writes(setup, pair=me)
 
         def job():
             self.client.batch([{"op": "write", "addr": a, "value": v} for a, v in writes])
@@ -514,6 +530,8 @@ class UartWindow(QWidget):
             self.client.set_settings(ip=peer, pair=other)
 
         def ok(_):
+            self.pair = me
+            self.role_cb.setCurrentIndex(self.role_cb.findData(role))
             self.stop_rx()
             self.tx_queue.clear()
             self._pair_changed()
@@ -645,8 +663,7 @@ class UartWindow(QWidget):
         stat.lay.addLayout(sg)
         stat.lay.addStretch(1)
         b1 = look.button(tr("Read value"), None, self.read_status, tr("Read PHY_STATUS and FIFO"))
-        b2 = look.button(tr("Clear CFG_ERR"), "ghost", lambda: self._write([(U.PHY_STATUS, U.ST_CFG_ERR)],
-                                                                         lambda _: self.read_status()))
+        b2 = look.button(tr("Clear CFG_ERR"), "ghost", self.clear_cfg_err)
         b3 = look.button(tr("RX reset"), "ghost", self.rx_reset, tr("Reset the receiver and the RX FIFO (clears OVFL)"))
         b4 = look.button(tr("TX reset"), "ghost", lambda: self._write_abs([(self._bases()[0] + U.TXREG, U.TX_RESET)],
                                                                          lambda _: self.read_status()),
@@ -696,7 +713,10 @@ class UartWindow(QWidget):
 
     def _baud(self):
         try:
-            b = int(float(self.baud.currentText()))
+            x = float(self.baud.currentText())
+            if not math.isfinite(x):
+                return None
+            b = int(x)
             return b if b > 0 else None
         except ValueError:
             return None
@@ -825,7 +845,27 @@ class UartWindow(QWidget):
             return self._write_abs([(b + U.SETUP, v) for b in sorted(set(self._bases()))], done)
         self._write([(U.SETUP, v)], done)
 
+    def _set_pair_line_form(self, tx_ctrl, rx_ctrl, timing):
+        ct, cr = U.decode_ctrl(tx_ctrl), U.decode_ctrl(rx_ctrl)
+        self._loading_line = True
+        self.tx_inv.setChecked(ct["tx_inv"])
+        self.rx_inv.setChecked(cr["rx_inv"])
+        if timing is not None:
+            t = U.decode_timing(timing, self.clk_hz)
+            self.lead.setValue(t["lead_us"])
+            self.tail_auto.setChecked(False)
+            self.tail.setValue(t["tail_us"])
+        self._loading_line = False
+        self._line_changed()
+
     def read_line(self):
+        if self.paired:
+            tx_base, rx_base = self._bases()
+            steps = [{"op": "read", "addr": tx_base + U.PHY_CTRL},
+                     {"op": "read", "addr": rx_base + U.PHY_CTRL},
+                     {"op": "read", "addr": tx_base + U.PHY_TIMING}]
+            return self._call(lambda: self.client.batch(steps),
+                              lambda v: self._set_pair_line_form(v[0], v[1], v[2]), tr("Read error"))
         self._read([U.PHY_CTRL, U.PHY_TIMING], lambda v: self._set_line_form(*v))
 
     def _save_line_settings(self):
@@ -859,7 +899,26 @@ class UartWindow(QWidget):
             self.pair_status.setText(" · ".join(parts))
         self._call(lambda: self.client.batch(steps), ok, tr("Read error"))
 
+    def clear_cfg_err(self):
+        if self.paired:
+            return self._write_abs([(b + U.PHY_STATUS, U.ST_CFG_ERR) for b in sorted(set(self._bases()))],
+                                   lambda _: self.read_status())
+        self._write([(U.PHY_STATUS, U.ST_CFG_ERR)], lambda _: self.read_status())
+
     def read_all(self):
+        if self.paired:
+            tx_base, rx_base = self._bases()
+            steps = [{"op": "read", "addr": tx_base + U.SETUP},
+                     {"op": "read", "addr": tx_base + U.PHY_CTRL},
+                     {"op": "read", "addr": rx_base + U.PHY_CTRL},
+                     {"op": "read", "addr": tx_base + U.PHY_TIMING}]
+
+            def ok(v):
+                self._set_setup_form(v[0])
+                self._set_pair_line_form(v[1], v[2], v[3])
+                self.read_status()
+            return self._call(lambda: self.client.batch(steps), ok, tr("Read error"))
+
         def ok(v):
             self._set_setup_form(v[0])
             self._set_line_form(v[1], v[2])
@@ -1556,8 +1615,11 @@ class UartWindow(QWidget):
                           sweep_trials=self.v_trials.value(), sweep_resolution=self.v_res.value())
 
     def _set_val_form(self, s):
+        self.v_pc.setCurrentIndex(max(0, self.v_pc.findData(s.pc)))
         self.v_line.setCurrentText(s.line or tr("None"))
+        self._val_lines = dict(s.lines or {})
         self.v_loop.setChecked(s.loopback)
+        self.v_swap.setChecked(s.swap)
         self.v_type.setCurrentIndex(max(0, self.v_type.findData(s.line_type)))
         self.v_de.setCurrentIndex(max(0, self.v_de.findData(s.de or "")))
         self.v_lead.setValue(s.lead_us)
@@ -1573,6 +1635,7 @@ class UartWindow(QWidget):
         self.v_smode.setCurrentIndex(max(0, self.v_smode.findData(s.sweep_mode)))
         self.v_trials.setValue(s.sweep_trials)
         self.v_res.setValue(s.sweep_resolution)
+        self._val_mode()
 
     def save_val_settings(self):
         try:
@@ -1650,7 +1713,8 @@ class UartWindow(QWidget):
                 if s.line:
                     port = V.open_line(s.line)
                 if s.pair and s.pc == "two":
-                    ports = {name: V.open_line(com) for name, com in s.lines.items()}
+                    for name, com in s.lines.items():
+                        ports[name] = V.open_line(com)
                 return V.run_validation(ValidationLink(client, quiet), s, report, port, ports)
             finally:
                 for p in [port] + list(ports.values()):

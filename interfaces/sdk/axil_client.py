@@ -82,9 +82,9 @@ class AxilClient:
                         self._dispatch(json.loads(line.decode("utf-8")))
         except (OSError, ValueError):
             pass
-        closed_by_us = self._closed
-        self._closed = True
         with self._plock:
+            closed_by_us = self._closed
+            self._closed = True
             for slot in self._pending.values():
                 if slot[1] is None:        # an answer that came before the close stays
                     slot[1] = {"ok": False, "error": {"code": "closed", "message": "AXIL Studio closed the connection"}}
@@ -136,9 +136,9 @@ class AxilClient:
             pass
 
     def request(self, op, timeout=None, **args):
-        if self._closed:
-            raise AxilError("closed", "AXIL Studio closed the connection")
         with self._plock:
+            if self._closed:
+                raise AxilError("closed", "AXIL Studio closed the connection")
             self._next += 1
             rid = self._next
             slot = [threading.Event(), None]
@@ -146,7 +146,10 @@ class AxilClient:
         data = (json.dumps(dict(args, id=rid, op=op)) + "\n").encode("utf-8")
         try:
             with self._wlock:
-                self.sock.sendall(data)
+                try:
+                    self.sock.sendall(data)
+                except OSError as exc:
+                    raise AxilError("closed", f"AXIL Studio closed the connection: {exc}") from exc
             if not slot[0].wait(self.timeout if timeout is None else timeout):
                 raise AxilError("timeout", f"no answer to '{op}'")
         finally:
@@ -159,7 +162,8 @@ class AxilClient:
         return msg.get("result")
 
     def close(self):
-        self._closed = True
+        with self._plock:
+            self._closed = True
         try:
             self.sock.shutdown(socket.SHUT_RDWR)
         except OSError:

@@ -7,6 +7,7 @@ validation need that does not touch Qt or a serial port. The register map itself
 AXIL Studio (the IP's register map, examples/uart_phy/uart_phy.axlib.json).
 """
 
+import math
 import re
 
 PANEL_ID = "axiluart_phy"
@@ -111,7 +112,10 @@ def parse_bauds(text):
     out = []
     for t in re.split(r"[\s,;]+", str(text).strip()):
         if t:
-            v = int(float(t))
+            f = float(t)
+            if not math.isfinite(f) or f <= 0:
+                raise ValueError(f"invalid baud rate '{t}'")
+            v = int(f)
             if v <= 0:
                 raise ValueError(f"invalid baud rate '{t}'")
             out.append(v)

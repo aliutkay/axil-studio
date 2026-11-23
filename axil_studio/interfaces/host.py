@@ -14,7 +14,7 @@ import secrets
 import time
 
 from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, QProcess, QProcessEnvironment, QSettings
-from PySide6.QtNetwork import QHostAddress, QTcpServer
+from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpServer
 
 from axil_studio import APP_VERSION, interfaces, theme
 from axil_studio.core.model import hex32
@@ -160,8 +160,16 @@ class InterfaceService(QObject):
         for sock in socks:
             self._write(sock, {"event": "closing"})
         # let the event loop send them (a blocking wait would hold the data in the socket)
+        def _pending():
+            for sk in list(socks):
+                try:
+                    if sk.state() == QAbstractSocket.SocketState.ConnectedState and sk.bytesToWrite():
+                        return True
+                except RuntimeError:
+                    socks.remove(sk)
+            return False
         deadline = time.monotonic() + 0.5
-        while any(sk.bytesToWrite() for sk in socks) and time.monotonic() < deadline:
+        while _pending() and time.monotonic() < deadline:
             QCoreApplication.processEvents(QEventLoop.ProcessEventsFlag.ExcludeUserInputEvents, 20)
         deadline = time.monotonic() + wait_ms / 1000
         while any(s.running for s in self.sessions.values()) and time.monotonic() < deadline:
@@ -181,14 +189,19 @@ class InterfaceService(QObject):
             sock = self.server.nextPendingConnection()
             state = {"session": None, "buf": b""}
             sock.readyRead.connect(lambda sock=sock, st=state: self._read(sock, st))
-            sock.disconnected.connect(lambda st=state: self._closed(st))
+            sock.disconnected.connect(lambda sock=sock, st=state: self._closed(sock, st))
 
-    def _closed(self, state):
+    def _closed(self, sock, state):
         s = state["session"]
         if s is not None:
-            if self.lock_owner is s:
+            if self.lock_owner is s and s.socket is sock:
                 self._unlock()
-            s.socket = None
+            if s.socket is sock:
+                s.socket = None
+        try:
+            sock.deleteLater()
+        except RuntimeError:
+            pass
 
     def _read(self, sock, state):
         state["buf"] += bytes(sock.readAll())
@@ -209,8 +222,13 @@ class InterfaceService(QObject):
             self._handle(sock, state, req)
 
     def _write(self, sock, obj):
-        if sock is not None:
-            sock.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+        if sock is None:
+            return
+        try:
+            if sock.state() == QAbstractSocket.SocketState.ConnectedState:
+                sock.write((json.dumps(obj, ensure_ascii=False) + "\n").encode("utf-8"))
+        except RuntimeError:
+            pass
 
     def _send(self, s, obj):
         self._write(s.socket, obj)

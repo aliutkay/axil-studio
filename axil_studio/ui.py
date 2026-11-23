@@ -421,7 +421,7 @@ class IssueList(QToolButton):
             self.setToolTip(self.ok_text)
         else:
             n = len(self._issues)
-            text = (tr("{0} errors:").format(n) if n > 1 else "") + self._issues[0]
+            text = (tr("{0} errors:").format(n).rstrip() + " " if n > 1 else "") + self._issues[0]
             color, icon = t["danger"], icons.icon("alert", "danger", 16)
             self.setToolTip("\n".join(f"• {m}" for m in self._issues) + tr("\n\nClick: open the list"))
         if len(text) > self.MAX_CHARS:
@@ -453,15 +453,27 @@ class Async(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
+        self._closed = False
         self._pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
         self._done.connect(self._deliver)
 
     def run(self, fn, on_ok=None, on_err=None):
+        if self._closed:
+            return
         fut = self._pool.submit(fn)
-        fut.add_done_callback(lambda f: self._done.emit(f, on_ok, on_err, None))
 
-    @staticmethod
-    def _deliver(fut, on_ok, on_err, _):
+        def done(f):
+            if self._closed:
+                return
+            try:
+                self._done.emit(f, on_ok, on_err, None)
+            except RuntimeError:
+                pass
+        fut.add_done_callback(done)
+
+    def _deliver(self, fut, on_ok, on_err, _):
+        if self._closed or fut.cancelled():
+            return
         exc = fut.exception()
         if exc is not None:
             if on_err:
@@ -470,6 +482,7 @@ class Async(QObject):
             on_ok(fut.result())
 
     def shutdown(self):
+        self._closed = True
         self._pool.shutdown(wait=False, cancel_futures=True)
 
 

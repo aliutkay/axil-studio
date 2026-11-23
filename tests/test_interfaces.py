@@ -493,7 +493,8 @@ def test_pair_window(qapp, bridge, no_dialogs, monkeypatch):
     # swap: UART1 drives now; UART0 (the new receiver) is set first
     page.link.ops.clear()
     w.swap_directions()
-    assert _pump_until(qapp, lambda: ifs()["UART0"]["pair"]["role"] == "rx" and ifs()["UART1"]["pair"]["role"] == "tx")
+    assert _pump_until(qapp, lambda: ifs()["UART0"]["pair"]["role"] == "rx"
+                       and ifs()["UART1"]["pair"]["role"] == "tx" and w.pair["role"] == "rx")
     ctrl = [op for op in page.link.ops if op[0] == "w" and op[1] & 0xFF == U.PHY_CTRL]
     assert ctrl[0] == ("w", 0x60001010, U.CTRL_RX_EN) and ctrl[1] == ("w", 0x60002010, U.CTRL_TX_EN | U.CTRL_DE_HIGH)
     assert ifs()["UART1"]["pair"]["role"] == "tx" and w._bases() == (0x60002000, 0x60001000)

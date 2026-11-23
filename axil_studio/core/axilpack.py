@@ -75,7 +75,7 @@ def _matching(text, i):
             depth -= 1
             if depth == 0:
                 return k
-    raise ParseError("Parantezler dengesiz")
+    raise ParseError(tr("Unbalanced parentheses"))
 
 
 def _split_top(text):
@@ -103,11 +103,13 @@ def parse_module(text, name=None):
     if not m:
         raise ParseError(tr("Module not found") + (f": {name}" if name else ""))
     mod, i = m.group(1), m.end()
-    while src[i].isspace():
+    while i < len(src) and src[i].isspace():
         i += 1
     params = []
-    if src[i] == "#":
-        j = src.index("(", i)
+    if i < len(src) and src[i] == "#":
+        j = src.find("(", i)
+        if j < 0:
+            raise ParseError(tr("Port list not found"))
         k = _matching(src, j)
         for item in _split_top(src[j + 1:k]):
             pm = re.match(r"(parameter|localparam)\b(.*?)([A-Za-z_]\w*)\s*=\s*(.+)$", item, re.S)
@@ -115,9 +117,9 @@ def parse_module(text, name=None):
                 raise ParseError(tr("Cannot read parameter: {0}").format(item[:60]))
             params.append((pm.group(1), " ".join(item.split()), pm.group(3)))
         i = k + 1
-    while src[i].isspace():
+    while i < len(src) and src[i].isspace():
         i += 1
-    if src[i] != "(":
+    if i >= len(src) or src[i] != "(":
         raise ParseError(tr("Port list not found"))
     k = _matching(src, i)
     ports = []
@@ -226,7 +228,7 @@ def gen_pack_wrapper(info, wrapper=None):
                     L.append(f"    assign {g.lower()}_{n.lower()} = {pname};")
             elif n in core_out:
                 # field the core does not drive
-                default = {"BRESP": "2'b00", "RRESP": "2'b00"}.get(n, f"{widths[n]}'d0")
+                default = {"BRESP": "2'b00", "RRESP": "2'b00", "WSTRB": "4'hF"}.get(n, f"{widths[n]}'d0")
                 L.append(f"    assign {g.lower()}_{n.lower()} = {default};")
         L.append("")
 

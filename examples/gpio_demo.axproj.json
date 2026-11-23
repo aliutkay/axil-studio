@@ -92,7 +92,7 @@
           ]
         },
         {
-          "name": "INPUT",
+          "name": "IN_DATA",
           "offset": "0x00000010",
           "access": "RO",
           "reset": "0x00000000",

@@ -25,6 +25,20 @@ PROJECT_FILTER = tr("AXIL project (*.axproj.json);;JSON (*.json);;All files (*)"
 MAX_RECENT = 8
 
 
+def rename_interface_settings(project, old_name, new_name):
+    """Keep debug['interfaces'] entries and 4-wire pair peer links in sync when an instance is renamed."""
+    if not old_name or old_name == new_name or not project.debug:
+        return
+    ifs = project.debug.get("interfaces")
+    if not isinstance(ifs, dict):
+        return
+    if old_name in ifs and new_name not in ifs:
+        ifs[new_name] = ifs.pop(old_name)
+    for st in ifs.values():
+        if isinstance(st, dict) and isinstance(st.get("pair"), dict) and st["pair"].get("peer") == old_name:
+            st["pair"]["peer"] = new_name
+
+
 class ProjectContext(QObject):
     # the whole project was replaced (new / open)
     replaced = Signal()
@@ -43,7 +57,10 @@ class ProjectContext(QObject):
         self.history.reset(self._snapshot())
         self.libraries = []          # open IPLibrary objects (shared by every project)
         self.library_errors = []
-        for path in QSettings().value("libraries/open", []) or []:
+        opened = QSettings().value("libraries/open", []) or []
+        if isinstance(opened, str):
+            opened = [opened]
+        for path in opened:
             self._open_library_quiet(path)
 
     # ------------------------------------------------------------ properties
@@ -107,10 +124,9 @@ class ProjectContext(QObject):
 
     # ------------------------------------------------------------ undo / redo
     def _snapshot(self):
-        """The project's contents (not its file name, library paths or generator tag)."""
+        """The project's contents (not its file name or generator tag)."""
         data = self.project.to_data()
-        for k in ("generator", "libraries"):
-            data.pop(k, None)
+        data.pop("generator", None)
         return data
 
     def can_undo(self):
@@ -130,7 +146,7 @@ class ProjectContext(QObject):
             return False
         old = self.project
         proj = Project.from_data(dict(state, format=state.get("format")), old.path)
-        proj.libraries, proj.generator = old.libraries, old.generator
+        proj.generator = old.generator
         self.project = proj
         self.dirty = not self.history.is_saved()
         self.modified.emit("undo")
@@ -151,8 +167,12 @@ class ProjectContext(QObject):
                 inst.ip = ip.name
                 # instances named after the IP follow the rename: OLD_0 -> NEW_0 (OLD -> NEW)
                 m = re.fullmatch(re.escape(old_name) + r"(_\d+)?", inst.name)
-                if m and not self.project.get_instance(ip.name + (m.group(1) or "")):
-                    inst.name = ip.name + (m.group(1) or "")
+                if m:
+                    new_inst = ip.name + (m.group(1) or "")
+                    if not any(i.name.lower() == new_inst.lower() for i in self.project.all_instances()):
+                        old_inst = inst.name
+                        inst.name = new_inst
+                        rename_interface_settings(self.project, old_inst, new_inst)
         if old:
             self.project.ips[self.project.ips.index(old)] = ip
         else:
