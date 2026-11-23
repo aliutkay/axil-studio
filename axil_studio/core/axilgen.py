@@ -304,6 +304,8 @@ class ModuleSpec:
             seen_regs.add(r.name.upper())
             if r.offset % 4 or r.offset < 0:
                 errs.append(tr("{0}: offset must be a multiple of 4 (0x{1:X})").format(r.name, r.offset))
+            elif r.offset >= 0x100000000:
+                errs.append(tr("{0}: offset 0x{1:X} does not fit in 32 bits").format(r.name, r.offset))
             if r.offset in seen_offs:
                 errs.append(tr("{0}: offset 0x{1:02X} is the same as {2}").format(r.name, r.offset, seen_offs[r.offset]))
             seen_offs[r.offset] = r.name
@@ -339,10 +341,11 @@ class ModuleSpec:
                     if e.value in seen_v:
                         errs.append(tr("{0}: value 0x{1:X} appears twice in the value table").format(where, e.value))
                     seen_v.add(e.value)
-                for p in port_names(r, f):
-                    if p in ports:
-                        errs.append(tr("{0}: port name '{1}' clashes with {2}").format(where, p, ports[p]))
-                    ports[p] = where
+                if f.kind in KINDS:
+                    for p in port_names(r, f):
+                        if p in ports:
+                            errs.append(tr("{0}: port name '{1}' clashes with {2}").format(where, p, ports[p]))
+                        ports[p] = where
             for flag, suffix in ((r.wr_strobe, "wr"), (r.rd_strobe, "rd")):
                 if flag:
                     p = f"o_{r.name.lower()}_{suffix}"
@@ -730,7 +733,7 @@ def to_ipblock(spec: ModuleSpec, base=0, with_spec=False):
     from .model import Field, IPBlock, Register
     regs = []
     for r in spec.regs:
-        fields = [Field(f.name, f.lsb, f.width, f.desc or KIND_HELP[f.kind], kind=f.kind,
+        fields = [Field(f.name, f.lsb, f.width, f.desc or KIND_HELP.get(f.kind, f.kind), kind=f.kind,
                         values=[EnumValue(e.value, e.read, e.write) for e in f.values], fmt=f.fmt)
                   for f in sorted(r.fields, key=lambda f: f.lsb)]
         regs.append(Register(r.name, r.offset, r.access, r.reset_value, r.desc, fields))
@@ -787,6 +790,11 @@ def add_to_project(spec: ModuleSpec, path, replace=True, base=None):
             addrmap.add_instance(proj, ip.name)
         else:
             proj.instances.append(IPInstance(ip.name, ip.name, base, 0, True))
+    else:
+        try:
+            addrmap.readdress(proj)
+        except ValueError:
+            pass
     proj.save(path)
     return proj
 

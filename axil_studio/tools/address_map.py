@@ -573,7 +573,7 @@ class AddressMapPage(ToolPage):
                 tr("Address automatic: click to lock it here")))
             self.tree.setItemWidget(it, C_SLOCK, self._lock_button(
                 bool(inst.window), lambda *_, i=inst: self._toggle_size_lock(i),
-                tr("Size locked: click to") + (tr("grow with its contents") if inst.bridge else tr("follow the default"))
+                tr("Size locked: click to").rstrip() + " " + (tr("grow with its contents") if inst.bridge else tr("follow the default"))
                 if inst.window else tr("Size automatic: click to lock this size")))
             ui.tree_row_actions(self.tree, it, C_ACT, lambda *_, i=inst: self.edit_slave(i),
                                 lambda *_, i=inst: self.delete_slave(i),
@@ -679,7 +679,9 @@ class AddressMapPage(ToolPage):
         if self._loading:
             return
         try:
-            v = parse_int(self.start_ed.text()) & 0xFFFFFFFF
+            v = parse_int(self.start_ed.text())
+            if not 0 <= v <= 0xFFFFFFFF:
+                raise ValueError
         except ValueError:
             self.start_ed.setStyleSheet(f"border-color: {theme.manager().tokens['danger']};")
             return
@@ -703,7 +705,7 @@ class AddressMapPage(ToolPage):
         if not X.IDENT.match(name):
             QMessageBox.warning(self, self.title, tr("The name must start with a letter and contain only letters, digits and _."))
             return False
-        if name != inst.name and self.proj.get_instance(name):
+        if any(i is not inst and i.name.lower() == name.lower() for i in self.proj.all_instances()):
             QMessageBox.warning(self, self.title, tr("The address map already has a slave named “{0}”.").format(name))
             return False
         return True
@@ -713,10 +715,13 @@ class AddressMapPage(ToolPage):
             return True
         if not self._name_ok(inst, name):
             return False
-        if inst.name in self._collapsed:
-            self._collapsed.discard(inst.name)
+        from axil_studio.project import rename_interface_settings
+        old = inst.name
+        if old in self._collapsed:
+            self._collapsed.discard(old)
             self._collapsed.add(name)
         inst.name = name
+        rename_interface_settings(self.proj, old, name)
         return True
 
     def _item_changed(self, item, col):
@@ -733,9 +738,12 @@ class AddressMapPage(ToolPage):
         if col == C_ADDR:
             w = A.window_of(self.proj, inst)
             try:
-                v = parse_int(item.text(C_ADDR).strip()) & 0xFFFFFFFF
+                v = parse_int(item.text(C_ADDR).strip())
             except ValueError:
                 self.status(tr("The address must be a number (e.g. 0x80000000)"))
+                return self._refresh(inst)
+            if not 0 <= v <= 0xFFFFFFFF:
+                QMessageBox.warning(self, self.title, tr("Base address must fit in 32 bits"))
                 return self._refresh(inst)
             if v & (w - 1):
                 QMessageBox.warning(self, self.title, tr("{0} is not aligned to the {2} window of {1}.").format(hex32(v), inst.name, size_text(w)))
@@ -869,7 +877,7 @@ class AddressMapPage(ToolPage):
             self._guarded(apply, lambda: name)
             return
         s = A.xbar_slaves(self.proj, parent)[j]
-        new = SlaveDialog.ask(self, s, f"SLAVE{j}: {inst.name}", 4, False)
+        new = SlaveDialog.ask(self, s, f"SLAVE{j}: {inst.name}", 4, True)
         if new is None:
             return
         if new.name != inst.name and not self._name_ok(inst, new.name):
@@ -905,7 +913,7 @@ class AddressMapPage(ToolPage):
         new = SlaveDialog.ask(self, proto, tr("External slave"), 4, False)
         if new is None:
             return
-        if self.proj.get_instance(new.name) or not X.IDENT.match(new.name):
+        if any(i.name.lower() == new.name.lower() for i in self.proj.all_instances()) or not X.IDENT.match(new.name):
             QMessageBox.warning(self, self.title, tr("“{0}” cannot be used: the name must be unique, start with a letter and contain only letters, digits and _.").format(new.name))
             return
         window = 0 if new.window == A.default_window(self.proj) else new.window   # 0: follows the default
@@ -918,7 +926,7 @@ class AddressMapPage(ToolPage):
         if new is None:
             return
         name, base, own, window, fixed = new
-        if self.proj.get_instance(name) or not X.IDENT.match(name):
+        if any(i.name.lower() == name.lower() for i in self.proj.all_instances()) or not X.IDENT.match(name):
             QMessageBox.warning(self, self.title, tr("“{0}” cannot be used: the name must be unique, start with a letter and contain only letters, digits and _.").format(name))
             return
         inst = IPInstance(name, "", base, window, fixed, bridge=True, self_window=own,
@@ -932,7 +940,7 @@ class AddressMapPage(ToolPage):
             return
         if inst.bridge:
             n = len([i for i, _ in self.proj.walk(inst.children)])
-            text = f"{inst.name} ({BRIDGE}) " + (tr("and the {0} entries inside it").format(n) if n else "") + tr("will be removed from the address map.")
+            text = f"{inst.name} ({BRIDGE}) " + (tr("and the {0} entries inside it").format(n).rstrip() + " " if n else "") + tr("will be removed from the address map.")
         elif inst.external:
             text = tr("{0} will be removed from the address map.").format(inst.name)
         else:

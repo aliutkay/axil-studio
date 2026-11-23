@@ -1244,9 +1244,9 @@ class RegMapEditorPage(ToolPage):
             n = sum(len(r.fields) for r in self.spec.registers)
             self.issues.ok_text = (tr("No errors · {0} registers, {1} bit fields · address bits [{2}:2] · the IP uses 0x{3:X} bytes").format(len(self.spec.registers), n, self.spec.reg_aw + 1, self.spec.span)
                                    + (tr(" · has an interrupt output (o_irq)") if self.spec.has_irq() else ""))
-        n_unp = len(self.spec.unplaced)
-        if n_unp:
-            self.issues.ok_text += tr(" · {0} unplaced bit fields (not part of the HDL)").format(n_unp)
+            n_unp = len(self.spec.unplaced)
+            if n_unp:
+                self.issues.ok_text += tr(" · {0} unplaced bit fields (not part of the HDL)").format(n_unp)
         self.issues.set_issues(errs)
         self._refresh_spec_window()
         return errs
@@ -1743,7 +1743,14 @@ class RegMapEditorPage(ToolPage):
                                         G.KINDS.index(self.spec.unplaced[idx[0]].kind), False)
         if ok:
             for i in idx:
-                self.spec.unplaced[i].kind = kind
+                f = self.spec.unplaced[i]
+                f.kind = kind
+                if kind not in ("RW", "CONST"):
+                    f.reset = 0
+                if kind != "W1C":
+                    f.irq = False
+                if kind != "RO":
+                    f.sync = False
             self._refresh_unplaced(set(idx))
             self._mark()
 
@@ -1820,8 +1827,8 @@ class RegMapEditorPage(ToolPage):
         self._refresh_regs(made[-1].name if made else None)
         self._refresh_unplaced()
         self._mark()
-        self.status(tr("{0} bit fields placed in {1} new registers:").format(len(fields), len(made))
-                    + ", ".join(r.name for r in made))
+        self.status(tr("{0} bit fields placed in {1} new registers:").format(len(fields), len(made)).rstrip()
+                    + " " + ", ".join(r.name for r in made))
 
     def _place(self, indexes, reg, lsb=None):
         """Move unplaced fields into `reg` (None: new registers, see _place_new), side by side from
@@ -1871,13 +1878,13 @@ class RegMapEditorPage(ToolPage):
         self._mark()
         msg = tr("{0} bit fields placed in register {1}").format(len(placed), reg.name) if placed else ""
         if renamed:
-            msg += tr(" · renamed:") + ", ".join(renamed)
+            msg += tr(" · renamed:").rstrip() + " " + ", ".join(renamed)
         if msg:
             self.status(msg)
         if failed:
-            QMessageBox.information(self, self.title, tr("in register {0}").format(reg.name)
-                                    + (tr("the bits dropped on are in use:") if lsb is not None else tr("no room:"))
-                                    + ", ".join(f"{f.name} ({f.width} bit)" for f in failed)
+            QMessageBox.information(self, self.title, tr("in register {0}").format(reg.name).rstrip() + " "
+                                    + (tr("the bits dropped on are in use:") if lsb is not None else tr("no room:")).rstrip()
+                                    + " " + ", ".join(f"{f.name} ({f.width} bit)" for f in failed)
                                     + tr(". They stay in the unplaced list."))
 
     def unplace_field(self, reg_name=None, field_name=None):
@@ -2077,7 +2084,7 @@ class RegMapEditorPage(ToolPage):
     def save(self):
         o = self.origin
         if o and o[0] == "project":
-            return self._save_project(o[1])
+            return self._save_project(self.spec.module or o[1])
         if o and o[0] == "library":
             lib = next((x for x in self.ctx.libraries if x.name == o[1]), None)
             if lib is not None:
@@ -2128,6 +2135,11 @@ class RegMapEditorPage(ToolPage):
             name = ProjectSaveDialog.ask(self, self.ctx, self.spec.module or "my_ip_axil", old)
             if not name:
                 return False
+        elif old and name != old and self.ctx.project.get_ip(name) is not None:
+            if not ui.confirm(self, self.title,
+                              tr("The project has an IP named “{0}”. Replace its register map with this one?").format(name),
+                              ok=tr("Replace")):
+                return False
         self._set_name(name)
         prev = self.ctx.project.get_ip(old or name)
         ip = G.to_ipblock(copy.deepcopy(self.spec), 0, with_spec=True)
@@ -2162,7 +2174,7 @@ class RegMapEditorPage(ToolPage):
         self.origin, self.source_lib = ("library", lib.name), lib.name
         self._set_clean()
         self._show_origin()
-        self.status(tr("{0} {1}: {3} in the library {2}").format(self.spec.module, version, lib.name, tr("updated") if replaced else 'kaydedildi'))
+        self.status(tr("{0} {1}: {3} in the library {2}").format(self.spec.module, version, lib.name, tr("updated") if replaced else tr("saved")))
         return True
 
     def _save_file(self, path):

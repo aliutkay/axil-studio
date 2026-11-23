@@ -69,9 +69,21 @@ class HexbusLink:
         """False once the port is closed or the reader stopped (port removed ...)."""
         return self.ser is not None and self._running
 
+    def _reset_rx(self):
+        self._tok = None
+        self._digits = ""
+        self._rx_line = ""
+        self._line_quiet = False
+        while not self._rx.empty():
+            try:
+                self._rx.get_nowait()
+            except queue.Empty:
+                break
+
     def open(self, port, baud):
         self.close()
         self._cur_addr = None
+        self._reset_rx()
         if port == SIM_PORT:
             self.ser = SimulatedHexbus()
         else:
@@ -85,6 +97,7 @@ class HexbusLink:
         """Use an already opened pyserial-like object (e.g. a simulator)."""
         self.close()
         self._cur_addr = None
+        self._reset_rx()
         self.ser = ser
         self._start_reader()
 
@@ -121,7 +134,7 @@ class HexbusLink:
             self._finish()
             if self._rx_line and not self._line_quiet:
                 self.log_cb("RX", self._rx_line)
-                self._rx_line = ""
+            self._rx_line = ""
             return
         if not self._rx_line:
             self._line_quiet = self.quiet   # quiet state when the line started
@@ -167,7 +180,11 @@ class HexbusLink:
                 self._rx.get_nowait()
             if not self.quiet:
                 self.log_cb("TX", text.strip())
-            self.ser.write(text.encode("ascii"))
+            try:
+                self.ser.write(text.encode("ascii"))
+            except Exception as exc:
+                self._running = False
+                raise HexbusError(tr("Serial write failed: {0}").format(exc)) from exc
             tokens = []
             deadline = time.monotonic() + self.timeout
             while len(tokens) < count:
@@ -192,7 +209,7 @@ class HexbusLink:
     def _access(self, addr, cmd, expect):
         """Run one bus access. The address (no auto-increment) is only sent
         when it differs from the one already loaded in the bridge."""
-        target = addr | 1
+        target = (addr & 0xFFFFFFFC) | 1
         prefix = "" if self._cur_addr == target else f"A{target:x}"
         try:
             tokens = self._transact(prefix + cmd + "\n", 2 if prefix else 1)

@@ -19,6 +19,7 @@ on a failed access; in the UART interface it goes through AXIL Studio's Debug Br
 """
 
 import dataclasses
+import math
 import random
 import threading
 import time
@@ -28,8 +29,8 @@ from typing import List, Optional
 from uart_phy import (CTRL_APPLY_NOW, CTRL_RX_INV, CTRL_TX_INV, CTRL_DE_HIGH, CTRL_DE_LOW, CTRL_DE_TX, CTRL_ECHO, CTRL_HALF,
                        CTRL_RX_EN, CTRL_TX_EN, DE_CODES, FIFO, LINE_TYPES, PHY_CTRL, PHY_STATUS, PHY_TIMING,
                        RX_BREAK, RX_BYTE_FERR, RX_BYTE_PERR, RX_EMPTY, RX_FERR, RX_OVFL, RX_PERR, RXREG, SETUP,
-                       SETUP_NO_FLOW, ST_CFG_ERR, ST_DE, ST_DRIVING, ST_HAS_DE, ST_HAS_FLOW, ST_HAS_RE, ST_HAS_RX,
-                       ST_HAS_TX, TXREG, Fmt, flag_names, parse_bauds, parse_formats)
+                       SETUP_BAUD_MASK, SETUP_NO_FLOW, ST_CFG_ERR, ST_DE, ST_DRIVING, ST_HAS_DE, ST_HAS_FLOW, ST_HAS_RE, ST_HAS_RX,
+                       ST_HAS_TX, TXREG, Fmt, flag_names, parse_bauds, parse_formats, setup_value)
 
 try:
     import serial
@@ -233,7 +234,7 @@ class Dut:
     def configure(self, baud, fmt):
         """Program SETUP (resets RX and TX) and wait for the receiver to resync."""
         self.baud, self.fmt = baud, fmt
-        self.wr(SETUP, round(self.clk_hz / baud) | fmt.setup_bits())
+        self.wr(SETUP, setup_value(self.clk_hz, baud, fmt, no_flow=True))
         self.sleep(max(0.02, 3 * self.frame_s))
 
     def fifo(self):
@@ -567,7 +568,7 @@ class Validator:
         try:
             self.line.configure(baud, fmt)
             return True
-        except (ValueError,) + SERIAL_ERRORS as exc:
+        except (ValueError, OSError) + SERIAL_ERRORS as exc:
             self.rep.add("SKIP", f"adapter format {fmt}", str(exc))
             return False
 
@@ -655,9 +656,14 @@ class Validator:
         except (AttributeError, OSError) + SERIAL_ERRORS as exc:
             r.add("SKIP", f"Break {baud} {fmt}", f"adapter: {exc}")
             return
-        self.dut.sleep(max(0.05, 4 * d.frame_s))
-        seen = bool(d.rd(RXREG) & RX_BREAK)
-        self.line.port.break_condition = False
+        try:
+            self.dut.sleep(max(0.05, 4 * d.frame_s))
+            seen = bool(d.rd(RXREG) & RX_BREAK)
+        finally:
+            try:
+                self.line.port.break_condition = False
+            except (AttributeError, OSError) + SERIAL_ERRORS:
+                pass
         self.dut.sleep(max(0.05, 4 * d.frame_s))
         r.check(seen, f"Break detected {baud} {fmt}")
         r.check(not d.rd(RXREG) & RX_BREAK, f"Break released {baud} {fmt}")
@@ -724,7 +730,8 @@ class Validator:
             # PHY_STATUS read lands while DE is high. The PC adapter is left at
             # its own baud rate (it may not support very low rates); whatever it
             # receives meanwhile is flushed afterwards.
-            de_baud = int(max(50, min(1200, fmt.bits / (8 * d.access_s))))
+            min_baud = max(50, math.ceil(d.clk_hz / SETUP_BAUD_MASK))
+            de_baud = int(max(min_baud, min(1200, fmt.bits / (8 * max(1e-6, d.access_s)))))
             d.configure(de_baud, fmt)
             self.apply_phy(de_baud, (normal & ~0x3) | CTRL_DE_TX)
             seen = driving = False
@@ -788,9 +795,9 @@ class Validator:
     def timing_for(self, baud):
         """PHY_TIMING from --lead-us / --tail-us. Tail 'auto' = one bit time."""
         clk = self.args.clk
-        lead = round(self.args.lead_us * 1e-6 * clk)
+        lead = max(0, min(0xFFFF, round(self.args.lead_us * 1e-6 * clk)))
         tail = clk / baud if self.args.tail_us == "auto" else float(self.args.tail_us) * 1e-6 * clk
-        return (min(0xFFFF, round(tail)) << 16) | min(0xFFFF, lead)
+        return (max(0, min(0xFFFF, round(tail))) << 16) | lead
 
     def apply_phy(self, baud, ctrl=None):
         self.dut.set_phy(self.normal_ctrl() if ctrl is None else ctrl, timing=self.timing_for(baud))
@@ -798,8 +805,9 @@ class Validator:
     def test_throughput(self):
         d, r = self.dut, self.rep
         dt = d.measure_access()
+        rate = 1 / max(1e-9, dt)
         r.add("INFO", "Hexbus access time", f"{dt * 1000:.2f} ms per register read, "
-              f"max ~{1 / dt:.0f} bytes/s through RXREG")
+              f"max ~{rate:.0f} bytes/s through RXREG")
         if dt > 0.005:
             r.add("INFO", "Slow debug link", "USB-UART latency timer is probably 16 ms; set it "
                   "to 1 ms (Device Manager > port > Advanced) to speed up hexbus ~10x")
@@ -810,18 +818,20 @@ class Validator:
     def _sweep_setup(self):
         a = self.args
         self.sw_baud, self.sw_fmt = a.bauds[-1], a.formats[0]
-        self._pc_format(self.sw_baud, self.sw_fmt)
+        if not self._pc_format(self.sw_baud, self.sw_fmt):
+            return False
         self.dut.configure(self.sw_baud, self.sw_fmt)
         self.sw_ctrl = CTRL_TX_EN | CTRL_RX_EN | CTRL_DE_TX | (CTRL_HALF if a.half else 0)
         self.sw_bit_us = 1e6 / self.sw_baud
         self.sw_steps = 0
+        return True
 
     def _sweep_timing(self, us):
         a, clk = self.args, self.args.clk
         lead_us = us if a.sweep == "lead" else a.lead_us
         tail_us = us if a.sweep == "tail" else (self.sw_bit_us if a.tail_us == "auto" else a.tail_us)
-        return ((min(0xFFFF, round(tail_us * 1e-6 * clk)) << 16)
-                | min(0xFFFF, round(lead_us * 1e-6 * clk)))
+        return ((max(0, min(0xFFFF, round(tail_us * 1e-6 * clk))) << 16)
+                | max(0, min(0xFFFF, round(lead_us * 1e-6 * clk))))
 
     def _sweep_try(self, us, data, trials):
         """Send `data` `trials` times with the given lead/tail. Returns (ok, detail)."""
@@ -857,7 +867,8 @@ class Validator:
         if not self.caps & ST_HAS_DE:
             r.add("SKIP", "DE sweep", "HAS_DE=0")
             return
-        self._sweep_setup()
+        if not self._sweep_setup():
+            return
         baud, fmt, clk = self.sw_baud, self.sw_fmt, a.clk
         res_us = 1e6 / clk                                  # one ACLK cycle
         max_us = 0xFFFF * res_us
@@ -929,9 +940,9 @@ class Validator:
                   "FPGA->PC pair and the transceiver data rate, or use DE high")
             return
         rec = max(2 * found, found + 1)
-        rec_clk = min(0xFFFF, round(rec * 1e-6 * clk))
-        tail_clk = round((self.sw_bit_us if a.tail_us == "auto" else a.tail_us) * 1e-6 * clk)
-        lead_clk = round(a.lead_us * 1e-6 * clk)
+        rec_clk = max(0, min(0xFFFF, round(rec * 1e-6 * clk)))
+        tail_clk = max(0, min(0xFFFF, round((self.sw_bit_us if a.tail_us == "auto" else a.tail_us) * 1e-6 * clk)))
+        lead_clk = max(0, min(0xFFFF, round(a.lead_us * 1e-6 * clk)))
         def_timing = ((tail_clk << 16) | rec_clk) if a.sweep == "lead" else ((rec_clk << 16) | lead_clk)
         r.add("PASS", f"DE {a.sweep} sweep {baud} {fmt}",
               f"minimum {found:.3f} us ({round(found * 1e-6 * clk)} clk) in {self.sw_steps} steps, "
@@ -960,6 +971,7 @@ class Validator:
             if not (self.line or self.loopback):
                 r.add("SKIP", "Line tests", "needs a line adapter (--line) or loopback")
                 return
+            ran_once = False
             for baud in self.args.bauds:
                 for fmt in self.args.formats:
                     r.section(f"{getattr(self, 'section_prefix', '') + ' · ' if getattr(self, 'section_prefix', '') else ''}"
@@ -977,7 +989,8 @@ class Validator:
                         self.test_parity_errors(baud, fmt)
                         self.test_tx_parity(baud, fmt)
                         self.test_frame_errors(baud, fmt)
-                    if (baud, fmt.text) == (self.args.bauds[0], self.args.formats[0].text):
+                    if not ran_once:
+                        ran_once = True
                         if self.line:
                             self.test_break(baud, fmt)
                             self.test_overflow(baud, fmt)
@@ -1047,7 +1060,10 @@ def _run_pair(link, s, report, line_port, ports, tail):
             v.test_registers()
         finally:
             dut.cancellable = False
-            dut.restore(snap)
+            try:
+                dut.restore(snap)
+            except LinkError as exc:
+                report.add("INFO", "Restore registers", f"could not restore the registers: {exc}")
             dut.cancellable = True
     passes = [first] + ([("b" if first == "a" else "a")] if s.swap else [])
     for n, tx in enumerate(passes):

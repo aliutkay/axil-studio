@@ -54,9 +54,9 @@ def _bits(msb, lsb):
 
 
 def _field_access(reg, f):
-    if f.kind:
+    if f.kind and f.kind in KIND_TEXT:
         return KIND_TEXT[f.kind]
-    return reg.access, ACCESS_TEXT[reg.access]
+    return reg.access, ACCESS_TEXT.get(reg.access, "")
 
 
 def _value_text(f, v):
@@ -77,12 +77,17 @@ def _meanings(f, which):
 def _rows_of(reg):
     """Fields from MSB to LSB with reserved gaps as None entries: (msb, lsb, field|None)."""
     out, bit = [], 31
-    for f in sorted(reg.fields, key=lambda f: -f.lsb):
-        msb = f.lsb + f.width - 1
+    for f in sorted(reg.fields, key=lambda f: -(f.lsb + f.width - 1)):
+        lsb = max(0, min(31, f.lsb))
+        msb = max(lsb, min(31, f.lsb + max(1, f.width) - 1))
+        if msb > bit:
+            msb = bit
+        if msb < lsb or bit < 0:
+            continue
         if msb < bit:
             out.append((bit, msb + 1, None))
-        out.append((msb, f.lsb, f))
-        bit = f.lsb - 1
+        out.append((msb, lsb, f))
+        bit = lsb - 1
     if reg.fields and bit >= 0:
         out.append((bit, 0, None))
     return out
@@ -150,11 +155,11 @@ def export_xlsx(ips, path, title=None, bus_of=None):
 
     # ------------------------------------------------------------ base address inputs
     s = summary
-    s["A1"] = title or (tr("Register map:") + ", ".join(ip.name for ip in ips))
+    s["A1"] = title or (tr("Register map:").rstrip() + " " + ", ".join(ip.name for ip in ips))
     s["A1"].font = Font(bold=True, size=14)
     s["A2"] = tr("Created: {0:%Y-%m-%d %H:%M}").format(datetime.datetime.now())
     s["A2"].font = Font(italic=True, color="808080")
-    _header(s, 4, ("IP", tr("Slave base address"), "Not"), (14, 18, 18))
+    _header(s, 4, ("IP", tr("Slave base address"), tr("Note")), (14, 18, 18))
     base_ref = {}
     for i, ip in enumerate(ips):
         r = 5 + i
@@ -183,7 +188,7 @@ def export_xlsx(ips, path, title=None, bus_of=None):
             reg_row[(ip.name, reg.name)] = row
             _put(regmap, row, (ip.name, _addr_formula(base_ref[ip.name], reg.offset), f"0x{reg.offset:02X}",
                                reg.name, "[31:0]", "",
-                               reg.access, "", hex32(reg.reset), reg.desc, ACCESS_TEXT[reg.access], "", ""),
+                               reg.access, "", hex32(reg.reset), reg.desc, ACCESS_TEXT.get(reg.access, ""), "", ""),
                  fill=REG_FILL, bold=True, align=mid)
             _autofit(regmap, row)
             row += 1
@@ -201,7 +206,7 @@ def export_xlsx(ips, path, title=None, bus_of=None):
                     ftype = N.label(getattr(f, "fmt", ""), f.width).replace(tr(" (auto)"), "")
                     _put(regmap, row, ("", "", "", "", f.bits, f.name, acc, ftype, reset, f.desc, behaviour, rd, wr),
                          align=mid)
-                    regmap.cell(row=row, column=7).fill = PatternFill("solid", fgColor=KIND_FILL[f.kind])
+                    regmap.cell(row=row, column=7).fill = PatternFill("solid", fgColor=KIND_FILL.get(f.kind, KIND_FILL[""]))
                     _autofit(regmap, row)
                 row += 1
     regmap.freeze_panes = "E2"
@@ -222,7 +227,8 @@ def export_xlsx(ips, path, title=None, bus_of=None):
     for ip in ips:
         for reg in sorted(ip.registers, key=lambda r: r.offset):
             addr = _addr_formula(base_ref[ip.name], reg.offset)[1:]
-            name = layout.cell(row=lrow, column=1, value=f'="{ip.name}.{reg.name}"&CHAR(10)&{addr}')
+            safe_lbl = f"{ip.name}.{reg.name}".replace('"', '""')
+            name = layout.cell(row=lrow, column=1, value=f'="{safe_lbl}"&CHAR(10)&{addr}')
             name.alignment = WRAP
             name.font = Font(bold=True)
             segments = _rows_of(reg) or [(31, 0, None)]
@@ -236,8 +242,9 @@ def export_xlsx(ips, path, title=None, bus_of=None):
                 cell.alignment = Alignment(horizontal="center", vertical="center", wrap_text=True,
                                            text_rotation=90 if c1 == c0 and len(label) > 3 else 0)
                 cell.font = Font(size=8, bold=f is not None)
+                fill = PatternFill("solid", fgColor=KIND_FILL.get(kind, KIND_FILL[""]))
                 for c in range(c0, c1 + 1):
-                    layout.cell(row=lrow, column=c).fill = PatternFill("solid", fgColor=KIND_FILL[kind])
+                    layout.cell(row=lrow, column=c).fill = fill
                     layout.cell(row=lrow, column=c).border = BORDER
             layout.row_dimensions[lrow].height = 48
             lrow += 1

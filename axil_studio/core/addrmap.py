@@ -117,9 +117,9 @@ def window_of(project, inst):
 
 def unique_name(project, stem):
     """Instance name for IP `stem`: stem_0, stem_1 … (the first number not taken at any level)."""
-    names = {i.name for i in project.all_instances()}
+    names = {i.name.lower() for i in project.all_instances()}
     k = 0
-    while f"{stem}_{k}" in names:
+    while f"{stem}_{k}".lower() in names:
         k += 1
     return f"{stem}_{k}"
 
@@ -243,13 +243,13 @@ def _place(project, items, start, new_ref, old_ref):
     changed = False
     olds = [i.base for i in items]
     for inst, s in zip(items, sl):
-        nb = (new_ref + s.base) & 0xFFFFFFFF
+        raw_base = new_ref + s.base
+        if raw_base < 0 or raw_base + s.window > 1 << 32:
+            raise ValueError(tr("{0} does not fit in the 32-bit address space").format(inst.name))
+        nb = raw_base & 0xFFFFFFFF
         if inst.base != nb:
             inst.base = nb
             changed = True
-    if new_ref + max([0] + [s.base + s.window for s in sl]) > 1 << 32:
-        bad = next(i for i, s in zip(items, sl) if new_ref + s.base + s.window > 1 << 32)
-        raise ValueError(tr("{0} does not fit in the 32-bit address space").format(bad.name))
     for inst, old in zip(items, olds):
         if inst.bridge:
             changed |= _place(project, inst.children, inst.self_window, inst.base, old)
@@ -303,22 +303,25 @@ def validate(project):
     """Error strings of the address map (empty when it is usable)."""
     if not project.instances:
         return [tr("Address map is empty: add at least one slave to the top bus")]
+    from .axilgen import VERILOG_KEYWORDS, VHDL_KEYWORDS
     errs = []
     seen = set()
     for bridge in levels(project):
         items = project.level(bridge)
         sl = xbar_slaves(project, bridge)
         where = "" if bridge is None else f"{bridge.name}/"
-        if bridge is not None and bridge.self_window & (bridge.self_window - 1):
+        if bridge is not None and (bridge.self_window < 0 or bridge.self_window & (bridge.self_window - 1)):
             errs.append(tr("{0}: own window must be a power of two").format(bridge.name))
         out = outside(project, bridge) if bridge is not None else set()
         for j, (inst, s) in enumerate(zip(items, sl)):
             tag = f"{where}SLAVE{j} ({inst.name})"
             if not X.IDENT.match(inst.name or ""):
                 errs.append(tr("{0}: name must start with a letter and contain only letters, digits and _").format(tag))
-            if inst.name in seen:
+            if inst.name.lower() in seen:
                 errs.append(tr("{0}: the same name is used twice").format(tag))
-            seen.add(inst.name)
+            seen.add(inst.name.lower())
+            if inst.window and (inst.window < 4 or inst.window & (inst.window - 1)):
+                errs.append(tr("{0}: window must be a power of two").format(tag))
             if not inst.external and not inst.bridge and project.get_ip(inst.ip) is None:
                 errs.append(tr("{0}: IP definition “{1}” is not in the project").format(tag, inst.ip))
             if s.base & (s.window - 1):
@@ -333,13 +336,15 @@ def validate(project):
                     errs.append(tr("{0} overlaps {1}SLAVE{2} ({3})").format(tag, where, k, o.name))
         if bridge is not None and not items:
             errs.append(tr("{0}: the subsystem is empty; add at least one slave to it").format(bridge.name))
-        if bridge is not None and has_xbar(project, bridge):
-            if not X.IDENT.match(bridge.xbar_module):
-                errs.append(tr("{0}: interconnect module name is not valid").format(bridge.name))
-            if not 1 <= 1 + len(bridge.xbar_masters) <= 16:
-                errs.append(tr("{0}: an interconnect can have at most 16 masters").format(bridge.name))
+        if has_xbar(project, bridge):
+            bname = level_name(project, bridge)
+            mod = xbar_module(project, bridge)
+            if not X.IDENT.match(mod) or mod.lower() in VERILOG_KEYWORDS or mod.lower() in VHDL_KEYWORDS:
+                errs.append(tr("{0}: interconnect module name is not valid").format(bname))
+            if not 1 <= len(xbar_masters(project, bridge)) <= 16:
+                errs.append(tr("{0}: an interconnect can have at most 16 masters").format(bname))
             if len(items) > 64:
-                errs.append(tr("{0}: an interconnect can have at most 64 slaves").format(bridge.name))
+                errs.append(tr("{0}: an interconnect can have at most 64 slaves").format(bname))
     errs += fit_errors(project)
     errs += module_clashes(project)
     return errs
@@ -360,7 +365,7 @@ def module_clashes(project):
             owners.setdefault(n.lower(), []).append((n, what))
     for ip in project.ips:
         for n in (ip.name, f"{ip.name}_pk"):
-            owners.setdefault(n.lower(), []).append((n, f"{ip.name} IP'si"))
+            owners.setdefault(n.lower(), []).append((n, tr("IP {0}").format(ip.name)))
     told = set()
     for key, who in sorted(owners.items()):
         if key.endswith("_pk") and key[:-3] in told:
@@ -370,8 +375,8 @@ def module_clashes(project):
         if key in RESERVED_MODULES:
             errs.append(tr("Module name “{0}” ({1}) clashes with ZipCPU {2}.v").format(who[0][0], who[0][1], key))
         elif len(who) > 1:
-            errs.append(tr("Module name “{0}” is defined in more than one place:").format(who[0][0])
-                        + ", ".join(sorted({w for _, w in who})))
+            errs.append(tr("Module name “{0}” is defined in more than one place:").format(who[0][0]).rstrip()
+                        + " " + ", ".join(sorted({w for _, w in who})))
     return errs
 
 
@@ -433,7 +438,13 @@ def move(project, inst, parent, index=None):
     if old_parent is not parent and inst.fixed:
         inst.fixed = False
         note = tr("{0} moved to another bus: its address is automatic again").format(inst.name)
-    _settle(project)
+    try:
+        readdress(project)
+    except ValueError:
+        dst.remove(inst)
+        src.insert(pos, inst)
+        _restore(project, keep)
+        raise
     new = [e for e in fit_errors(project) if _grew(project, e, before)]
     if new:
         dst.remove(inst)

@@ -5,7 +5,7 @@ import os
 import sys
 
 from PySide6.QtCore import QCoreApplication, QObject, QSize, Qt
-from PySide6.QtGui import QAction, QKeySequence
+from PySide6.QtGui import QAction, QActionGroup, QKeySequence
 from PySide6.QtWidgets import (QApplication, QFileDialog, QFrame, QGridLayout,
                                QHBoxLayout, QLabel, QMainWindow, QMessageBox,
                                QScrollArea, QVBoxLayout, QWidget)
@@ -167,28 +167,52 @@ def build_view_menu(window, menubar):
 def build_language_menu(window, menu):
     """Interface languages; the choice is used from the next start (offers to restart now)."""
     current = i18n.saved_language()
+    group = QActionGroup(menu)
+    group.setExclusive(True)
+    actions = {}
     for code, name in i18n.LANGUAGES.items():
         a = QAction(name, window, checkable=True)
         a.setChecked(code == current)
-        a.triggered.connect(lambda *_, code=code: change_language(window, code))
+        a.triggered.connect(lambda *_, code=code: change_language(window, code, actions))
+        group.addAction(a)
         menu.addAction(a)
+        actions[code] = a
     if os.environ.get(i18n.ENV):
         menu.addSeparator()
         note = menu.addAction(tr("Set by {0}={1} for this run").format(i18n.ENV, os.environ[i18n.ENV]))
         note.setEnabled(False)
 
 
-def change_language(window, code):
+def change_language(window, code, actions=None):
     if code == i18n.saved_language():
+        if actions and code in actions:
+            actions[code].setChecked(True)
         return
     try:
         i18n.set_saved_language(code)
     except OSError as exc:
+        if actions:
+            cur = i18n.saved_language()
+            if cur in actions:
+                actions[cur].setChecked(True)
         QMessageBox.critical(window, APP_NAME, str(exc))
         return
+    if actions and code in actions:
+        actions[code].setChecked(True)
     if ui.confirm(window, tr("Language"), tr("The language changes when {0} starts again. Restart now?").format(APP_NAME),
                   ok=tr("Restart"), cancel=tr("Later")):
         restart_application()
+
+
+def _restart_args():
+    """Arguments to re-launch the application (handles both studio.py and python -m axil_studio)."""
+    main_mod = sys.modules.get("__main__")
+    spec = getattr(main_mod, "__spec__", None)
+    if spec is not None and spec.name == "axil_studio.__main__":
+        return ["-m", "axil_studio"] + sys.argv[1:]
+    if sys.argv and os.path.basename(sys.argv[0]) == "__main__.py":
+        return ["-m", "axil_studio"] + sys.argv[1:]
+    return list(sys.argv)
 
 
 def restart_application():
@@ -198,7 +222,7 @@ def restart_application():
     app.closeAllWindows()
     if any(w.isVisible() for w in app.topLevelWidgets() if isinstance(w, QMainWindow)):
         return                                  # a window was kept open (unsaved changes): no restart
-    QProcess.startDetached(sys.executable, sys.argv)
+    QProcess.startDetached(sys.executable, _restart_args())
     app.quit()
 
 

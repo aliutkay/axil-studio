@@ -327,6 +327,8 @@ class DebugBridgePage(ToolPage):
         port = self.port_cb.currentText()
         try:
             baud = int(self.baud_cb.currentText())
+            if baud <= 0:
+                raise ValueError
         except ValueError:
             return self.error(tr("Invalid baud rate"), self.baud_cb.currentText())
         self.conn_btn.setEnabled(False)
@@ -374,7 +376,7 @@ class DebugBridgePage(ToolPage):
             holder = self.fields.cellWidget(row, F_WRITE)
             for b in (holder.findChildren(type(self.write_btn)) if holder else []):
                 if b.property("command"):
-                    b.setEnabled(on)
+                    b.setEnabled(free)
 
     # ================================================================ address map
     def _extra(self):
@@ -384,8 +386,11 @@ class DebugBridgePage(ToolPage):
 
     def _set_extra(self, ips):
         d = dict(self.ctx.project.debug or {})
-        d["extra_ips"] = [ip.to_dict() for ip in ips]
-        self.ctx.project.debug = d if d["extra_ips"] else None
+        if ips:
+            d["extra_ips"] = [ip.to_dict() for ip in ips]
+        else:
+            d.pop("extra_ips", None)
+        self.ctx.project.debug = d or None
         self.ctx.mark_modified(self.tool_id)
 
     def _find_ip(self, group, name):
@@ -561,7 +566,7 @@ class DebugBridgePage(ToolPage):
         if not items:
             QMessageBox.information(self, self.title, tr("No open IP library, or no IP in the libraries (IP Library)."))
             return
-        labels = [f"{lib.name} / {e.name}" for lib, e in items]
+        labels = [f"{lib.name} / {e.name} ({e.version})" for lib, e in items]
         choice, ok = QInputDialog.getItem(self, tr("Add IP from a library"), "IP:", labels, 0, False)
         if not ok:
             return
@@ -683,8 +688,9 @@ class DebugBridgePage(ToolPage):
                 if col == F_TYPE or (col == F_MEAN and not meaning):
                     it.setForeground(muted)
                 if col == F_READ and rv is not None:
+                    fbase, ffrac = N.split(f.fmt, f.width)
                     it.setToolTip("\n".join(f"{a}: {b}" for a, b in
-                                            N.all_views(rv, f.width, N.split(f.fmt, f.width)[1])))
+                                            N.all_views(rv, f.width, ffrac, signed_fix=(fbase == "sfix"))))
                 else:
                     it.setToolTip(f.desc)
                 self.fields.setItem(row, col, it)
@@ -830,7 +836,7 @@ class DebugBridgePage(ToolPage):
     # ================================================================ bus access
     def read_reg(self):
         ip, reg = self.ip, self.reg
-        if not (self.link.connected and reg and reg.readable):
+        if not (self.link.connected and self._exclusive is None and reg and reg.readable):
             return
         addr = ip.address(reg)
 
@@ -896,19 +902,20 @@ class DebugBridgePage(ToolPage):
 
     def _write(self, value, what):
         ip, reg = self.ip, self.reg
-        if not (self.link.connected and reg and reg.writable):
+        if not (self.link.connected and self._exclusive is None and reg and reg.writable):
             return
         addr = ip.address(reg)
 
         def ok(_):
             self.last_written[addr] = value
-            self.stamp.setText(f"{what} {time.strftime('%H:%M:%S')} · {hex32(value)}")
-            if reg.readable:
-                self.read_reg()
-            else:
-                self.staged = self._base_value()
-                self.value_ed.setText(hex32(self.staged))
-                self._fill_fields()
+            if self.reg is reg:
+                self.stamp.setText(f"{what} {time.strftime('%H:%M:%S')} · {hex32(value)}")
+                if reg.readable:
+                    self.read_reg()
+                else:
+                    self.staged = self._base_value()
+                    self.value_ed.setText(hex32(self.staged))
+                    self._fill_fields()
         self.bus.run(lambda: self.link.write(addr, value), ok, lambda e: self.error(tr("Write error"), e))
 
     def write_reg(self):
@@ -1327,13 +1334,13 @@ class DebugBridgePage(ToolPage):
             return
         path, _ = QFileDialog.getSaveFileName(self, tr("Live watch log"),
                                               os.path.join(os.path.dirname(self.ctx.path or ROOT),
-                                                           time.strftime("izleme_%Y%m%d_%H%M%S.csv")), "CSV (*.csv)")
+                                                           time.strftime("watch_%Y%m%d_%H%M%S.csv")), "CSV (*.csv)")
         if not path:
             return
         try:
             with open(path, "w", newline="", encoding="utf-8") as fh:
                 wr = csv.writer(fh)
-                wr.writerow(["zaman", "register", tr("addresses"), "deger", "bit_alanlari"])
+                wr.writerow([tr("Time"), "Register", tr("Address"), tr("Value"), tr("Bit fields")])
                 rows = []
                 for w in self.watch:
                     ip, reg = self._resolve(w["key"])
@@ -1408,29 +1415,29 @@ class DebugBridgePage(ToolPage):
     def _poll(self):
         if self._polling or not self.link.connected or not self.watch or self._exclusive is not None:
             return
+        rows = list(self.watch)
         targets = []
-        for w in self.watch:
+        for w in rows:
             ip, reg = self._resolve(w["key"])
             targets.append(ip.address(reg) if ip and reg and reg.readable else None)
         self._polling = True
 
+        unique = list(dict.fromkeys(a for a in targets if a is not None))
+
         def job():
             self.link.quiet = True
             try:
-                return [self.link.read(a) if a is not None else None for a in targets]
+                return {a: self.link.read(a) for a in unique}
             finally:
                 self.link.quiet = False
 
-        def ok(values):
+        def ok(by_addr):
             self._polling = False
-            for w, a, v in zip(self.watch, targets, values):
-                if a is not None:
+            for w, a in zip(rows, targets):
+                if a is not None and w in self.watch:
                     w["count"] += 1
-            done = set()
-            for a, v in zip(targets, values):
-                if a is not None and a not in done:
-                    done.add(a)
-                    self._record(a, v, tr("live watch"))
+            for a, v in by_addr.items():
+                self._record(a, v, tr("live watch"))
 
         def err(exc):
             self._polling = False
@@ -1632,7 +1639,7 @@ class DebugBridgePage(ToolPage):
     def _update_config_controls(self):
         if not hasattr(self, "send_btn"):
             return
-        ok = self.link.connected and bool(self.config)
+        ok = self.link.connected and self._exclusive is None and bool(self.config)
         for b in (self.send_btn, self.capture_btn, self.compare_btn):
             b.setEnabled(ok)
         n = len(self.config)
@@ -1640,6 +1647,8 @@ class DebugBridgePage(ToolPage):
                               if n else tr("Add rows with the Add to config button on the Register tab"))
 
     def send_config(self):
+        if not self.link.connected or self._exclusive is not None:
+            return
         rows = []
         for row in self.config:
             ip, reg = self._resolve(row["key"])
@@ -1647,12 +1656,16 @@ class DebugBridgePage(ToolPage):
                 return self.error(tr("Could not send"), tr("{0}.{1} is not in the address map").format(row['key'][1], row['key'][2]))
             rows.append((f"{ip.name}.{reg.name}", ip.address(reg), row["value"], reg.readable))
 
+        read_addrs = list(dict.fromkeys(addr for _n, addr, _v, readable in rows if readable))
+
         def job():
             for name, addr, value, _r in rows:
                 self.link.write(addr, value)
-            return [(addr, self.link.read(addr)) for _n, addr, _v, readable in rows if readable]
+            return [(addr, self.link.read(addr)) for addr in read_addrs]
 
         def ok(readback):
+            for _n, addr, value, _r in rows:
+                self.last_written[addr] = value
             self.status(tr("Config sent: {0} writes").format(len(rows)))
             self._log.emit("INFO", tr("Config sent ({0} writes)").format(len(rows)))
             for addr, v in readback:
@@ -1660,25 +1673,28 @@ class DebugBridgePage(ToolPage):
         self.bus.run(job, ok, lambda e: self.error(tr("Could not send the config"), e))
 
     def _read_config_targets(self, on_done):
+        if not self.link.connected or self._exclusive is not None:
+            return
         targets = []
-        for i, row in enumerate(self.config):
+        for row in self.config:
             ip, reg = self._resolve(row["key"])
             if reg and reg.readable:
-                targets.append((i, ip.address(reg), reg.mask_of("PULSE", "W1C")))
+                targets.append((row, ip.address(reg), reg.mask_of("PULSE", "W1C")))
 
         def job():
-            return [(i, a, clear, self.link.read(a)) for i, a, clear in targets]
+            return [(row, a, clear, self.link.read(a)) for row, a, clear in targets]
 
         def ok(values):
-            for i, a, clear, v in values:
+            for _row, a, _clear, v in values:
                 self._record(a, v, "config")
             on_done(values)
         self.bus.run(job, ok, lambda e: self.error(tr("Could not read"), e))
 
     def capture_config(self):
         def done(values):
-            for i, a, clear, v in values:
-                self.config[i]["value"] = v & ~clear & 0xFFFFFFFF
+            for row, _a, clear, v in values:
+                if row in self.config:
+                    row["value"] = v & ~clear & 0xFFFFFFFF
             self._fill_config()
             self.status(tr("{0} values taken from the device (write-only registers unchanged)").format(len(values)))
         self._read_config_targets(done)
@@ -1730,7 +1746,7 @@ class DebugBridgePage(ToolPage):
         if direction == "IDLE":
             return
         self.log.appendPlainText(f"{time.strftime('%H:%M:%S')}  {direction:<4} {text}")
-        if direction == "ERR" and self.link.ser is not None and not self.link.connected:
+        if direction == "ERR" and getattr(self.link, "ser", None) is not None and not self.link.connected:
             self._update_controls()             # the port went away: show it as disconnected
 
     def on_theme(self):

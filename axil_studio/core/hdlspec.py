@@ -148,9 +148,19 @@ def validate(d):
         if kind == "ip":
             return _ip_spec(d).validate(hdl_only=True)
         errs = _xbar_spec(d).validate()
-        p = dict(XBAR_PARAMETERS, **d.get("parameters", {}))
+        raw_p = d.get("parameters", {})
+        if not isinstance(raw_p, dict):
+            return errs + [tr("Cannot read the HDL spec: {0}").format("parameters must be an object")]
+        p = dict(XBAR_PARAMETERS, **raw_p)
         if set(p) != set(XBAR_PARAMETERS):
             errs.append(tr("Unknown parameter: {0}").format(', '.join(sorted(set(p) - set(XBAR_PARAMETERS)))))
+        else:
+            lp, lg, mb = p["OPT_LOWPOWER"], p["OPT_LINGER"], p["LGMAXBURST"]
+            if not isinstance(lp, int) or isinstance(lp, bool) or lp not in (0, 1):
+                errs.append(tr("Invalid parameter {0}: {1}").format("OPT_LOWPOWER", lp))
+            for k, v in (("OPT_LINGER", lg), ("LGMAXBURST", mb)):
+                if not isinstance(v, int) or isinstance(v, bool) or v < 0:
+                    errs.append(tr("Invalid parameter {0}: {1}").format(k, v))
         return errs
     except (KeyError, TypeError, ValueError) as exc:
         return [tr("Cannot read the HDL spec: {0}").format(exc)]

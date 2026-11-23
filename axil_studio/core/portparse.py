@@ -48,8 +48,11 @@ def evaluate(expr, params, depth=0):
     if expr is None or depth > 20:
         return None
     e = str(expr).strip()
-    e = re.sub(r"(\d*)\s*'[sS]?([bBoOdDhH])\s*([0-9a-fA-F_]+)", _verilog_number, e)   # 8'd10 -> 10
-    e = re.sub(r"\b16#([0-9a-fA-F_]+)#", lambda m: str(int(m.group(1).replace("_", ""), 16)), e)
+    try:
+        e = re.sub(r"(\d*)\s*'[sS]?([bBoOdDhH])\s*([0-9a-fA-F_]+)", _verilog_number, e)   # 8'd10 -> 10
+        e = re.sub(r"\b16#([0-9a-fA-F_]+)#", lambda m: str(int(m.group(1).replace("_", ""), 16)), e)
+    except ValueError:
+        return None
     e = e.replace("$clog2", "clog2")
     e = re.sub(r"\*\*", "^^", e)            # VHDL / SV power, kept apart from *
 
@@ -227,8 +230,27 @@ def _verilog(text):
         type_text = " ".join(words + [f"[{d.strip()}]" for d in packed])
         for item in items:
             nm = re.match(r"\s*([A-Za-z_]\w*)", item)
-            if nm:
-                ports.append(Port(nm.group(1), direction, width, lsb, type_text, err))
+            if not nm:
+                continue
+            rest = item[nm.end():].split("=", 1)[0]
+            unpacked = re.findall(r"\[([^\]]*)\]", rest)
+            iw, ilsb, ierr = width, lsb, err
+            itype = type_text + (" " + " ".join(f"[{u.strip()}]" for u in unpacked) if unpacked else "")
+            if unpacked and ierr == "":
+                ilsb = 0
+                for u in unpacked:
+                    if ":" in u:
+                        hi, lo = u.split(":", 1)
+                        uw, _ = _range_width(hi, lo, params)
+                    else:
+                        uw = evaluate(u, params)
+                        if uw is not None and uw <= 0:
+                            uw = None
+                    if uw is None or iw is None:
+                        iw, ierr = None, tr("cannot resolve width: [{0}]").format(u.strip())
+                        break
+                    iw *= uw
+            ports.append(Port(nm.group(1), direction, iw, ilsb, itype.strip(), ierr))
     return (name.group(1) if name else ""), ports
 
 
@@ -248,7 +270,12 @@ def _vhdl_type_width(typ, params):
         if a is None or b is None:
             return None, 0, tr("cannot resolve range: {0}").format(t)
         lo, hi = min(a, b), max(a, b)
-        bits = max(1, max(abs(lo), abs(hi)).bit_length()) + (1 if lo < 0 else 0)
+        if lo < 0:
+            neg_bits = (-lo - 1).bit_length()
+            pos_bits = hi.bit_length() if hi >= 0 else 0
+            bits = max(neg_bits, pos_bits) + 1
+        else:
+            bits = max(1, hi.bit_length())
         return bits, 0, ""
     if tl in ("integer", "natural", "positive"):
         return 32, 0, ""

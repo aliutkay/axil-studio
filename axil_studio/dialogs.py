@@ -164,6 +164,8 @@ class RegDialog(FormDialog):
             raise ValueError(tr("Offset must be a number")) from None
         if off % 4 or off < 0:
             raise ValueError(tr("Offset must be a multiple of 4"))
+        if off >= 0x100000000:
+            raise ValueError(tr("Offset must fit in 32 bits"))
         return G.RegSpec(name, off, self.desc.toPlainText().strip(), self.wr.isChecked(), self.rd.isChecked(),
                          self.reg.fields)
 
@@ -443,15 +445,19 @@ class FieldDialog(FormDialog):
         base, frac = N.split(fmt, width)
         if base in ("ufix", "sfix") and frac >= width:
             raise ValueError(tr("Fraction bits ({0}) must be fewer than the field width ({1})").format(frac, width))
-        try:
-            reset = N.parse_value(self.reset.text(), width, fmt)
-        except ValueError as exc:
-            raise ValueError(tr("Reset value: {0}").format(exc)) from None
+        kind = self.kind.currentData()
+        if kind in ("RW", "CONST"):
+            try:
+                reset = N.parse_value(self.reset.text(), width, fmt)
+            except ValueError as exc:
+                raise ValueError(tr("Reset value: {0}").format(exc)) from None
+        else:
+            reset = 0
         values = self.values.get()
         bad = [f"0x{e.value:X}" for e in values if e.value >> width]
         if bad:
             raise ValueError(tr("Value(s) {0} in the value table do not fit in {1} bits").format(', '.join(bad), width))
-        return G.FieldSpec(name, lsb, width, self.kind.currentData(), reset, self.desc.toPlainText().strip(),
+        return G.FieldSpec(name, lsb, width, kind, reset, self.desc.toPlainText().strip(),
                            self.irq.isChecked(), self.sync.isChecked(), values, fmt)
 
 
@@ -563,7 +569,11 @@ class SlaveDialog(FormDialog):
             span = parse_int(self.span.text())
         except ValueError:
             raise ValueError(tr("Base address and used space must be numbers")) from None
+        if self.s.external and not 4 <= span <= 0x10000000:
+            raise ValueError(tr("Used space must be between 0x4 and 0x10000000 (256 MB)"))
         w = self.window.currentData()
+        if not w:
+            raise ValueError(tr("Window size must be at most 256 MB"))
         if not self.base.isEnabled():
             base = self.s.base & ~(w - 1)     # re-addressed by the page anyway
         fixed = self.fixed.isChecked() or (self.base.isEnabled() and base != self.s.base and not self.auto)
@@ -627,12 +637,21 @@ class BridgeDialog(FormDialog):
         if not name:
             raise ValueError(tr("Name cannot be empty"))
         try:
-            base = parse_int(self.base.text()) & 0xFFFFFFFF
+            base = parse_int(self.base.text())
         except ValueError:
             raise ValueError(tr("Base address must be a number")) from None
+        if not 0 <= base <= 0xFFFFFFFF:
+            raise ValueError(tr("Base address must fit in 32 bits"))
         w = self.window.currentData() or 0
-        if self.fixed.isChecked() and w and base & (w - 1):
-            raise ValueError(tr("Base address must be aligned to the window ({0:#x})").format(w))
+        align_w = w
+        if not align_w:
+            rest = max(0, self.need - self.v[2])
+            need = self.own.currentData() + rest
+            align_w = 4
+            while align_w < need:
+                align_w <<= 1
+        if self.fixed.isChecked() and base & (align_w - 1):
+            raise ValueError(tr("Base address must be aligned to the window ({0:#x})").format(align_w))
         return name, base, self.own.currentData(), w, self.fixed.isChecked()
 
 
@@ -725,7 +744,12 @@ class FieldMapDialog(FormDialog):
         self.form.addRow(tr("Data type"), self.fmt)
         self.values = ValuesEditor(f.values, self.kind, lambda: f.width, self.fmt.value)
         self.fmt.combo.currentIndexChanged.connect(lambda *_: self.values.refresh())
+        self.fmt.frac.valueChanged.connect(lambda *_: self.values.refresh())
         self.extra.addWidget(self.values, 1)
 
     def apply(self):
-        return {"fmt": self.fmt.value(), "values": self.values.get()}
+        fmt = self.fmt.value()
+        base, frac = N.split(fmt, self.f.width)
+        if base in ("ufix", "sfix") and frac >= self.f.width:
+            raise ValueError(tr("Fraction bits ({0}) must be fewer than the field width ({1})").format(frac, self.f.width))
+        return {"fmt": fmt, "values": self.values.get()}
