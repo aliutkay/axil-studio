@@ -186,6 +186,7 @@ class IPBlock:
     version: str = ""       # IP version (from the register map / library)
     regspec: Optional[dict] = None   # full register spec (axilgen.ModuleSpec.to_dict()) when known
     ref: str = ""           # address-map view only: name of the IP definition (not saved)
+    panel: str = ""         # IP interface (axil_studio.panels id) opened from the Debug Bridge; "" = none
 
     def get_register(self, name) -> Optional[Register]:
         return next((r for r in self.registers if r.name == name), None)
@@ -209,13 +210,16 @@ class IPBlock:
             d["version"] = self.version
         if self.regspec:
             d["regspec"] = self.regspec
+        if self.panel:
+            d["panel"] = self.panel
         return d
 
     @staticmethod
     def from_dict(d):
         return IPBlock(d["name"], parse_int(d.get("base", 0)), d.get("desc", ""),
                        [Register.from_dict(r) for r in d.get("registers", [])], d.get("source", ""),
-                       str(d.get("version", "")), d.get("regspec"))
+                       str(d.get("version", "")), d.get("regspec"),
+                       panel=d.get("panel") or (d.get("regspec") or {}).get("panel", ""))
 
 
 @dataclass
@@ -343,7 +347,8 @@ class Project:
         for inst in self.leaf_instances():
             d = self.get_ip(inst.ip) if inst.ip else None
             if d is not None:
-                out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name))
+                out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name,
+                                   panel=d.panel))
         return out
 
     def to_data(self):

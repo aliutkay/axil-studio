@@ -11,6 +11,26 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.22 — IP arayüzleri, axiluart_phy ve UART arayüzü
+
+- **IP arayüzü:** bir IP'nin register haritası artık kendi Python arayüzünü adlandırabilir (Register Map Editor → *IP
+  arayüzü*; `IPBlock.panel` / regspec `"panel"`, projede ve IP kütüphanesinde IP ile birlikte saklanır). Debug Bridge'de
+  böyle bir IP ağaçta simgeyle görünür; register panelindeki düğme, çift tık ya da sağ tık arayüzü açar. Arayüz Debug
+  Bridge'in bağlantısını ve istek kuyruğunu paylaşır, okuduklarını Debug Bridge'in ekranlarına yazar ve *Debug Bridge'de
+  göster* ile geri döner. IP Library ipuçları arayüzü olan IP'leri belirtir. Kayıt sistemi: `axil_studio/panels/`.
+- **axiluart_phy (hdl/uart_phy):** RS-232 / RS-422 / RS-485 hat arayüzlü AXI4-Lite UART'ın RTL'i (`axiluart_phy.v`,
+  `uart_phy_adapter.v`, ZipCPU tabanlı `axiluart_v2.v` ve `txuart_v2.v`), testbench'leri ve ZipCPU yamaları eklendi
+  (ZipCPU dosyaları GPLv3). Register haritası alan türleri ve değer anlamlarıyla `examples/uart_phy/uart_phy.axlib.json`
+  kütüphanesinde; örnek proje, hat ön ayarları ve doğrulama ayarları `examples/uart_phy/` altında.
+- **UART arayüzü** (axiluart_phy için): *Hat ayarları* (baud / format → SETUP, hat tipi, DE modu, half duplex, echo,
+  polarite, DE lead / tail → PHY_CTRL / PHY_TIMING, PHY_STATUS ve FIFO durumu, ön ayarlar), *Terminal* (eski UART
+  konsolunun ASCII / HEX terminali) ve *Doğrulama* (eski `uart_validate` testlerinin grafik arayüzü: canlı sonuç tablosu,
+  Durdur, JSON rapor; çalışırken Debug Bridge'in canlı izlemesi durur, sonunda register'lar geri yüklenir).
+- Doğrulama testleri `axil_studio/core/uart_validate.py`'ye taşındı (iptal edilebilir, sonuçları geri çağırmayla
+  bildirir); `scripts/uart_validate.py` artık onu çalıştıran ince bir başlatıcı. Simülasyon modu (`--simulate`,
+  `uart_validate_sim.py`) kaldırıldı. Yeni hat tipi `rs485-2w-echo`.
+- `examples/bench_rs485_4w.json` → `examples/uart_phy/bench_rs485_4w.json`.
+
 ## early-alpha 0.1.20 — Alt sistem (Subsystem), sadeleşen komutlar, yeni araç açıklamaları
 
 - **Sub-bus Bridge → Alt sistem (Subsystem):** adres haritasında slave'leri tek bir pencerede toplayan kayıt artık

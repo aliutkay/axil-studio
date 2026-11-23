@@ -1,0 +1,473 @@
+{
+  "format": "axil-uart-project",
+  "version": 2,
+  "name": "UART PHY demo",
+  "ips": [
+    {
+      "name": "axiluart_phy",
+      "desc": "AXI4-Lite UART (ZipCPU axiluart_v2) with a configurable line interface: RS-232, RS-422, RS-485 2/4-wire, half duplex, echo, polarity.",
+      "registers": [
+        {
+          "name": "SETUP",
+          "offset": "0x00000000",
+          "access": "RW",
+          "reset": "0x400001B2",
+          "desc": "Line format and baud divider (a write resets RX and TX)",
+          "fields": [
+            {
+              "name": "BAUD_DIV",
+              "lsb": 0,
+              "width": 24,
+              "desc": "ACLK / baud",
+              "kind": "RW",
+              "fmt": "udec"
+            },
+            {
+              "name": "PAR_SEL",
+              "lsb": 24,
+              "width": 1,
+              "desc": "Parity: 1 even / 0 odd, or mark / space when PAR_FIXED",
+              "kind": "RW"
+            },
+            {
+              "name": "PAR_FIXED",
+              "lsb": 25,
+              "width": 1,
+              "desc": "Fixed (mark / space) parity bit",
+              "kind": "RW"
+            },
+            {
+              "name": "PAR_EN",
+              "lsb": 26,
+              "width": 1,
+              "desc": "Parity enable",
+              "kind": "RW"
+            },
+            {
+              "name": "STOP2",
+              "lsb": 27,
+              "width": 1,
+              "desc": "Two stop bits",
+              "kind": "RW",
+              "values": [
+                {
+                  "value": "0x0",
+                  "read": "1 stop bit"
+                },
+                {
+                  "value": "0x1",
+                  "read": "2 stop bits"
+                }
+              ]
+            },
+            {
+              "name": "DATA_BITS",
+              "lsb": 28,
+              "width": 2,
+              "desc": "Data bits",
+              "kind": "RW",
+              "values": [
+                {
+                  "value": "0x0",
+                  "read": "8 bits"
+                },
+                {
+                  "value": "0x1",
+                  "read": "7 bits"
+                },
+                {
+                  "value": "0x2",
+                  "read": "6 bits"
+                },
+                {
+                  "value": "0x3",
+                  "read": "5 bits"
+                }
+              ],
+              "fmt": "enum"
+            },
+            {
+              "name": "NO_FLOW",
+              "lsb": 30,
+              "width": 1,
+              "desc": "1: RTS/CTS flow control off",
+              "kind": "RW"
+            }
+          ]
+        },
+        {
+          "name": "FIFO",
+          "offset": "0x00000004",
+          "access": "RO",
+          "reset": "0x00000000",
+          "desc": "RX [15:0] and TX [31:16] FIFO status",
+          "fields": [
+            {
+              "name": "RX_AVAIL",
+              "lsb": 0,
+              "width": 1,
+              "desc": "RX data available",
+              "kind": "RO"
+            },
+            {
+              "name": "RX_HALF",
+              "lsb": 1,
+              "width": 1,
+              "desc": "RX FIFO at least half full",
+              "kind": "RO"
+            },
+            {
+              "name": "RX_FILL",
+              "lsb": 2,
+              "width": 10,
+              "desc": "Bytes waiting in the RX FIFO",
+              "kind": "RO",
+              "fmt": "udec"
+            },
+            {
+              "name": "RX_LGLEN",
+              "lsb": 12,
+              "width": 4,
+              "desc": "log2 RX FIFO depth",
+              "kind": "RO",
+              "fmt": "udec"
+            },
+            {
+              "name": "TX_SPACE",
+              "lsb": 16,
+              "width": 1,
+              "desc": "TX FIFO can accept data",
+              "kind": "RO"
+            },
+            {
+              "name": "TX_HALF",
+              "lsb": 17,
+              "width": 1,
+              "desc": "TX FIFO at least half empty",
+              "kind": "RO"
+            },
+            {
+              "name": "TX_FREE",
+              "lsb": 18,
+              "width": 10,
+              "desc": "Free TX FIFO entries",
+              "kind": "RO",
+              "fmt": "udec"
+            },
+            {
+              "name": "TX_LGLEN",
+              "lsb": 28,
+              "width": 4,
+              "desc": "log2 TX FIFO depth",
+              "kind": "RO",
+              "fmt": "udec"
+            }
+          ]
+        },
+        {
+          "name": "RXREG",
+          "offset": "0x00000008",
+          "access": "RW",
+          "reset": "0x00000100",
+          "desc": "Received byte and flags. Reading pops the RX FIFO.",
+          "fields": [
+            {
+              "name": "DATA",
+              "lsb": 0,
+              "width": 8,
+              "desc": "Received byte",
+              "kind": "RO"
+            },
+            {
+              "name": "EMPTY",
+              "lsb": 8,
+              "width": 1,
+              "desc": "1: no data, DATA is not valid",
+              "kind": "RO",
+              "values": [
+                {
+                  "value": "0x0",
+                  "read": "Data"
+                },
+                {
+                  "value": "0x1",
+                  "read": "Empty"
+                }
+              ]
+            },
+            {
+              "name": "PERR",
+              "lsb": 9,
+              "width": 1,
+              "desc": "Parity error seen (sticky); write 1 to clear",
+              "kind": "W1C"
+            },
+            {
+              "name": "FERR",
+              "lsb": 10,
+              "width": 1,
+              "desc": "Frame error seen (sticky); write 1 to clear",
+              "kind": "W1C"
+            },
+            {
+              "name": "BREAK",
+              "lsb": 11,
+              "width": 1,
+              "desc": "Break condition on the line",
+              "kind": "RO"
+            },
+            {
+              "name": "OVFL",
+              "lsb": 12,
+              "width": 1,
+              "desc": "RX FIFO overflow (sticky); writing 1 resets the receiver and the RX FIFO",
+              "kind": "W1C"
+            },
+            {
+              "name": "BYTE_PERR",
+              "lsb": 13,
+              "width": 1,
+              "desc": "This byte had a parity error",
+              "kind": "RO"
+            },
+            {
+              "name": "BYTE_FERR",
+              "lsb": 14,
+              "width": 1,
+              "desc": "This byte had a frame error",
+              "kind": "RO"
+            }
+          ]
+        },
+        {
+          "name": "TXREG",
+          "offset": "0x0000000C",
+          "access": "WO",
+          "reset": "0x00000000",
+          "desc": "Write a byte to the TX FIFO",
+          "fields": [
+            {
+              "name": "DATA",
+              "lsb": 0,
+              "width": 8,
+              "desc": "Byte to send",
+              "kind": "RW"
+            },
+            {
+              "name": "BREAK",
+              "lsb": 9,
+              "width": 1,
+              "desc": "1: hold the line in break",
+              "kind": "RW"
+            },
+            {
+              "name": "TX_RESET",
+              "lsb": 12,
+              "width": 1,
+              "desc": "1: reset the transmitter and the TX FIFO",
+              "kind": "PULSE"
+            }
+          ]
+        },
+        {
+          "name": "PHY_CTRL",
+          "offset": "0x00000010",
+          "access": "RW",
+          "reset": "0x000000C2",
+          "desc": "Line interface control (applied when TX is idle)",
+          "fields": [
+            {
+              "name": "DE_MODE",
+              "lsb": 0,
+              "width": 2,
+              "desc": "Transceiver driver enable",
+              "kind": "RW",
+              "values": [
+                {
+                  "value": "0x0",
+                  "read": "DE low (RS-232 / TTL)",
+                  "write": "Driver off"
+                },
+                {
+                  "value": "0x1",
+                  "read": "DE high (RS-422)",
+                  "write": "Driver always on"
+                },
+                {
+                  "value": "0x2",
+                  "read": "DE while transmitting (RS-485)",
+                  "write": "Driver on while transmitting"
+                }
+              ],
+              "fmt": "enum"
+            },
+            {
+              "name": "HALF",
+              "lsb": 2,
+              "width": 1,
+              "desc": "Half duplex: receiver off while driving",
+              "kind": "RW"
+            },
+            {
+              "name": "ECHO",
+              "lsb": 3,
+              "width": 1,
+              "desc": "Keep the receiver on while driving (HALF only)",
+              "kind": "RW"
+            },
+            {
+              "name": "TX_INV",
+              "lsb": 4,
+              "width": 1,
+              "desc": "Invert the TX line",
+              "kind": "RW"
+            },
+            {
+              "name": "RX_INV",
+              "lsb": 5,
+              "width": 1,
+              "desc": "Invert the RX line",
+              "kind": "RW"
+            },
+            {
+              "name": "TX_EN",
+              "lsb": 6,
+              "width": 1,
+              "desc": "Transmitter enable",
+              "kind": "RW"
+            },
+            {
+              "name": "RX_EN",
+              "lsb": 7,
+              "width": 1,
+              "desc": "Receiver enable",
+              "kind": "RW"
+            },
+            {
+              "name": "APPLY_NOW",
+              "lsb": 31,
+              "width": 1,
+              "desc": "Apply now even if TX is busy",
+              "kind": "PULSE"
+            }
+          ]
+        },
+        {
+          "name": "PHY_TIMING",
+          "offset": "0x00000014",
+          "access": "RW",
+          "reset": "0x00FA0032",
+          "desc": "Driver enable timing in ACLK cycles",
+          "fields": [
+            {
+              "name": "LEAD",
+              "lsb": 0,
+              "width": 16,
+              "desc": "DE on -> start bit",
+              "kind": "RW",
+              "fmt": "udec"
+            },
+            {
+              "name": "TAIL",
+              "lsb": 16,
+              "width": 16,
+              "desc": "End of stop bit -> DE off",
+              "kind": "RW",
+              "fmt": "udec"
+            }
+          ]
+        },
+        {
+          "name": "PHY_STATUS",
+          "offset": "0x00000018",
+          "access": "RW",
+          "reset": "0x0000000F",
+          "desc": "Capabilities and live line state",
+          "fields": [
+            {
+              "name": "HAS_TX",
+              "lsb": 0,
+              "width": 1,
+              "desc": "Transmitter present",
+              "kind": "RO"
+            },
+            {
+              "name": "HAS_RX",
+              "lsb": 1,
+              "width": 1,
+              "desc": "Receiver present",
+              "kind": "RO"
+            },
+            {
+              "name": "HAS_DE",
+              "lsb": 2,
+              "width": 1,
+              "desc": "DE pin present",
+              "kind": "RO"
+            },
+            {
+              "name": "HAS_RE",
+              "lsb": 3,
+              "width": 1,
+              "desc": "/RE pin present",
+              "kind": "RO"
+            },
+            {
+              "name": "HAS_FLOW",
+              "lsb": 4,
+              "width": 1,
+              "desc": "RTS/CTS pins present",
+              "kind": "RO"
+            },
+            {
+              "name": "DRIVING",
+              "lsb": 8,
+              "width": 1,
+              "desc": "DE sequence active",
+              "kind": "RO"
+            },
+            {
+              "name": "DE",
+              "lsb": 9,
+              "width": 1,
+              "desc": "DE pin",
+              "kind": "RO"
+            },
+            {
+              "name": "RE_N",
+              "lsb": 10,
+              "width": 1,
+              "desc": "/RE pin",
+              "kind": "RO"
+            },
+            {
+              "name": "PENDING",
+              "lsb": 11,
+              "width": 1,
+              "desc": "New settings waiting for TX idle",
+              "kind": "RO"
+            },
+            {
+              "name": "CFG_ERR",
+              "lsb": 12,
+              "width": 1,
+              "desc": "An unsupported setting was written; write 1 to clear",
+              "kind": "W1C"
+            }
+          ]
+        }
+      ],
+      "source": "UART PHY",
+      "version": "2.0.0",
+      "panel": "axiluart_phy"
+    }
+  ],
+  "instances": [
+    {
+      "name": "UART0",
+      "ip": "axiluart_phy",
+      "base": "0x60001000",
+      "fixed": true
+    }
+  ]
+}

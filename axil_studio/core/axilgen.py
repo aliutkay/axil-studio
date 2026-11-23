@@ -221,13 +221,15 @@ class ModuleSpec:
     version: str = "1.0.0"  # IP version (written into the generated files and the IP library)
     unplaced: List[FieldSpec] = field(default_factory=list)   # bit fields not in a register yet
                             # (e.g. imported from the ports of the IP core); not part of the HDL
+    panel: str = ""         # IP interface (axil_studio.panels id); "" = none
 
     # -------------------------------------------------------------- persistence
     def to_dict(self):
         return {"format": SPEC_FORMAT, "version": 1, "module": self.module,
                 "desc": self.desc, "packed": self.packed, "ip_version": self.version,
                 "registers": [r.to_dict() for r in sorted(self.registers, key=lambda r: r.offset)],
-                **({"unplaced": [f.to_dict() for f in self.unplaced]} if self.unplaced else {})}
+                **({"unplaced": [f.to_dict() for f in self.unplaced]} if self.unplaced else {}),
+                **({"panel": self.panel} if self.panel else {})}
 
     @staticmethod
     def from_dict(d):
@@ -237,7 +239,7 @@ class ModuleSpec:
         return ModuleSpec(d.get("module", "my_ip_axil"), d.get("desc", ""),
                           [RegSpec.from_dict(r) for r in d.get("registers", [])],
                           bool(d.get("packed", True)), str(d.get("ip_version", "1.0.0")),
-                          [FieldSpec.from_dict(f) for f in d.get("unplaced", [])])
+                          [FieldSpec.from_dict(f) for f in d.get("unplaced", [])], str(d.get("panel", "")))
 
     def save(self, path):
         write_json(path, self.to_dict(), ensure_ascii=True)
@@ -753,7 +755,7 @@ def to_ipblock(spec: ModuleSpec, base=0, with_spec=False):
                   for f in sorted(r.fields, key=lambda f: f.lsb)]
         regs.append(Register(r.name, r.offset, r.access, r.reset_value, r.desc, fields))
     return IPBlock(spec.module, base, spec.desc, regs, version=spec.version,
-                   regspec=spec.to_dict() if with_spec else None)
+                   regspec=spec.to_dict() if with_spec else None, panel=spec.panel)
 
 
 # register access -> field kind for register maps written without kinds (e.g. hand-made projects)
@@ -766,6 +768,7 @@ def spec_from_ipblock(ip):
     if getattr(ip, "regspec", None):
         spec = ModuleSpec.from_dict(ip.regspec)
         spec.module, spec.version = ip.name, ip.version or spec.version
+        spec.panel = spec.panel or getattr(ip, "panel", "")
         return spec
     regs = []
     for r in sorted(ip.registers, key=lambda r: r.offset):
@@ -778,7 +781,7 @@ def spec_from_ipblock(ip):
         if not fields:
             fields.append(FieldSpec(r.name, 0, 32, _ACCESS_KIND.get(r.access, "RW"), r.reset if r.access == "RW" else 0))
         regs.append(RegSpec(r.name, r.offset, r.desc, fields=fields))
-    return ModuleSpec(ip.name, ip.desc, regs, True, ip.version or "1.0.0")
+    return ModuleSpec(ip.name, ip.desc, regs, True, ip.version or "1.0.0", panel=getattr(ip, "panel", ""))
 
 
 def add_to_project(spec: ModuleSpec, path, replace=True, base=None):

@@ -6,7 +6,11 @@ register spec, another project file or an IP library, and any address can be acc
 Register maps and project addresses are not edited here: the Register Map Editor and the
 Address Map Editor open for that. Every bit field gets an input that matches its data type and kind: a number box
 in the field's format, a switch for booleans, a list for defined values, a button for PULSE
-commands and for clearing W1C flags. The live UART terminal is not part of this tool yet.
+commands and for clearing W1C flags.
+
+An IP whose register map names an IP interface (IPBlock.panel, e.g. the UART interface of
+axiluart_phy) opens it from here: the interface works through this page's connection and request
+queue (see axil_studio.panels).
 """
 
 import collections
@@ -27,6 +31,7 @@ from axil_studio.core import axilgen as G
 from axil_studio.core import hexbus
 from axil_studio.core import numfmt as N
 from axil_studio import ROOT, icons, theme, ui
+from axil_studio import panels
 from axil_studio.dialogs import BaseDialog, CustomValueDialog, FieldMapDialog
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import KIND_READS, KIND_WRITES
@@ -58,6 +63,7 @@ class DebugBridgePage(ToolPage):
     icon_name = "debug"
 
     _log = Signal(str, str)
+    connection_changed = Signal(bool)       # for IP interfaces
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
@@ -78,6 +84,9 @@ class DebugBridgePage(ToolPage):
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self._poll)
         self._loading = False
+        self._panels = {}             # (group, ip name) -> open IP interface window
+        self._exclusive = None        # IP interface holding the link (hardware validation)
+        self._was_connected = False
 
         # ---- connection bar
         conn = ui.Card(margins=12)
@@ -123,6 +132,7 @@ class DebugBridgePage(ToolPage):
         hdr.setSectionResizeMode(1, QHeaderView.ResizeMode.ResizeToContents)
         hdr.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.tree.currentItemChanged.connect(self._select)
+        self.tree.itemDoubleClicked.connect(self._tree_double_click)
         self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.tree.customContextMenuRequested.connect(self._tree_menu)
         left.lay.addWidget(self.tree, 1)
@@ -159,6 +169,10 @@ class DebugBridgePage(ToolPage):
         col.addWidget(self.reg_title)
         col.addWidget(self.reg_desc)
         top.addLayout(col, 1)
+        self.panel_btn = ui.button(tr("IP interface"), "external", None, self.open_panel,
+                                   tr("Open the IP's own interface (it uses this connection)"))
+        self.panel_btn.hide()
+        top.addWidget(self.panel_btn, 0, Qt.AlignmentFlag.AlignTop)
         self.access_pill = ui.Pill("")
         self.access_pill.hide()
         top.addWidget(self.access_pill, 0, Qt.AlignmentFlag.AlignTop)
@@ -185,7 +199,7 @@ class DebugBridgePage(ToolPage):
         self.read_lbl.setMinimumWidth(100)
         self.read_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         vrow.addWidget(self.read_lbl)
-        self.read_btn = ui.button(tr("Read"), "read", None, self.read_reg, "F5")
+        self.read_btn = ui.button(tr("Read value"), "read", None, self.read_reg, "F5")
         vrow.addWidget(self.read_btn)
         vrow.addSpacing(16)
         vrow.addWidget(ui.label(tr("To write"), "muted"))
@@ -322,7 +336,10 @@ class DebugBridgePage(ToolPage):
 
     def _update_controls(self):
         on = self.link.connected
-        self.conn_btn.setEnabled(True)
+        if on != self._was_connected:
+            self._was_connected = on
+            self.connection_changed.emit(on)
+        self.conn_btn.setEnabled(self._exclusive is None)
         self.conn_btn.setText(tr("Disconnect") if on else tr("Connect"))
         self.conn_btn.setProperty("variant", None if on else "primary")
         theme.repolish(self.conn_btn)
@@ -335,8 +352,10 @@ class DebugBridgePage(ToolPage):
         else:
             self.conn_pill.set("● " + tr("Not connected"), "off")
         reg = self.reg
-        self.read_btn.setEnabled(bool(on and reg and reg.readable))
-        self.write_btn.setEnabled(bool(on and reg and reg.writable))
+        free = on and self._exclusive is None
+        self.read_btn.setEnabled(bool(free and reg and reg.readable))
+        self.write_btn.setEnabled(bool(free and reg and reg.writable))
+        self._update_panel_btn()
         self.value_ed.setEnabled(bool(reg and reg.writable))
         self.reset_btn.setEnabled(bool(reg and reg.writable))
         self.watch_btn.setEnabled(bool(reg and reg.readable))
@@ -420,6 +439,10 @@ class DebugBridgePage(ToolPage):
             top.setFont(0, bf)
             top.setToolTip(0, single_line(ip.desc))
             top.setData(0, ROLE, (group, ip.name, None))
+            info = panels.get(ip.panel)
+            if info is not None:
+                top.setIcon(0, icons.icon("external", "accent", 14))
+                top.setToolTip(0, single_line(ip.desc) + "\n" + tr("{0}: double-click to open").format(info.title))
             for reg in ip.registers:
                 it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
                 it.setFont(1, mono)
@@ -466,6 +489,7 @@ class DebugBridgePage(ToolPage):
         self.read_value = None
         self.staged = None
         self._show_register()
+        self._update_panel_btn()
 
     def on_project_modified(self):
         self._fill_tree()
@@ -928,6 +952,95 @@ class DebugBridgePage(ToolPage):
             self._set_extra([self.ip if x.name == self.ip.name else x for x in self._extra()])
             self.status(tr("Register map updated"))
 
+    # ================================================================ IP interfaces
+    def find_ip(self, group, name):
+        return self._find_ip(group, name)
+
+    def record(self, addr, value, source):
+        self._record(addr, value, source)
+
+    def _panel_info(self):
+        return panels.get(self.ip.panel) if self.ip is not None and self.group != "raw" else None
+
+    def _update_panel_btn(self):
+        info = self._panel_info()
+        self.panel_btn.setVisible(info is not None)
+        if info is not None:
+            self.panel_btn.setText(info.title)
+            self.panel_btn.setToolTip(info.desc + "\n" + tr("It uses this connection."))
+
+    def _tree_double_click(self, item, _col=0):
+        key = item.data(0, ROLE) if item else None
+        if key and key[2] is None and key[0] != "raw":
+            ip = self._find_ip(key[0], key[1])
+            if ip is not None and panels.get(ip.panel) is not None:
+                self.open_panel(key[0], key[1])
+
+    def open_panel(self, group=None, name=None):
+        """Open (or raise) the IP interface of an IP."""
+        if group is None:
+            if self.ip is None:
+                return
+            group, name = self.group, self.ip.name
+        ip = self._find_ip(group, name)
+        info = panels.get(ip.panel) if ip else None
+        if info is None:
+            return
+        w = self._panels.get((group, name))
+        try:
+            if w is not None and w.isVisible():
+                w.showNormal()
+                w.raise_()
+                w.activateWindow()
+                return w
+        except RuntimeError:          # deleted on close
+            pass
+        w = info.factory(self, group, name)
+        w.destroyed.connect(lambda *_, k=(group, name): self._panels.pop(k, None))
+        self._panels[(group, name)] = w
+        geo = self.window().geometry()
+        w.move(geo.left() + 80, geo.top() + 60)
+        w.show()
+        return w
+
+    def show_register(self, group, ip_name, reg_name=None):
+        """Select a register (or the IP) in the tree and bring this window to the front."""
+        it = self._find_item((group, ip_name, reg_name)) or self._find_item((group, ip_name, None))
+        if it is not None:
+            self.tree.setCurrentItem(it)
+            self.tree.scrollToItem(it)
+        self.rtabs.show_page(self.reg_card)
+        win = self.window()
+        win.showNormal()
+        win.raise_()
+        win.activateWindow()
+
+    def _find_item(self, key):
+        stack = [self.tree.topLevelItem(i) for i in range(self.tree.topLevelItemCount())]
+        while stack:
+            it = stack.pop()
+            data = it.data(0, ROLE)
+            if data is not None and tuple(data) == tuple(key):
+                return it
+            stack += [it.child(i) for i in range(it.childCount())]
+        return None
+
+    def set_exclusive(self, owner):
+        """An IP interface holds the link (None releases it): live watch stops, Connect and the
+        register panel's Read / Write are locked meanwhile."""
+        self._exclusive = owner
+        if owner is not None and self.poll_timer.isActive():
+            self.poll_timer.stop()
+            self._log.emit("INFO", tr("Live watch stopped: the UART interface is running a validation"))
+        self._update_controls()
+
+    def add_config_rows(self, rows):
+        """rows: (group, ip, register, value); shown in the Config tab."""
+        for group, ipn, regn, value in rows:
+            self.config.append({"key": (group, ipn, regn), "value": value & 0xFFFFFFFF})
+        self._fill_config(len(self.config) - 1, rebuild=True)
+        self.rtabs.show_page(self.cfg_tab)
+
     # ================================================================ tree menu
     def _cur_key(self):
         if self.reg is None:
@@ -953,6 +1066,10 @@ class DebugBridgePage(ToolPage):
             return
         m = QMenu(self)
         ip = self._find_ip(key[0], key[1])
+        info = panels.get(ip.panel) if ip else None
+        if info is not None:
+            m.addAction(tr("Open {0}…").format(info.title), lambda: self.open_panel(key[0], key[1]))
+            m.addSeparator()
         if key[2] is None and ip:
             regs = [(key[0], ip.name, r.name) for r in ip.registers if r.readable]
             m.addAction(tr("Watch all its registers ({0})").format(len(regs)), lambda: self.add_watch(regs))
@@ -1227,7 +1344,7 @@ class DebugBridgePage(ToolPage):
     def toggle_poll(self):
         if self.poll_timer.isActive():
             self.poll_timer.stop()
-        elif self.link.connected and self.watch:
+        elif self.link.connected and self.watch and self._exclusive is None:
             self.poll_timer.start(self.period_sp.value())
             self._poll()
         self._update_watch_controls()
@@ -1240,13 +1357,13 @@ class DebugBridgePage(ToolPage):
             self.poll_timer.stop()
             running = False
         self.poll_btn.setText(tr("Stop") if running else tr("Start"))
-        self.poll_btn.setEnabled(self.link.connected and bool(self.watch))
+        self.poll_btn.setEnabled(self.link.connected and bool(self.watch) and self._exclusive is None)
         n = len(self.watch)
         self.watch_info.setText((tr("{0} registers · every {1} ms").format(n, self.period_sp.value()) if running else tr("{0} registers").format(n))
                                 if n else tr("Add with the Watch button on the Register tab or by right-clicking the tree"))
 
     def _poll(self):
-        if self._polling or not self.link.connected or not self.watch:
+        if self._polling or not self.link.connected or not self.watch or self._exclusive is not None:
             return
         targets = []
         for w in self.watch:
@@ -1579,6 +1696,12 @@ class DebugBridgePage(ToolPage):
             self._fill_fields()
 
     def shutdown(self):
+        for w in list(self._panels.values()):
+            try:
+                w.cancel.set() if getattr(w, "validating", False) else None
+                w.close()
+            except RuntimeError:
+                pass
         self.poll_timer.stop()
         self.link.close()
         self.bus.shutdown()

@@ -1,0 +1,17 @@
+{
+  "format": "axil-uart-config",
+  "version": 1,
+  "description": "rs485_4wire_slave",
+  "writes": [
+    {
+      "ip": "UART0",
+      "register": "PHY_TIMING",
+      "value": "0x00FA0032"
+    },
+    {
+      "ip": "UART0",
+      "register": "PHY_CTRL",
+      "value": "0x000000C2"
+    }
+  ]
+}

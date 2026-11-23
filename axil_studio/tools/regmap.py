@@ -892,6 +892,14 @@ class RegMapEditorPage(ToolPage):
         drow.addWidget(self.desc_lbl, 1)
         drow.addWidget(small_button(tr("Edit…"), self.edit_desc, tr("Edit the IP description")))
         form.addRow(tr("Description"), drow)
+        from axil_studio import panels
+        self.panel_cb = QComboBox()
+        self.panel_cb.addItem(tr("None"), "")
+        for info in panels.available():
+            self.panel_cb.addItem(info.title, info.id)
+            self.panel_cb.setItemData(self.panel_cb.count() - 1, info.desc, Qt.ItemDataRole.ToolTipRole)
+        self.panel_cb.setToolTip(tr("The IP's own interface (Python), opened from the UART-to-AXI Debug Bridge"))
+        form.addRow(tr("IP interface"), self.panel_cb)
         ipcard.lay.addLayout(form)
         left_lay.addWidget(ipcard)
 
@@ -1044,6 +1052,7 @@ class RegMapEditorPage(ToolPage):
 
         self.name_ed.textEdited.connect(self._form_changed)
         self.version_ed.textEdited.connect(self._form_changed)
+        self.panel_cb.currentIndexChanged.connect(self._form_changed)
         QShortcut(QKeySequence("Ctrl+R"), self, self.add_reg)
         QShortcut(QKeySequence("Ctrl+K"), self, lambda: (self.search_ed.setFocus(), self.search_ed.selectAll()))
         QShortcut(QKeySequence("Ctrl+F"), self, lambda: self.add_field())
@@ -1168,6 +1177,11 @@ class RegMapEditorPage(ToolPage):
         self.search_ed.blockSignals(False)
         self.name_ed.setText(self.spec.module)
         self.version_ed.setText(self.spec.version)
+        i = self.panel_cb.findData(self.spec.panel or "")
+        if i < 0:                       # an interface this installation does not have: keep it
+            self.panel_cb.addItem(self.spec.panel, self.spec.panel)
+            i = self.panel_cb.count() - 1
+        self.panel_cb.setCurrentIndex(i)
         self._show_desc()
         self._loading = False
         self._show_origin()
@@ -1180,6 +1194,7 @@ class RegMapEditorPage(ToolPage):
             return
         self.spec.module = self.name_ed.text().strip()
         self.spec.version = self.version_ed.text().strip()
+        self.spec.panel = self.panel_cb.currentData() or ""
         self._refresh_fields(self._selected_field_name())
         self._mark()
 

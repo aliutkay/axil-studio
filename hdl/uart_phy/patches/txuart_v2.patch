@@ -1,0 +1,49 @@
+--- a/txuart.v
++++ b/txuart_v2.v
+@@ -1,6 +1,7 @@
+ ////////////////////////////////////////////////////////////////////////////////
+ //
+-// Filename: 	txuart.v
++// Filename:	txuart_v2.v (from ZipCPU wbuart32 txuart.v, parity polarity fixed)
++// Original 	txuart.v
+ // {{{
+ // Project:	wbuart32, a full featured UART with simulator
+ //
+@@ -96,7 +97,7 @@
+ `default_nettype	none
+ //
+ // }}}
+-module txuart #(
++module txuart_v2 #(
+ 		// {{{
+ 		parameter	[30:0]	INITIAL_SETUP = 31'd868,
+ 		//
+@@ -328,10 +329,15 @@
+ 	// parity is fixed, then the parity bit is given by the fixed parity
+ 	// value (r_setup[24]).  Otherwise the parity is given by the GF2
+ 	// sum of all the data bits (plus one for even parity).
++	// v2: the original seeded calc_parity with i_setup[24] (1 = even),
++	// which produced odd parity for "even" and vice versa, contrary to
++	// the header and spec.tex (101 = even, 100 = odd) and to rxuart.
++	// Even parity is the XOR of the data bits, so the seed is ~bit 24.
++	// NOTE: the FORMAL properties below still describe the original seed.
+ 	initial	calc_parity = 1'b0;
+ 	always @(posedge i_clk)
+ 	if (!o_busy)
+-		calc_parity <= i_setup[24];
++		calc_parity <= !i_setup[24];
+ 	else if (fixd_parity)
+ 		calc_parity <= fixdp_value;
+ 	else if (zero_baud_counter)
+@@ -339,9 +345,9 @@
+ 		if (state[3] == 0) // First 8 bits of msg
+ 			calc_parity <= calc_parity ^ lcl_data[0];
+ 		else if (state == TXU_IDLE)
+-			calc_parity <= parity_odd;
++			calc_parity <= !parity_odd;
+ 	end else if (!r_busy)
+-		calc_parity <= parity_odd;
++		calc_parity <= !parity_odd;
+ 	// }}}
+ 
+ 	// baud_counter, zero_baud_counter

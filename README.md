@@ -10,7 +10,7 @@ görünüm, açık/koyu tema):
 | **Slave Interface Wrapper** | Register haritasından AXI4-Lite slave üretimi: sentezlenebilir Verilog, kendini denetleyen testbench, C header ve register dokümanı; hazır modüller için HDL Designer wrapper'ları |
 | **Address Map Editor** | Sistem adres haritası: bus hiyerarşisinde IP örnekleri, harici slave'ler ve alt sistemler; otomatik / sabit taban adres, pencere boyutlandırma, hizalama ve çakışma denetimi, Excel'e aktarma |
 | **Interconnect Configurator** | Adres haritasındaki her bus için crossbar yapılandırması (master'lar, modül adları, port stili), sistem ve crossbar blok diyagramları, ZipCPU axilxbar wrapper'ları |
-| **UART-to-AXI Debug Bridge** | UART hexbus köprüsü üzerinden donanımda register erişimi: çözümlenmiş register görünümleri, periyodik okuma, yerleşik simülatör |
+| **UART-to-AXI Debug Bridge** | UART hexbus köprüsü üzerinden donanımda register erişimi: çözümlenmiş register görünümleri, periyodik okuma, yerleşik simülatör; kendi arayüzü olan IP'ler için **IP arayüzü** (ör. axiluart_phy'nin UART arayüzü) |
 | **IP Library** | Proje ve paylaşılan IP kütüphaneleri için IP yönetimi: sürümlü IP'ler, adres haritasındaki örnekleri, projeler ile kütüphaneler arasında aktarım |
 
 Ana pencere bir başlatıcıdır; her araç kendi penceresinde açılır (Ctrl+1 … Ctrl+6). Araç pencerelerinin üstünde tek
@@ -60,7 +60,8 @@ dosyaları açılırken IP'ler ve interconnect slave listesi otomatik olarak IP 
 
 ## Register Map Editor
 
-- Solda **IP** paneli (ad, sürüm, açıklama — açıklama *Düzenle…* ile ayrı pencerede yazılır) ve **Registerlar**
+- Solda **IP** paneli (ad, sürüm, açıklama — açıklama *Düzenle…* ile ayrı pencerede yazılır; **IP arayüzü**: IP'nin
+  Debug Bridge'den açılan kendi Python arayüzü, ör. *UART arayüzü*) ve **Registerlar**
   paneli (arama kutusu: register ya da bit alanı adı / açıklaması; bit alanında bulunanlar register satırında
   gösterilir ve alan listesinde vurgulanır, Ctrl+K). Listelerin sonunda bırakma için boş alan vardır.
 - Sağda 32 bitlik alan haritası (boş bite çift tık yeni alan
@@ -330,7 +331,31 @@ HDL Designer'da: hexbus `MASTER_AXI_REQ/RSP` ↔ xbar `_pk` `MASTER0_AXI_REQ/RSP
 - Sağ tarafta üstte sekmeler: **Register**, **Canlı izleme**, **Config**; **Trafik** altta, yüksekliği ayarlanabilir. Hangi ekrandan okunursa okunsun (register paneli, canlı izleme, config) son okunan değer ve saati her ekranda gösterilir.
 - **Canlı izleme**: İzle düğmesi ya da ağaçta sağ tık ile eklenen registerlar seçilen periyotta (ms) okunur; değişen değerler vurgulanır. Register satırına tıklayınca bit alanları alt satırlarda değer ve anlamlarıyla açılır. Seçili registerın **geçmişi** (milisaniye zaman damgalı her okuma ya da yalnızca değişimler, değişen bit alanlarıyla) altta listelenir; tüm kayıt **CSV'ye aktar** ile dışa alınır.
 - **Config**: Config'e ekle ile register panelindeki yazılacak değer listeye eklenir; satıra çift tıklayınca bit alanlarıyla düzenlenip güncellenir. Satıra tıklayınca bit alanları açılır; *Cihazda* sütunu son okunan değeri gösterir, config'ten farklı alanlar kırmızıdır. Sıralama, Cihazdan oku, Karşılaştır, Cihaza gönder (sırayla yazar ve geri okur), `.axcfg.json` aç / kaydet.
-- UART terminali sonraki sürümlerde eklenecek.
+- **IP arayüzü:** register haritasında bir arayüz adı taşıyan IP'ler (Register Map Editor → *IP arayüzü*; kütüphanede ve
+  projede IP ile birlikte saklanır) ağaçta simgeyle görünür. IP seçilince register panelinin üstünde arayüzün düğmesi çıkar;
+  IP'ye çift tık ya da sağ tık → *… aç* da açar. Arayüz Debug Bridge'in **aynı bağlantısını ve istek kuyruğunu** kullanır
+  (port ikinci kez açılmaz), okuduğu değerler Debug Bridge'in ekranlarına ve trafik günlüğüne düşer, *Debug Bridge'de göster*
+  ile aynı IP'nin register görünümüne dönülür. Arayüzler `axil_studio/panels/` altındadır (`panels.register(PanelInfo(...))`).
+
+### UART arayüzü (axiluart_phy)
+
+`hdl/uart_phy` altındaki axiluart_phy IP'sinin arayüzü; IP `examples/uart_phy/uart_phy.axlib.json` kütüphanesinde,
+örnek proje `examples/uart_phy/uart_phy_demo.axproj.json`. Üstte ACLK frekansı (baud bölücüleri ve DE zamanlaması
+buna göre hesaplanır; projede saklanır).
+
+- **Hat ayarları:** baud, veri biti, parity, stop biti ve RTS/CTS → SETUP (bölücü ve gerçek baud hatası gösterilir);
+  hat tipi (TTL / RS-232, RS-422, RS-485 4 telli, 2 telli, echo'lu), DE modu, half duplex, echo, polarite, TX/RX açık,
+  DE lead / tail (µs; tail istenirse 1 bit süresi) → PHY_CTRL / PHY_TIMING. Durum: PHY_STATUS pinleri ve hat durumu,
+  CFG_ERR, RX/TX FIFO doluluğu; CFG_ERR temizle, RX / TX reset. Ön ayarlar Debug Bridge config dosyalarıdır
+  (`.axcfg.json`): forma yüklenir, formdan kaydedilir ya da Debug Bridge config listesine eklenir.
+- **Terminal:** ASCII / HEX gönderme (sonuna CR, LF ya da CR+LF; `\r \n \t \xNN` kaçışları; ↑ ↓ geçmiş; dosya gönderme),
+  RXREG'in periyodik okunmasıyla alım; ASCII, HEX ya da ASCII+HEX gösterim, RX satır sonu seçimi, zaman damgası.
+  Parity / frame hatasıyla gelen byte'lar kırmızı zeminle işaretlenir; break ve overflow ayrıca bildirilir.
+- **Doğrulama:** aşağıdaki donanım testlerinin arayüzü. Hat adaptörü portu (ya da loopback), test edilen hat, test
+  matrisi ya da DE lead / tail taraması seçilir; **Başlat** ile testler arka planda çalışır, sonuçlar canlı tabloya ve
+  günlüğe düşer, **Durdur** testi keser. Çalışırken Debug Bridge'in canlı izlemesi durur ve bağlantısı kilitlenir; test
+  bitince (durdurulsa da) kartın register'ları eski değerlerine döner. Ayarlar ve rapor JSON olarak kaydedilir; ayar
+  dosyası komut satırıyla aynıdır.
 
 
 ## IP Library
@@ -459,10 +484,11 @@ commit'in yanında görünür.
 | `studio.py` | Başlatıcı (`python studio.py`) |
 | `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py`; `history.py` (geri al / yinele), `errors.py` (hata yakalayıcı ve log) |
 | `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
+| `axil_studio/panels/` | IP arayüzleri (Debug Bridge'den açılır): kayıt sistemi (`__init__.py`), UART arayüzü (`uart_phy_panel.py`) |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
-| `scripts/` | Komut satırı araçları: `uart_validate.py` (+ `uart_validate_sim.py`), `i18n_check.py` (çeviri denetimi), `bump_version.py` |
-| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri |
-| `examples/` | Örnek GPIO projesi ve config dosyaları |
+| `scripts/` | Komut satırı araçları: `uart_validate.py` (donanım doğrulama, `axil_studio/core/uart_validate.py`'yi çalıştırır), `i18n_check.py` (çeviri denetimi), `bump_version.py` |
+| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`) |
+| `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 | `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |
 | `axil_studio/assets/` | Uygulama simgesi (`axil_studio.svg`; kurulum paketleri için `.png` ve `.ico`) |
@@ -484,18 +510,21 @@ commit'in yanında görünür.
 | `regmap_xlsx.py` | Kütük haritası Excel çıktısı |
 | `numfmt.py` | Bit alanı veri tipleri ve gösterimleri |
 | `portparse.py` | Verilog / SystemVerilog / VHDL port listesi çözümleyici (Port içe aktar) |
+| `uart_phy.py` | axiluart_phy: register yerleşimi, karakter formatı, hat tipleri, SETUP / PHY_CTRL / PHY_TIMING hesapları, terminal ayrıştırıcıları, register haritası |
+| `uart_validate.py` | axiluart_phy donanım doğrulaması (UART arayüzünün Doğrulama sekmesi ve komut satırı: `python -m axil_studio.core.uart_validate`) |
 
 Hexbus notları: her işlem `A<adres|1>W<veri>\n` veya `A<adres|1>R\n` olarak gönderilir (adres artırma kapalı);
 yanıtlar `A` adres, `K` yazma onayı, `R` okuma verisi, `E` AXI bus hatası, `Z` idle. Hexbus'ta FIFO yoktur;
 her isteğin yanıtı beklenerek sıralı çalışılır.
 
-## Donanım doğrulama (`scripts/uart_validate.py`)
+## Donanım doğrulama (axiluart_phy)
+
+UART arayüzünün **Doğrulama** sekmesi ile aynı testler komut satırından da çalışır:
 ```
 python scripts/uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-python scripts/uart_validate.py --config examples/bench_rs485_4w.json          # ayarlar dosyadan
+python scripts/uart_validate.py --config examples/uart_phy/bench_rs485_4w.json   # ayarlar dosyadan
 python scripts/uart_validate.py --config bench.json --bauds 460800,921600      # komut satırı dosyayı ezer
 python scripts/uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json   # ayarları kaydet
-python scripts/uart_validate.py --simulate                                     # donanımsız deneme
 ```
 Hat ayarları (PHY_CTRL / PHY_TIMING) testten önce script tarafından yazılır, kartta o an
 yazılı olan değerler kullanılmaz. Test bitince kartın register'ları eski hâline döner.
@@ -506,7 +535,7 @@ yazılı olan değerler kullanılmaz. Test bitince kartın register'ları eski h
 | `--hexbus`, `--line` | Hexbus debug portu, UART hattındaki PC adaptörü |
 | `--loopback` | Adaptör yok, UART TX kendi RX'ine bağlı |
 | `--base`, `--clk` | UART base adresi, ACLK frekansı (varsayılan 0x80000000, 50 MHz) |
-| `--line-type` | `ttl`, `rs232` (DE 0), `rs422` (DE 1), `rs485-4w` (DE gönderirken), `rs485-2w` (DE gönderirken + half duplex, echo testleri) |
+| `--line-type` | `ttl`, `rs232` (DE 0), `rs422` (DE 1), `rs485-4w` (DE gönderirken), `rs485-2w` (DE gönderirken + half duplex, echo testleri), `rs485-2w-echo` (aynısı, echo açık) |
 | `--de` | Hat tipinin DE modunu ez: `low`, `high`, `tx` |
 | `--lead-us` | DE açılması → start biti, µs (varsayılan 10; transceiver tZH'nin en az 2 katı) |
 | `--tail-us` | Stop biti → DE kapanması, µs ya da `auto` = her baud'da 1 bit süresi (varsayılan) |

@@ -31,6 +31,13 @@ LIB_FILTER = tr("IP library (*.axlib.json);;JSON (*.json);;All files (*)")
 ROLE = Qt.ItemDataRole.UserRole
 
 
+def _panel_note(ip):
+    """Tooltip line for an IP that has its own interface."""
+    from axil_studio import panels
+    info = panels.get(getattr(ip, "panel", ""))
+    return "\n" + tr("IP interface: {0} (UART-to-AXI Debug Bridge)").format(info.title) if info else ""
+
+
 class IPLibraryPage(ToolPage):
     tool_id = "library"
     title = "IP Library"
@@ -173,7 +180,7 @@ class IPLibraryPage(ToolPage):
             bf = top.font(0)
             bf.setBold(True)
             top.setFont(0, bf)
-            top.setToolTip(0, single_line(ip.desc))
+            top.setToolTip(0, single_line(ip.desc) + _panel_note(ip))
             if not insts:
                 top.setForeground(2, muted)
             if not ip.source:
@@ -218,7 +225,8 @@ class IPLibraryPage(ToolPage):
                                           f"{e.version}" + (tr("  ({0} versions)").format(len(versions)) if k == 0 and len(versions) > 1
                                                             else "")])
                     it.setData(0, ROLE, ("lib", lib, e))
-                    it.setToolTip(0, single_line(e.ip.desc) + (tr("\nHas a register spec") if e.regspec else ""))
+                    it.setToolTip(0, single_line(e.ip.desc) + (tr("\nHas a register spec") if e.regspec else "")
+                                  + _panel_note(e.ip))
                     if k == 0:
                         top.addChild(it)
                         parent = it

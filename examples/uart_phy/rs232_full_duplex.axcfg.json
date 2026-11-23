@@ -1,0 +1,17 @@
+{
+  "format": "axil-uart-config",
+  "version": 1,
+  "description": "rs232_full_duplex",
+  "writes": [
+    {
+      "ip": "UART0",
+      "register": "PHY_TIMING",
+      "value": "0x00000000"
+    },
+    {
+      "ip": "UART0",
+      "register": "PHY_CTRL",
+      "value": "0x000000C0"
+    }
+  ]
+}
