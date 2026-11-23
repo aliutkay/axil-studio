@@ -11,6 +11,20 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.30 — cmd_seq: indeksli D-mem, DMEM_AW düzeltmesi
+
+- **Indeksli D-mem:** `LDD Ra, D[n+Rb]`, `STD D[n+Rb], Ra`, `RD D[n+Rx], [Rb+imm]`. İndeks çalışma anında
+  denetleniyor; D-mem dışına çıkarsa hata 7. Dizi doldurma ve kanal tarama artık döngüyle yazılabiliyor.
+- **Düzeltme:** `DMEM_AW > 8` iken D indeksi 8 bitlik alanın dışındaki bitleri seçiyordu (simülasyonda X). Artık
+  sıfırla genişletiliyor; 256'dan sonraki kelimelere indeksle ya da master'dan erişiliyor.
+- `SEL_LSB` parametresi kaldırıldı: kendi pencere çözümü yalnızca 16 ile çalışıyordu. Kendi pencere 64 KB sabit.
+- README notları:
+  - SNAP_EN = 1 iken master'ın D-mem yazmaları yayın bankına gidiyor (parametreleri SNAP_EN = 0 iken yazın);
+  - AW ve W kanalları birlikte kabul ediliyor;
+  - yalnızca 32 bit yazma destekleniyor;
+  - `CTRL = 0x51` açılımı.
+- Testler: rastgele üreticide indeksli erişim, yönlendirilmiş testte `index.s`. Formal ispatlar yeniden geçti.
+
 ## early-alpha 0.1.28 — Komut sıralayıcı alt sistem türü
 
 - **Alt sistem türü:** alt sistem eklerken / düzenlerken *Slave grubu* ya da *Komut sıralayıcı (cmd_seq)*

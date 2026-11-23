@@ -14,7 +14,6 @@
 
 module cmd_seq_core_abs #(
     parameter [7:0] SELF_ID     = 8'h00,
-    parameter       SEL_LSB     = 16,
     parameter       IMEM_AW     = 9,
     parameter       DMEM_AW     = 8,
     parameter       BUS_TIMEOUT = 1024
@@ -49,6 +48,7 @@ module cmd_seq_core_abs #(
     output wire                 snap_p, irq_p, done_p, err_p,
     output wire [16*32-1:0]     regs_o
 );
+    localparam SEL_LSB = 16;
     (* anyseq *) wire [IMEM_AW-1:0] a_imem_addr;
     (* anyseq *) wire [DMEM_AW-1:0] a_d_addr;
     (* anyseq *) wire               a_d_we;

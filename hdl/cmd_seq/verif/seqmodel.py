@@ -133,7 +133,11 @@ class Seq:
         a = self.R[ra]
         b = imm if mod & 1 else self.R[rb]
         last = (1 << self.imem_aw) - 1
-        d_ok = d < (1 << self.dmem_aw)
+        if mod & 1:                                  # indexed: D + R[RA] (RD) or D + R[RB]
+            didx = d + (self.R[ra] if op == A.OPS["RD"] else self.R[rb])
+        else:
+            didx = d
+        d_ok = didx < (1 << self.dmem_aw)
         tgt_ok = imm < (1 << self.imem_aw)
         name = A.OPNAME.get(op)
 
@@ -147,7 +151,7 @@ class Seq:
         elif name in ("WR", "RD"):
             addr = (self.R[rb] + imm) & M32
             if name == "RD" and mod & 2 and not d_ok:
-                self._fail(A.E_ILLEGAL)
+                self._fail(A.E_DIDX)
             elif ((addr >> self.sel_lsb) & 0xFF) == self.self_id:
                 self.err_addr = addr
                 self._fail(A.E_SELF)
@@ -163,7 +167,7 @@ class Seq:
                 else:
                     if name == "RD":
                         if mod & 2:
-                            self.dmem[self._work_bank()][d] = data
+                            self.dmem[self._work_bank()][didx] = data
                         else:
                             self._setr(ra, data)
                     self._advance()
@@ -175,15 +179,15 @@ class Seq:
             self._advance()
         elif name == "LDD":
             if not d_ok:
-                self._fail(A.E_ILLEGAL)
+                self._fail(A.E_DIDX)
             else:
-                self._setr(ra, self.dmem[self._work_bank()][d])
+                self._setr(ra, self.dmem[self._work_bank()][didx])
                 self._advance()
         elif name == "STD":
             if not d_ok:
-                self._fail(A.E_ILLEGAL)
+                self._fail(A.E_DIDX)
             else:
-                self.dmem[self._work_bank()][d] = a
+                self.dmem[self._work_bank()][didx] = a
                 self._advance()
         elif name in A.ALU:
             if name == "ADD":

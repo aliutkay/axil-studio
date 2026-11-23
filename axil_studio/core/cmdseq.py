@@ -22,7 +22,8 @@ LIMITS = {"IMEM_AW": (1, 16), "DMEM_AW": (1, 13), "PT_TIMEOUT": (2, 0xFFFFFF), "
 D_REGS = 16                      # D-mem words shown in the register map (the interface shows all)
 
 ERR_CODES = {1: "illegal instruction", 2: "bus error response", 3: "access to the own window",
-             4: "call stack overflow / underflow", 5: "bus timeout", 6: "PC outside I-mem"}
+             4: "call stack overflow / underflow", 5: "bus timeout", 6: "PC outside I-mem",
+             7: "D-mem index out of range"}
 
 
 def settings(inst):
@@ -138,7 +139,6 @@ def instance_template(inst, project=None):
         "// Files: hdl/cmd_seq/rtl/cmd_seq.v, cmd_seq_core.v (HDL Designer: hdl/cmd_seq_pk.v).",
         "cmd_seq #(",
         f"    .SELF_ID     (8'h{self_id(inst):02X}),",
-        "    .SEL_LSB     (16),",
         f"    .IMEM_AW     ({s['IMEM_AW']}),",
         f"    .DMEM_AW     ({s['DMEM_AW']}),",
         f"    .PT_TIMEOUT  ({s['PT_TIMEOUT']}),",

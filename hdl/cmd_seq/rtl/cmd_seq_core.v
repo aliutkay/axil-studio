@@ -23,7 +23,6 @@
 
 module cmd_seq_core #(
     parameter [7:0] SELF_ID     = 8'h00,
-    parameter       SEL_LSB     = 16,
     parameter       IMEM_AW     = 9,
     parameter       DMEM_AW     = 8,
     parameter       BUS_TIMEOUT = 1024      // cycles per bus transfer, 0 = none
@@ -89,7 +88,8 @@ module cmd_seq_core #(
                      OP_IRQ = 6'h34;
 
     localparam [7:0] E_ILLEGAL = 8'h01, E_BUS = 8'h02, E_SELF = 8'h03, E_STACK = 8'h04,
-                     E_TIMEOUT = 8'h05, E_PC = 8'h06;
+                     E_TIMEOUT = 8'h05, E_PC = 8'h06, E_DIDX = 8'h07;
+    localparam SEL_LSB = 16;            // own window: address bits [23:16] == SELF_ID
 
     localparam [3:0] S_IDLE = 4'd0, S_FETCH = 4'd1, S_DECODE = 4'd2, S_BUS_WR = 4'd3,
                      S_BUS_RD = 4'd4, S_LDD_A = 4'd5, S_LDD = 4'd6, S_WAIT = 4'd7,
@@ -109,6 +109,7 @@ module cmd_seq_core #(
     reg  [7:0]          dly;
     reg  [31:0]         tmo;
     reg                 step_mode, stop_pend;
+    reg  [DMEM_AW-1:0]  didx;              // D-mem index of RD D[..] (computed in DECODE)
 
     // instruction fields of the instruction being executed (after DECODE)
     wire [3:0]  x_ra  = ir[57:54];
@@ -142,7 +143,12 @@ module cmd_seq_core #(
     wire [31:0] f_b    = f_mod[0] ? f_imm : R[f_rb];
     wire [31:0] f_addr = R[f_rb] + f_imm;
     wire        f_self = (f_addr[SEL_LSB +: 8] == SELF_ID);
-    wire        f_d_ok = ({24'd0, f_d} >> DMEM_AW) == 0;      // D index inside D-mem
+    // D-mem index: D, or D + R[x] with MOD[0] = 1 (LDD / STD: R[RB]; RD D[..]: R[RA])
+    wire        f_dindexed = f_mod[0];
+    wire [31:0] f_dsum = {24'd0, f_d} + (!f_dindexed ? 32'd0 :
+                         (f_op == OP_RD) ? R[f_ra] : R[f_rb]);
+    wire        f_d_ok = (f_dsum >> DMEM_AW) == 0;           // D index inside D-mem
+    wire [DMEM_AW-1:0] f_didx = f_dsum[DMEM_AW-1:0];
     wire        f_tgt_ok = (f_imm >> IMEM_AW) == 0;            // jump target inside I-mem
     wire [IMEM_AW-1:0] f_tgt = f_imm[IMEM_AW-1:0];
 
@@ -224,7 +230,7 @@ module cmd_seq_core #(
     initial begin
         state = S_IDLE; pc = 0; ir = 0; sp = 0;
         fz = 0; fn = 0; fc = 0; fv = 0; ferr = 0;
-        cnt = 0; dly = 0; tmo = 0; step_mode = 0; stop_pend = 0;
+        cnt = 0; dly = 0; tmo = 0; didx = 0; step_mode = 0; stop_pend = 0;
         wr_req = 0; rd_req = 0; bus_addr = 0; d_addr = 0; d_we = 0; d_wdata = 0;
         ev_out = 0; err_code = 0; err_pc = 0; err_addr = 0;
         snap_p = 0; irq_p = 0; done_p = 0; err_p = 0;
@@ -306,12 +312,13 @@ module cmd_seq_core #(
 
                 OP_WR, OP_RD:
                     if (f_op == OP_RD && f_mod[1] && !f_d_ok)
-                        fail(E_ILLEGAL);
+                        fail(E_DIDX);
                     else if (f_self) begin
                         err_addr <= f_addr;
                         fail(E_SELF);
                     end else begin
                         bus_addr <= f_addr;
+                        didx <= f_didx;
                         tmo <= 32'd0;
                         if (f_op == OP_WR) begin
                             wr_req <= 1'b1; state <= S_BUS_WR;
@@ -326,17 +333,17 @@ module cmd_seq_core #(
 
                 OP_LDD:
                     if (!f_d_ok)
-                        fail(E_ILLEGAL);
+                        fail(E_DIDX);
                     else begin
-                        d_addr <= f_d[DMEM_AW-1:0];
+                        d_addr <= f_didx;
                         state <= S_LDD_A;
                     end
 
                 OP_STD:
                     if (!f_d_ok)
-                        fail(E_ILLEGAL);
+                        fail(E_DIDX);
                     else begin
-                        d_addr  <= f_d[DMEM_AW-1:0];
+                        d_addr  <= f_didx;
                         d_wdata <= f_a;
                         d_we    <= 1'b1;
                         advance;
@@ -462,7 +469,7 @@ module cmd_seq_core #(
                     else begin
                         if (state == S_BUS_RD) begin
                             if (x_mod[1]) begin
-                                d_addr  <= x_d[DMEM_AW-1:0];
+                                d_addr  <= didx;
                                 d_wdata <= rd_data;
                                 d_we    <= 1'b1;
                             end else

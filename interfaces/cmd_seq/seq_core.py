@@ -20,7 +20,8 @@ SETTING_BITS = SNAP_EN | PT_WR_RUN | ERR_HALT | IRQ_EN
 LOAD_CHUNK = 32                    # instructions per request while loading
 
 ERR_TEXT = {1: "illegal instruction", 2: "bus error response", 3: "access to the own window",
-            4: "call stack overflow / underflow", 5: "bus timeout", 6: "PC outside I-mem"}
+            4: "call stack overflow / underflow", 5: "bus timeout", 6: "PC outside I-mem",
+            7: "D-mem index out of range"}
 
 
 def c_name(text):

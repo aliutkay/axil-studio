@@ -113,6 +113,16 @@ module tb_directed;
         csr_r(reg_ofs(3), v); check("LDD R3 = D[0]", v, 32'h11);
         csr_r(reg_ofs(4), v); check("LDD R4 = D[1]", v, 32'h22);
 
+        // ---------------------------------------------------------------- indexed D-mem
+        reset_all;
+        load("index"); start(0, 32'h40); wait_idle(300);
+        csr_r(reg_ofs(6), v); check("LDD D[R5+8]", v, 480);
+        axi_read(SELF | 16'h0400 | (8 << 2), v, r);  check("D[8] filled", v, 0);
+        axi_read(SELF | 16'h0400 | (39 << 2), v, r); check("D[39] filled", v, 31 * 16);
+        axi_read(SELF | 16'h0400 | (42 << 2), v, r); check("RD D[40+R7]", v, slave.ram[1][2]);
+        csr_r(16'h0014, v); check("index out of range -> 7", v, 7);
+        csr_r(16'h0018, v); check("index error: ERR_PC", v, 13);
+
         // ---------------------------------------------------------------- conditions
         reset_all;
         load("cond"); start(0, 32'h40); wait_idle(500);
@@ -164,7 +174,7 @@ module tb_directed;
         csr_r(16'h0014, v); check("timeout: ERR_CODE 5", v, 5);
         csr_r(16'h0018, v); check("timeout: ERR_PC", v, 1);
         csr_r(16'h001C, v); check("timeout: ERR_ADDR", v, 32'h000C0000);
-        check("timeout: RD_DRAIN", st[6], 1);
+        csr_r(16'h000C, st); check("timeout: RD_DRAIN", st[6], 1);
         reset_all;
         load("hung"); start(0, 32'h00); wait_idle(500);
         check("timeout, ERR_HALT=0: DONE", st[2:0], 3'b010);

@@ -277,6 +277,10 @@
                   {
                     "value": "0x6",
                     "read": "PC outside I-mem"
+                  },
+                  {
+                    "value": "0x7",
+                    "read": "D-mem index out of range"
                   }
                 ]
               }

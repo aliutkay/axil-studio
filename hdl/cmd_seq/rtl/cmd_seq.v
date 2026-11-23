@@ -42,7 +42,6 @@
 
 module cmd_seq #(
     parameter [7:0] SELF_ID     = 8'h00,
-    parameter       SEL_LSB     = 16,
     parameter       IMEM_AW     = 9,       // 512 instructions
     parameter       DMEM_AW     = 8,       // 256 words per bank, two banks
     parameter       PT_TIMEOUT  = 1024,    // cycles for a pass-through response
@@ -97,6 +96,7 @@ module cmd_seq #(
     output wire [7:0]  o_ev,
     output wire        o_irq
 );
+    localparam       SEL_LSB = 16;        // own window: address bits [23:16] == SELF_ID
     localparam [1:0] OKAY = 2'b00, SLVERR = 2'b10, DECERR = 2'b11;
 
     localparam [15:0] A_ID = 16'h0000, A_CAPS = 16'h0004, A_CTRL = 16'h0008,
@@ -582,7 +582,7 @@ module cmd_seq #(
 `else
     cmd_seq_core #(
 `endif
-        .SELF_ID(SELF_ID), .SEL_LSB(SEL_LSB), .IMEM_AW(IMEM_AW), .DMEM_AW(DMEM_AW),
+        .SELF_ID(SELF_ID), .IMEM_AW(IMEM_AW), .DMEM_AW(DMEM_AW),
         .BUS_TIMEOUT(BUS_TIMEOUT)
     ) u_core (
         .clk(clk), .rst(rst),

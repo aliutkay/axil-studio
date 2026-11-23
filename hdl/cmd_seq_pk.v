@@ -19,7 +19,6 @@
 
 module cmd_seq_pk #(
     parameter [7:0] SELF_ID = 8'h00,
-    parameter SEL_LSB = 16,
     parameter IMEM_AW = 9,
     parameter DMEM_AW = 8,
     parameter PT_TIMEOUT = 1024,
@@ -162,7 +161,6 @@ module cmd_seq_pk #(
 
     cmd_seq #(
         .SELF_ID(SELF_ID),
-        .SEL_LSB(SEL_LSB),
         .IMEM_AW(IMEM_AW),
         .DMEM_AW(DMEM_AW),
         .PT_TIMEOUT(PT_TIMEOUT),

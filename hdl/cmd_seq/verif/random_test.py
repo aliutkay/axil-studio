@@ -74,6 +74,17 @@ class Gen:
             return f"[R{r.choice((8, 9, 10))}+0x{off:X}]"
         return f"[0x{r.randrange(0, 256):02X}0{r.randrange(1, 4)}_{off:04X}]"
 
+    def dref(self):
+        """D[n], or indexed D[n+Rx]: mostly by a loop counter (small), sometimes by any register
+        (usually out of range: error 7)."""
+        r = self.r
+        k = r.random()
+        if k < 0.6:
+            return f"D[{r.randrange(0, 16)}]"
+        if k < 0.95:
+            return f"D[{r.randrange(0, 12)}+R{r.choice((12, 13, 14))}]"
+        return f"D[R{r.randrange(0, 16)}]"
+
     def dly(self, s):
         return s + (f" @{self.r.randrange(1, 4)}" if self.r.random() < 0.1 else "")
 
@@ -90,13 +101,13 @@ class Gen:
         if k < 50:
             return f"CMP {self.src()}, {self.opb()}"
         if k < 55:
-            return f"LDD {self.dst()}, D[{r.randrange(0, 16)}]"
+            return f"LDD {self.dst()}, {self.dref()}"
         if k < 60:
-            return f"STD D[{r.randrange(0, 16)}], {self.src()}"
+            return f"STD {self.dref()}, {self.src()}"
         if k < 70:
             return f"RD {self.dst()}, {self.addr(allow_err)}"
         if k < 74:
-            return f"RD D[{r.randrange(0, 16)}], {self.addr(allow_err)}"
+            return f"RD {self.dref()}, {self.addr(allow_err)}"
         if k < 84:
             return f"WR {self.addr(allow_err)}, {self.src()}"
         if k < 86:

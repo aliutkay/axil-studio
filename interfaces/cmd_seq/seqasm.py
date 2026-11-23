@@ -15,6 +15,7 @@ Syntax:
   .include "file"       .equ lines from another file (e.g. the AXIL Studio address map, *.inc)
   WR   [Rb+imm], Ra     WR [imm], Ra        RD Ra, [Rb+imm]     RD D[n], [Rb+imm]
   LDI  Ra, imm          MOV Ra, Rb|imm      LDD Ra, D[n]        STD D[n], Ra
+  Indexed D-mem: D[n+Rx] / D[Rx] / D[Rx+n] in LDD, STD and RD (index = n + R[x])
   ADD/SUB/AND/OR/XOR/SHL/SHR/CMP Ra, Rb|imm
   JMP label             BR cond, label      LOOP Ra, label      CALL label     RET
   WAIT Rb|imm           WAITT Rb|imm        TMR Ra
@@ -48,7 +49,7 @@ ALU = {"ADD", "SUB", "AND", "OR", "XOR", "SHL", "SHR", "CMP"}
 NO_OPERAND = ("NOP", "END", "RET", "SNAP", "FENCE", "IRQ")
 
 # error codes (ERR_CODE)
-E_ILLEGAL, E_BUS, E_SELF, E_STACK, E_TIMEOUT, E_PC = 1, 2, 3, 4, 5, 6
+E_ILLEGAL, E_BUS, E_SELF, E_STACK, E_TIMEOUT, E_PC, E_DIDX = 1, 2, 3, 4, 5, 6, 7
 KILL_MIN = 0x10
 
 # CSR offsets (from the block base)
@@ -134,13 +135,25 @@ class Assembler:
         return re.fullmatch(r"[Rr](\d+)", t.strip()) is not None
 
     def dref(self, t, line):
+        """D[n] | D[Rx] | D[n+Rx] | D[Rx+n] -> (n, x or None)."""
         m = re.fullmatch(r"[Dd]\[(.+)\]", t.strip())
         if not m:
             raise AsmError(f"{line}: D[n] expected, got '{t}'")
-        n = self.value(m.group(1), line)
-        if not 0 <= n < min(self.dmem_size, 256):
+        inner = m.group(1).strip()
+        reg = None
+        m2 = re.fullmatch(r"([Rr]\d+)\s*(?:\+\s*(.+))?", inner) or re.fullmatch(r"(.+?)\s*\+\s*([Rr]\d+)", inner)
+        if m2 and self.is_reg(m2.group(1)):
+            reg, rest = self.reg(m2.group(1), line), m2.group(2)
+        elif m2 and m2.lastindex == 2 and self.is_reg(m2.group(2)):
+            reg, rest = self.reg(m2.group(2), line), m2.group(1)
+        else:
+            rest = inner
+        n = self.value(rest, line) if rest else 0
+        if reg is None and not 0 <= n < min(self.dmem_size, 256):
             raise AsmError(f"{line}: D index out of range ({n})")
-        return n
+        if not 0 <= n < 256:
+            raise AsmError(f"{line}: D offset must be 0..255 ({n})")
+        return n, reg
 
     def mem(self, t, line):
         """[Rb+imm] | [imm] | [Rb]  ->  (rb, imm)"""
@@ -300,17 +313,20 @@ class Assembler:
             need(2)
             rb, imm = self.mem(ops[1], loc)
             if ops[0].strip().upper().startswith("D["):
-                return encode(op, rb=rb, mod=2, d=self.dref(ops[0], loc), dly=dly, imm=imm)
+                n, x = self.dref(ops[0], loc)
+                return encode(op, ra=x or 0, rb=rb, mod=2 | (x is not None), d=n, dly=dly, imm=imm)
             return encode(op, ra=self.reg(ops[0], loc), rb=rb, dly=dly, imm=imm)
         if mn == "LDI":
             need(2)
             return encode(op, ra=self.reg(ops[0], loc), mod=1, dly=dly, imm=self.value(ops[1], loc))
         if mn == "LDD":
             need(2)
-            return encode(op, ra=self.reg(ops[0], loc), d=self.dref(ops[1], loc), dly=dly)
+            n, x = self.dref(ops[1], loc)
+            return encode(op, ra=self.reg(ops[0], loc), rb=x or 0, mod=int(x is not None), d=n, dly=dly)
         if mn == "STD":
             need(2)
-            return encode(op, ra=self.reg(ops[1], loc), d=self.dref(ops[0], loc), dly=dly)
+            n, x = self.dref(ops[0], loc)
+            return encode(op, ra=self.reg(ops[1], loc), rb=x or 0, mod=int(x is not None), d=n, dly=dly)
         if mn == "MOV" or mn in ALU:
             need(2)
             rb, mb, imm = self.operand_b(ops[1], loc)
@@ -367,13 +383,14 @@ def disasm(w):
     elif mn == "WR":
         s = f"WR {addr}, R{ra}"
     elif mn == "RD":
-        s = f"RD {'D[%d]' % d if mod & 2 else 'R%d' % ra}, {addr}"
+        dx = (f"D[{d}+R{ra}]" if mod & 1 else f"D[{d}]")
+        s = f"RD {dx if mod & 2 else 'R%d' % ra}, {addr}"
     elif mn == "LDI":
         s = f"LDI R{ra}, 0x{imm:X}"
     elif mn == "LDD":
-        s = f"LDD R{ra}, D[{d}]"
+        s = f"LDD R{ra}, " + (f"D[{d}+R{rb}]" if mod & 1 else f"D[{d}]")
     elif mn == "STD":
-        s = f"STD D[{d}], R{ra}"
+        s = "STD " + (f"D[{d}+R{rb}]" if mod & 1 else f"D[{d}]") + f", R{ra}"
     elif mn == "MOV" or mn in ALU:
         s = f"{mn} R{ra}, {b}"
     elif mn in ("JMP", "CALL"):
