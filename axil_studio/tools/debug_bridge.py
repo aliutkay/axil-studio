@@ -604,7 +604,10 @@ class DebugBridgePage(ToolPage):
 
     def _raw_addr_changed(self):
         try:
-            a = parse_int(self.raw_ed.text()) & 0xFFFFFFFC
+            raw_a = parse_int(self.raw_ed.text())
+            if not 0 <= raw_a <= 0xFFFFFFFF:
+                raise ValueError("out of range")
+            a = raw_a & 0xFFFFFFFC
         except ValueError:
             self.raw_ed.setStyleSheet(f"border-color: {theme.manager().tokens['danger']};")
             return
@@ -922,7 +925,9 @@ class DebugBridgePage(ToolPage):
         if self.reg is None or not self.reg.writable:
             return
         try:
-            value = parse_int(self.value_ed.text()) & 0xFFFFFFFF
+            value = parse_int(self.value_ed.text())
+            if not 0 <= value <= 0xFFFFFFFF:
+                raise ValueError("out of range")
         except ValueError:
             return self.error(tr("Invalid value"), self.value_ed.text())
         self._write(value, tr("Written"))

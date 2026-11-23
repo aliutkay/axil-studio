@@ -974,10 +974,13 @@ class UartWindow(QWidget):
         try:
             with open(path, encoding="utf-8") as fh:
                 data = json.load(fh)
-            if data.get("format") != "axil-uart-config":
+            if not isinstance(data, dict) or data.get("format") != "axil-uart-config":
                 raise ValueError(tr("Not a config file"))
-            writes = [(w["ip"], w["register"], int(str(w["value"]), 0)) for w in data.get("writes", [])]
-        except (OSError, ValueError, KeyError) as exc:
+            raw_writes = data.get("writes", [])
+            if not isinstance(raw_writes, list):
+                raise ValueError(tr("Not a config file"))
+            writes = [(w["ip"], w["register"], int(str(w["value"]), 0)) for w in raw_writes]
+        except (AttributeError, OSError, TypeError, ValueError, KeyError) as exc:
             return QMessageBox.critical(self, tr("Could not open"), str(exc))
         self._store.setValue("preset_dir", os.path.dirname(path))
         # a preset names its own UART instance; the values are taken for this one
@@ -1659,12 +1662,20 @@ class UartWindow(QWidget):
         try:
             with open(path, encoding="utf-8") as fh:
                 d = json.load(fh)
+            if not isinstance(d, dict):
+                raise ValueError(tr("Not a settings file"))
+            clk_mhz = None
             if "clk" in d:
-                self.clk.setValue(float(d["clk"]) / 1e6)
-            d = {k: v for k, v in d.items() if k not in ("hexbus", "hexbus_baud", "report", "base", "clk")}
-            self._set_val_form(V.Settings.from_dict(d))
-        except (OSError, ValueError, TypeError) as exc:
-            QMessageBox.critical(self, tr("Could not open"), str(exc))
+                clk_mhz = float(d["clk"]) / 1e6
+                if not math.isfinite(clk_mhz) or clk_mhz <= 0:
+                    raise ValueError(f"invalid clock: {d['clk']}")
+            filtered = {k: v for k, v in d.items() if k not in ("hexbus", "hexbus_baud", "report", "base", "clk")}
+            settings = V.Settings.from_dict(filtered)
+        except (AttributeError, OSError, ValueError, TypeError) as exc:
+            return QMessageBox.critical(self, tr("Could not open"), str(exc))
+        if clk_mhz is not None:
+            self.clk.setValue(clk_mhz)
+        self._set_val_form(settings)
 
     # ---------------------------------------------------------------- run
     def start_validation(self):

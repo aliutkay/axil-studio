@@ -90,16 +90,19 @@ def format_value(value, width, fmt="", meanings=None):
         return "'" + "".join(out) + "'"
     if base in ("ufix", "sfix"):
         raw = to_signed(value, width) if base == "sfix" else value
-        return _fix_text(raw / (1 << frac)) if frac else str(raw)
+        return _fix_text(raw / (1 << frac), frac) if frac else str(raw)
     if base == "enum":
         text = (meanings or {}).get(value)
         return f"{text} ({value})" if text else f"0x{value:0{(width + 3) // 4}X}"
     return f"0x{value:X}"
 
 
-def _fix_text(x):
-    text = f"{x:.6f}".rstrip("0")
-    return text + "0" if text.endswith(".") else text
+def _fix_text(x, frac=0):
+    digits = max(6, math.ceil(frac * math.log10(2)) + 1) if frac else 6
+    text = f"{x:.{digits}f}".rstrip("0")
+    if text.endswith("."):
+        text += "0"
+    return "0.0" if text == "-0.0" else text
 
 
 def parse_value(text, width, fmt="", meanings=None):
@@ -118,7 +121,10 @@ def parse_value(text, width, fmt="", meanings=None):
             if meaning and raw_low == meaning.strip().lower():
                 return v
     if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "'\"":
-        return _check(_parse_ascii(raw[1:-1]), width)
+        body = raw[1:-1]
+        if not body:
+            raise ValueError(tr("Empty value"))
+        return _check(_parse_ascii(body), width)
 
     s = raw.replace("_", "").replace(" ", "")
     if not s:
@@ -131,7 +137,7 @@ def parse_value(text, width, fmt="", meanings=None):
         neg = low.startswith("-")
         v = int(low.lstrip("-"), 0)
         return _check(-v if neg else v, width, signed=(base in ("sdec", "sfix")),
-                      allow_negative=(base not in ("udec", "ufix")))
+                      allow_negative=(base in ("sdec", "sfix")))
 
     if base in ("ufix", "sfix"):
         try:
@@ -148,7 +154,7 @@ def parse_value(text, width, fmt="", meanings=None):
         raise ValueError(tr("'{0}' cannot be read as {1}").format(text, LABELS.get(base, base))) from None
     if base == "sdec":
         return _check(v, width, signed=True)
-    if base == "udec":
+    if base in ("udec", "hex", "bin", "oct"):
         return _check(v, width, signed=False, allow_negative=False)
     if v < 0:
         return _check(v, width, signed=True)

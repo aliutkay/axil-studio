@@ -55,6 +55,7 @@ def gen_system_header(project):
     if used:
         L += ["/* ==== Register maps: offsets from the IP's base address ==== */", ""]
     specs = {}
+    defined = {guard}
     for name in used:
         ip = project.get_ip(name)
         spec = spec_from_ipblock(ip)
@@ -62,13 +63,16 @@ def gen_system_header(project):
         m = c_name(ip.name)
         L.append(f"/* {_comment(ip.name)} {_comment(spec.version)}: {_comment(ip.desc)} */".replace(":  */", " */"))
         L.append(f'#define {m}_IP_VERSION  "{_c_str(spec.version)}"')
+        defined.add(f"{m}_IP_VERSION")
         for r in sorted(spec.regs, key=lambda r: r.offset):
             rn = f"{m}_{c_name(r.name)}"
             L.append(f"#define {rn}_OFFSET  0x{r.offset:02X}u   /* {r.access} {_comment(r.desc)} */")
+            defined.add(f"{rn}_OFFSET")
             for f in sorted(r.fields, key=lambda f: f.lsb):
                 fn = rn if f.name.upper() == r.name.upper() else f"{rn}_{c_name(f.name)}"
                 L.append(f"#define {fn}_SHIFT  {f.lsb}u")
                 L.append(f"#define {fn}_MASK   0x{f.mask:08X}u   /* {f.kind} */")
+                defined.update((f"{fn}_SHIFT", f"{fn}_MASK"))
         L.append("")
     L += ["/* ==== Address map: base address and window of every instance ==== */", ""]
     for inst, parent in project.walk():
@@ -85,12 +89,18 @@ def gen_system_header(project):
         L.append(f"#define {n}_BASE  0x{inst.base & 0xFFFFFFFF:08X}u")
         size_lit = f"0x{size:08X}u" if size <= 0xFFFFFFFF else f"0x{size:X}ULL"
         L.append(f"#define {n}_SIZE  {size_lit}")
+        defined.update((f"{n}_BASE", f"{n}_SIZE"))
         ip = project.get_ip(inst.ip) if inst.ip else None
         if ip is not None:
             m = c_name(ip.name)
             regs = specs[ip.name].regs if ip.name in specs else sorted(ip.registers, key=lambda r: r.offset)
             for r in regs:
-                L.append(f"#define {n}_{c_name(r.name)}  ({n}_BASE + {m}_{c_name(r.name)}_OFFSET)   "
+                rc = c_name(r.name)
+                macro = f"{n}_{rc}"
+                if macro in defined:
+                    macro = f"{n}_REG_{rc}"
+                defined.add(macro)
+                L.append(f"#define {macro}  ({n}_BASE + {m}_{rc}_OFFSET)   "
                          f"/* 0x{(inst.base + r.offset) & 0xFFFFFFFF:08X} */")
         L.append("")
     L.append(f"#endif /* {guard} */")
@@ -99,16 +109,21 @@ def gen_system_header(project):
 
 def main(argv=None):
     import argparse
+    import os
+    import sys
     from .model import Project
     ap = argparse.ArgumentParser(description="C header of an AXIL Studio project's address map")
     ap.add_argument("project", help=".axproj.json")
     ap.add_argument("-o", "--output", help="header file (default: <project>_map.h next to the project)")
     a = ap.parse_args(argv)
-    proj = Project.load(a.project)
-    import os
-    out = a.output or os.path.join(os.path.dirname(os.path.abspath(a.project)), header_name(proj))
-    with open(out, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write(gen_system_header(proj))
+    try:
+        proj = Project.load(a.project)
+        out = a.output or os.path.join(os.path.dirname(os.path.abspath(a.project)), header_name(proj))
+        with open(out, "w", encoding="utf-8", newline="\n") as fh:
+            fh.write(gen_system_header(proj))
+    except (OSError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     print(out)
     return 0
 

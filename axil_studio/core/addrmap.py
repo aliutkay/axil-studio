@@ -231,11 +231,18 @@ def _restore(project, keep):
 def set_base(project, inst, base, fixed=True):
     """Give an entry a base typed by hand. A bridge's contents move with it: its fixed children
     keep their place inside its window (automatic ones are placed again by readdress)."""
-    delta = (base & 0xFFFFFFFF) - inst.base
+    if not 0 <= base <= 0xFFFFFFFF:
+        raise ValueError(tr("{0}: does not fit in the 32-bit address space").format(inst.name))
+    delta = base - inst.base
     if inst.bridge and delta:
-        for c, _ in project.walk(inst.children):
-            c.base = (c.base + delta) & 0xFFFFFFFF
-    inst.base, inst.fixed = base & 0xFFFFFFFF, fixed
+        children = [c for c, _ in project.walk(inst.children)]
+        for c in children:
+            nb = c.base + delta
+            if nb < 0 or nb + window_of(project, c) > 1 << 32:
+                raise ValueError(tr("{0}: does not fit in the 32-bit address space").format(c.name))
+        for c in children:
+            c.base += delta
+    inst.base, inst.fixed = base, fixed
 
 
 def _place(project, items, start, new_ref, old_ref):
@@ -303,7 +310,7 @@ def validate(project):
     """Error strings of the address map (empty when it is usable)."""
     if not project.instances:
         return [tr("Address map is empty: add at least one slave to the top bus")]
-    from .axilgen import VERILOG_KEYWORDS, VHDL_KEYWORDS
+    from .axilgen import RESERVED_MODULES, VERILOG_KEYWORDS, VHDL_KEYWORDS
     errs = []
     seen = set()
     for bridge in levels(project):
@@ -322,12 +329,13 @@ def validate(project):
             seen.add(inst.name.lower())
             if inst.window and (inst.window < 4 or inst.window & (inst.window - 1)):
                 errs.append(tr("{0}: window must be a power of two").format(tag))
+            w_eff = window_of(project, inst)
             if not inst.external and not inst.bridge and project.get_ip(inst.ip) is None:
                 errs.append(tr("{0}: IP definition “{1}” is not in the project").format(tag, inst.ip))
-            if s.base & (s.window - 1):
-                errs.append(tr("{0}: base {1} is not aligned to its window ({2:#x})").format(tag, hex32(s.base), s.window))
-            if s.base + s.window > 1 << 32:
+            if w_eff >= (1 << 32) or s.base + w_eff > 1 << 32:
                 errs.append(tr("{0}: does not fit in the 32-bit address space").format(tag))
+            elif s.base & (w_eff - 1):
+                errs.append(tr("{0}: base {1} is not aligned to its window ({2:#x})").format(tag, hex32(s.base), w_eff))
             if j in out:
                 errs.append(tr("{0}: not inside the forwarded part of the {1} window ({2} – {3})").format(tag, bridge.name, hex32(bridge.base + bridge.self_window), hex32(bridge.base + window_of(project, bridge) - 1)))
             for k in range(j):
@@ -339,7 +347,9 @@ def validate(project):
         if has_xbar(project, bridge):
             bname = level_name(project, bridge)
             mod = xbar_module(project, bridge)
-            if not X.IDENT.match(mod) or mod.lower() in VERILOG_KEYWORDS or mod.lower() in VHDL_KEYWORDS:
+            if (not X.IDENT.match(mod) or "__" in mod or mod.endswith("_")
+                    or mod.lower() in VERILOG_KEYWORDS or mod.lower() in VHDL_KEYWORDS
+                    or mod.lower().removesuffix("_pk") in RESERVED_MODULES):
                 errs.append(tr("{0}: interconnect module name is not valid").format(bname))
             if not 1 <= len(xbar_masters(project, bridge)) <= 16:
                 errs.append(tr("{0}: an interconnect can have at most 16 masters").format(bname))

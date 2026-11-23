@@ -125,6 +125,8 @@ def parse_bauds(text):
 # ---------------------------------------------------------------- SETUP
 def setup_value(clk_hz, baud, fmt, no_flow=True):
     """SETUP word for a baud rate and format: [23:0] = ACLK / baud."""
+    if not (math.isfinite(clk_hz) and clk_hz > 0 and math.isfinite(baud) and baud > 0):
+        raise ValueError(f"invalid clock ({clk_hz}) or baud rate ({baud})")
     div = round(clk_hz / baud)
     if not 1 <= div <= SETUP_BAUD_MASK:
         raise ValueError(f"baud rate {baud} is out of range for ACLK {clk_hz / 1e6:g} MHz")
@@ -184,6 +186,8 @@ def line_type_of(ctrl):
 
 def cycles(us, clk_hz):
     """Microseconds -> ACLK cycles, limited to the 16-bit PHY_TIMING fields."""
+    if not (math.isfinite(us) and us >= 0 and math.isfinite(clk_hz) and clk_hz > 0):
+        raise ValueError(f"invalid timing ({us} us) or clock ({clk_hz} Hz)")
     return max(0, min(0xFFFF, round(us * 1e-6 * clk_hz)))
 
 

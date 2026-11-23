@@ -123,12 +123,18 @@ def parse_module(text, name=None):
         raise ParseError(tr("Port list not found"))
     k = _matching(src, i)
     ports = []
+    last_dir, last_rng = None, ""
     for item in _split_top(src[i + 1:k]):
+        clean = " ".join(item.split())
         pm = re.match(r"(input|output|inout)\s+(?:(?:wire|reg|logic|signed|unsigned|var)\s+)*"
-                      r"(\[[^\]]+\])?\s*([A-Za-z_]\w*)$", " ".join(item.split()))
-        if not pm:
+                      r"(\[[^\]]+\])?\s*([A-Za-z_]\w*)$", clean)
+        if pm:
+            last_dir, last_rng = pm.group(1), pm.group(2) or ""
+            ports.append((last_dir, last_rng, pm.group(3)))
+        elif last_dir is not None and re.match(r"^[A-Za-z_]\w*$", clean):
+            ports.append((last_dir, last_rng, clean))
+        else:
             raise ParseError(tr("Cannot read port (only ANSI headers are supported): {0}").format(item[:60]))
-        ports.append((pm.group(1), pm.group(2) or "", pm.group(3)))
     if not ports:
         raise ParseError(tr("The module has no ports"))
     return {"name": mod, "params": params, "ports": ports}

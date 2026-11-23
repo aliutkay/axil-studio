@@ -85,6 +85,7 @@
  "No other IP in this project uses this interface: place a second axiluart_phy in the address map.": "Bu projede bu arayüzü kullanan başka IP yok: adres haritasına ikinci bir axiluart_phy yerleştirin.",
  "None": "Yok",
  "Not a config file": "Bu bir config dosyası değil",
+ "Not a settings file": "Bu bir ayar dosyası değil",
  "Not connected": "Bağlı değil",
  "OVERFLOW: data lost, RX reset needed": "OVERFLOW: veri kaybı, RX reset gerekir",
  "Odd": "Tek",

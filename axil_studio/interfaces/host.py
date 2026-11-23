@@ -250,9 +250,14 @@ class InterfaceService(QObject):
                 self._reply(sock, rid, error=RequestError("bad_token", tr("Unknown session token")))
                 sock.disconnectFromHost()
                 return
+            try:
+                info = self._hello(s)
+            except RequestError as exc:
+                self._reply(sock, rid, error=exc)
+                return
             state["session"] = s
             s.socket = sock
-            self._reply(sock, rid, self._hello(s))
+            self._reply(sock, rid, info)
             if s.pending_raise:
                 s.pending_raise = False
                 self._send(s, {"event": "raise"})
@@ -341,8 +346,13 @@ class InterfaceService(QObject):
 
     def _op_batch(self, s, sock, rid, req):
         self._check_link(s)
+        ops = req["ops"]
+        if not isinstance(ops, list):
+            raise RequestError("bad_request", "ops must be a list")
         steps = []
-        for st in req["ops"]:
+        for st in ops:
+            if not isinstance(st, dict):
+                raise RequestError("bad_request", "batch step must be an object")
             kind = st.get("op")
             if kind not in ("read", "write"):
                 raise RequestError("bad_request", f"batch step '{kind}'")
