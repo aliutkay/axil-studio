@@ -11,6 +11,29 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.26 — cmd_seq: Verilog, düzeltmeler ve doğrulama ortamı
+
+- Programlanabilir komut sıralayıcı `hdl/cmd_seq` olarak eklendi (ilk VHDL sürümünden Verilog'a çevrildi;
+  `S_AXI_*` / `M_AXI_*` portları, PROT da aynen iletiliyor).
+- Düzeltmeler:
+  - LDD bir önceki D-mem erişiminin kelimesini okuyordu.
+  - `BR LT` yalnızca N'ye bakıyordu; artık işaretli (N ≠ V). C / V bayrakları ve LO, HS, MI, PL koşulları
+    eklendi; tanımsız koşul kodu geçersiz komut.
+  - Terk edilen (RESET) transferin geç gelen cevabı sonraki isteğe gidebiliyordu.
+  - Zaman aşımına uğrayan pass-through yazması sonradan gönderilebiliyordu; hiç cevap vermeyen alt slave üst
+    yazma kanalını kilitliyordu.
+  - Yığın taşması / boşalması ve PC'nin I-mem dışına çıkması algılanmıyordu (hata 4 ve 6).
+  - KILL kodları 0x10'dan küçükse sistem hata kodlarıyla çakışıyordu.
+  - IRQ_STAT'a aynı anda gelen W1C yeni olayı siliyordu.
+  - Sıralayıcı transferinde zaman aşımı (hata 5). I-mem / D-mem yükleyicileri sonu geçen yazmayı ve
+    duraklatılmış programa yüklemeyi reddediyor; kendi penceresine yazmada tam WSTRB isteniyor.
+- `sw/seqasm.py`: yeni koşullar, KILL ve LOOP R0 denetimi, `.word64`; `sw/examples`: dört örnek program.
+- Doğrulama:
+  - Formal (Yosys + yosys-smtbmc; BMC, k-tümevarım ve cover): üst modül ve çekirdek ayrı ayrı ispatlanıyor.
+  - Rastgele programlarla Python referans modeline karşı eş-simülasyon.
+  - Yönlendirilmiş testbench (105 kontrol).
+  - Hepsi `hdl/cmd_seq/verif/run.py` ile tek komutta çalışıyor; testler `tests/test_cmd_seq.py`'de.
+
 ## early-alpha 0.1.25 — axiluart_phy RTL düzeltmeleri
 
 - `patches/axiluart_v2.patch` artık verici örneğini de değiştiriyor (`txuart` → `txuart_v2`); önceden bu satır

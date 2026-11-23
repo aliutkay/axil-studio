@@ -509,7 +509,7 @@ commit'in yanında görünür.
 | `interfaces/` | IP arayüzü uygulamaları (Studio'nun dışında çalışır): Python istemcisi `sdk/axil_client.py`, UART arayüzü `axiluart_phy/`; protokol `interfaces/README.md` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
 | `scripts/` | Komut satırı araçları: `i18n_check.py` (çeviri denetimi), `bump_version.py` |
-| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`) |
+| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`); `cmd_seq/`: programlanabilir komut sıralayıcı, assembler'ı ve doğrulama ortamı (formal, referans model, rastgele ve yönlendirilmiş testler; bkz. `hdl/cmd_seq/README.md`) |
 | `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 | `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |
