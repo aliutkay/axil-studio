@@ -52,7 +52,7 @@ class HexbusLink:
         self.interrupt_cb = interrupt_cb or (lambda: None)
         self.timeout = timeout
         self.ser = None
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._rx = queue.Queue()
         self._reader = None
         self._running = False
@@ -111,11 +111,13 @@ class HexbusLink:
         if self._reader is not None:
             self._reader.join(timeout=0.5)
             self._reader = None
-        if self.ser is not None:
-            try:
-                self.ser.close()
-            finally:
-                self.ser = None
+        with self._lock:
+            self._cur_addr = None
+            if self.ser is not None:
+                try:
+                    self.ser.close()
+                finally:
+                    self.ser = None
 
     # ------------------------------------------------------------ receive path
     def _reader_loop(self):
@@ -171,11 +173,11 @@ class HexbusLink:
 
     # ------------------------------------------------------------ transactions
     def _transact(self, text, count):
-        if self.ser is None:
-            raise HexbusError(tr("Not connected"))
-        if not self._running:
-            raise HexbusError(tr("Connection lost (serial port read failed); reconnect"))
         with self._lock:
+            if self.ser is None:
+                raise HexbusError(tr("Not connected"))
+            if not self._running:
+                raise HexbusError(tr("Connection lost (serial port read failed); reconnect"))
             while not self._rx.empty():
                 self._rx.get_nowait()
             if not self.quiet:
@@ -201,26 +203,28 @@ class HexbusLink:
             return tokens
 
     def reset(self):
-        self._cur_addr = None
-        tokens = self._transact("T\n", 1)
-        if tokens[0][0] != "T":
-            raise HexbusError(tr("Unexpected reset response {0}").format(tokens[0]))
+        with self._lock:
+            self._cur_addr = None
+            tokens = self._transact("T\n", 1)
+            if tokens[0][0] != "T":
+                raise HexbusError(tr("Unexpected reset response {0}").format(tokens[0]))
 
     def _access(self, addr, cmd, expect):
         """Run one bus access. The address (no auto-increment) is only sent
         when it differs from the one already loaded in the bridge."""
         target = (addr & 0xFFFFFFFC) | 1
-        prefix = "" if self._cur_addr == target else f"A{target:x}"
-        try:
-            tokens = self._transact(prefix + cmd + "\n", 2 if prefix else 1)
-        except HexbusError:
-            self._cur_addr = None
-            raise
-        if (prefix and tokens[0][0] != "A") or tokens[-1][0] != expect:
-            self._cur_addr = None
-            raise HexbusError(tr("Unexpected response {0}").format(tokens))
-        self._cur_addr = target
-        return tokens[-1][1]
+        with self._lock:
+            prefix = "" if self._cur_addr == target else f"A{target:x}"
+            try:
+                tokens = self._transact(prefix + cmd + "\n", 2 if prefix else 1)
+            except HexbusError:
+                self._cur_addr = None
+                raise
+            if (prefix and tokens[0][0] != "A") or tokens[-1][0] != expect:
+                self._cur_addr = None
+                raise HexbusError(tr("Unexpected response {0}").format(tokens))
+            self._cur_addr = target
+            return tokens[-1][1]
 
     def write(self, addr, value):
         self._access(addr, f"W{value & 0xFFFFFFFF:x}", "K")

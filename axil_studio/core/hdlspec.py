@@ -95,10 +95,11 @@ def ip_base(project, ip_name):
 
 # ============================================================================ files
 def kind_of(d):
-    if d.get("format") == IP_FORMAT:
-        return "ip"
-    if d.get("format") == XBAR_FORMAT:
-        return "xbar"
+    if isinstance(d, dict):
+        if d.get("format") == IP_FORMAT:
+            return "ip"
+        if d.get("format") == XBAR_FORMAT:
+            return "xbar"
     raise HdlSpecError(tr("This file is not an HDL spec (axil-ip-hdlspec / axil-xbar-hdlspec)"))
 
 
@@ -158,11 +159,12 @@ def validate(d):
             lp, lg, mb = p["OPT_LOWPOWER"], p["OPT_LINGER"], p["LGMAXBURST"]
             if not isinstance(lp, int) or isinstance(lp, bool) or lp not in (0, 1):
                 errs.append(tr("Invalid parameter {0}: {1}").format("OPT_LOWPOWER", lp))
-            for k, v in (("OPT_LINGER", lg), ("LGMAXBURST", mb)):
-                if not isinstance(v, int) or isinstance(v, bool) or v < 0:
-                    errs.append(tr("Invalid parameter {0}: {1}").format(k, v))
+            if not isinstance(lg, int) or isinstance(lg, bool) or lg < 0:
+                errs.append(tr("Invalid parameter {0}: {1}").format("OPT_LINGER", lg))
+            if not isinstance(mb, int) or isinstance(mb, bool) or mb < 2:
+                errs.append(tr("Invalid parameter {0}: {1}").format("LGMAXBURST", mb))
         return errs
-    except (KeyError, TypeError, ValueError) as exc:
+    except (AttributeError, KeyError, TypeError, ValueError) as exc:
         return [tr("Cannot read the HDL spec: {0}").format(exc)]
 
 
@@ -232,7 +234,7 @@ def main(argv=None):
     a = ap.parse_args(argv)
     try:
         d = load(a.hdlspec)
-    except (OSError, ValueError) as exc:
+    except (AttributeError, OSError, ValueError) as exc:
         raise SystemExit(f"error: {exc}")
     errs = validate(d)
     if errs:

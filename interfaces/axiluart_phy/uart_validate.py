@@ -289,7 +289,7 @@ class Dut:
 
     # registers kept before the run and written back at its end
     def snapshot(self):
-        return [(self.base, off, self.link.read(self.base + off)) for off in (SETUP, PHY_CTRL, PHY_TIMING)]
+        return [(self.base, off, self.link.read(self.base + off)) for off in (SETUP, PHY_TIMING, PHY_CTRL)]
 
     def restore(self, snap):
         for base, off, v in snap:
@@ -347,8 +347,8 @@ class PairDut(Dut):
         return self._r(self.tx_base, PHY_STATUS) & self._r(self.rx_base, PHY_STATUS) & 0x1F
 
     def snapshot(self):
-        return [(b, off, self.link.read(b + off)) for b in (self.tx_base, self.rx_base)
-                for off in (SETUP, PHY_CTRL, PHY_TIMING)]
+        return [(b, off, self.link.read(b + off)) for b in (self.rx_base, self.tx_base)
+                for off in (SETUP, PHY_TIMING, PHY_CTRL)]
 
 
 # ----------------------------------------------------------------------------
@@ -450,15 +450,16 @@ class Validator:
             d.wr(PHY_TIMING, value)
             r.check(d.rd(PHY_TIMING) == value, f"PHY_TIMING write/read 0x{value:08X}")
 
+        en = self._en_bits()
         modes = [CTRL_DE_LOW] + ([CTRL_DE_HIGH, CTRL_DE_TX] if self.caps & ST_HAS_DE else [])
         for m in modes:
-            want = CTRL_TX_EN | CTRL_RX_EN | m
+            want = en | m
             d.set_phy(want)
             got = d.rd(PHY_CTRL)
             r.check(got == want, f"PHY_CTRL DE_MODE={m}", f"read 0x{got:08X}")
 
         before = d.rd(PHY_CTRL)
-        d.wr(PHY_CTRL, CTRL_TX_EN | CTRL_RX_EN | 3)       # DE_MODE 3 is never valid
+        d.wr(PHY_CTRL, en | 3)                            # DE_MODE 3 is never valid
         st = d.rd(PHY_STATUS)
         r.check(st & ST_CFG_ERR and d.rd(PHY_CTRL) == before, "Invalid PHY_CTRL rejected",
                 "CFG_ERR set, setting unchanged")
@@ -466,7 +467,7 @@ class Validator:
         r.check(not d.rd(PHY_STATUS) & ST_CFG_ERR, "CFG_ERR write-one-to-clear")
 
         if not self.caps & ST_HAS_DE:
-            d.wr(PHY_CTRL, CTRL_TX_EN | CTRL_RX_EN | CTRL_DE_HIGH | CTRL_APPLY_NOW)
+            d.wr(PHY_CTRL, en | CTRL_DE_HIGH | CTRL_APPLY_NOW)
             r.check(d.rd(PHY_STATUS) & ST_CFG_ERR, "DE mode rejected without HAS_DE")
             d.wr(PHY_STATUS, ST_CFG_ERR)
 
@@ -783,9 +784,12 @@ class Validator:
                     f"{baud} {fmt}", f"{len(own)} B seen by FPGA")
         self.apply_phy(baud)
 
+    def _en_bits(self):
+        return (CTRL_TX_EN if self.caps & ST_HAS_TX else 0) | (CTRL_RX_EN if self.caps & ST_HAS_RX else 0)
+
     def normal_ctrl(self):
         """PHY_CTRL used between tests, from --line-type / --de."""
-        ctrl = CTRL_TX_EN | CTRL_RX_EN
+        ctrl = self._en_bits()
         if self.caps & ST_HAS_DE:
             ctrl |= DE_CODES[self.args.de_mode]
         if self.args.half:
@@ -821,7 +825,7 @@ class Validator:
         if not self._pc_format(self.sw_baud, self.sw_fmt):
             return False
         self.dut.configure(self.sw_baud, self.sw_fmt)
-        self.sw_ctrl = CTRL_TX_EN | CTRL_RX_EN | CTRL_DE_TX | (CTRL_HALF if a.half else 0)
+        self.sw_ctrl = self._en_bits() | CTRL_DE_TX | (CTRL_HALF if a.half else 0)
         self.sw_bit_us = 1e6 / self.sw_baud
         self.sw_steps = 0
         return True

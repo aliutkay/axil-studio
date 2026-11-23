@@ -75,8 +75,10 @@ def symbols(entries):
         n = c_name(e["name"])
         base = int(e["base"])
         out[f"{n}_BASE"] = base
-        for r in e.get("registers", []):
+        for r in sorted(e.get("registers", []), key=lambda r: int(str(r["offset"]), 0)):
             rn = f"{n}_{c_name(r['name'])}"
+            if rn in out:                                   # as in the include file: <INST>_REG_<REG>
+                rn = f"{n}_REG_{c_name(r['name'])}"
             out[rn] = (base + int(str(r["offset"]), 0)) & 0xFFFFFFFF
             for f in r.get("fields", []):
                 lsb, width = int(f["lsb"]), int(f.get("width", 1))

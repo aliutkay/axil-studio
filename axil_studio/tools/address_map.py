@@ -431,8 +431,18 @@ class AddressMapPage(ToolPage):
     def _guarded(self, edit, select=None):
         """Run an edit; undo it when it makes a hand-sized subsystem (more) too small."""
         keep = copy.deepcopy(self.proj.instances)
+        keep_debug = copy.deepcopy(self.proj.debug)
+        keep_collapsed = set(self._collapsed)
         before = A._fill(self.proj)
-        result = edit()
+        try:
+            result = edit()
+        except ValueError as exc:
+            self.proj.instances[:] = keep
+            self.proj.debug = keep_debug
+            self._collapsed = keep_collapsed
+            self._refresh()
+            QMessageBox.warning(self, self.title, str(exc))
+            return False
         if result is False:
             return False
         try:
@@ -442,6 +452,8 @@ class AddressMapPage(ToolPage):
         err = A.check_fits(self.proj, before)
         if err:
             self.proj.instances[:] = keep
+            self.proj.debug = keep_debug
+            self._collapsed = keep_collapsed
             try:
                 A.readdress(self.proj)
             except ValueError:

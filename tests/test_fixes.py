@@ -862,3 +862,387 @@ def test_uart_validate_round2_fixes():
     val_1g.caps = U.ST_HAS_DE
     val_1g.test_phy(115200, U.Fmt("8N1"))
     assert rep_1g.rows
+
+
+# ---------------------------------------------------------------- Round 3 fixes
+def test_hexbus_lock_guards_access_and_close():
+    import threading
+
+    sent = []
+    barrier = threading.Event()
+
+    class BlockingSer:
+        is_open = True
+
+        def write(self, data):
+            txt = data.decode("ascii")
+            sent.append(txt)
+            if txt.startswith("A1001"):
+                barrier.set()
+                for ch in "A1001\nR00000011\n":
+                    bus._feed(ch)
+            elif txt.startswith("A2001"):
+                for ch in "A2001\nR00000022\n":
+                    bus._feed(ch)
+            else:
+                for ch in "R00000099\n":
+                    bus._feed(ch)
+
+        def close(self):
+            pass
+
+    bus = H.HexbusLink()
+    bus.ser = BlockingSer()
+    bus._running = True
+    assert bus.read(0x1000) == 0x11
+    assert bus.read(0x2000) == 0x22
+    assert bus.read(0x2000) == 0x99
+    assert sent == ["A1001R\n", "A2001R\n", "R\n"]
+    bus.close()
+    assert bus.ser is None and bus._cur_addr is None
+    with pytest.raises(H.HexbusError):
+        bus.read(0x2000)
+
+
+def test_cheader_avoids_base_size_macro_redefinition_and_cli_missing_file():
+    import shutil
+    import subprocess
+    import tempfile
+    from axil_studio.core.model import IPInstance
+
+    spec = G.ModuleSpec(module="dma", registers=[
+        G.RegSpec("CTRL", 0x0, fields=[G.FieldSpec("EN", 0, 1, "RW")]),
+        G.RegSpec("BASE", 0x4, fields=[G.FieldSpec("ADDR", 0, 32, "RW")]),
+        G.RegSpec("SIZE", 0x8, fields=[G.FieldSpec("LEN", 0, 32, "RW")]),
+    ])
+    ip = G.to_ipblock(spec, 0, with_spec=True)
+    proj = Project(name="soc", ips=[ip], instances=[IPInstance(name="dma0", ip="dma", base=0x40000000)])
+    hdr = CH.gen_system_header(proj)
+    assert "#define DMA0_BASE  0x40000000u" in hdr
+    assert "#define DMA0_REG_BASE  (DMA0_BASE + DMA_BASE_OFFSET)" in hdr
+    assert "#define DMA0_REG_SIZE  (DMA0_BASE + DMA_SIZE_OFFSET)" in hdr
+
+    cc = shutil.which("clang") or shutil.which("cc")
+    if cc:
+        with tempfile.TemporaryDirectory() as td:
+            hp = os.path.join(td, "soc_map.h")
+            cp = os.path.join(td, "t.c")
+            with open(hp, "w") as fh:
+                fh.write(hdr)
+            with open(cp, "w") as fh:
+                fh.write('#include "soc_map.h"\nunsigned x = DMA0_REG_BASE + DMA0_REG_SIZE + DMA0_CTRL;\n')
+            res = subprocess.run([cc, "-fsyntax-only", "-Wall", "-Wextra", "-Werror", cp],
+                                 capture_output=True, text=True)
+            assert res.returncode == 0, res.stderr
+
+    assert CH.main(["nonexistent_project_file.axproj.json"]) == 1
+
+
+def test_numfmt_high_frac_round_trip_and_strict_unsigned_and_ascii():
+    for w, frac in ((31, 30), (32, 31), (24, 23)):
+        mask = (1 << w) - 1
+        for raw in (0, 1, (1 << (w - 1)) - 1, 1 << (w - 1), mask):
+            for base in ("ufix", "sfix"):
+                fmt = f"{base}{frac}"
+                txt = N.format_value(raw, w, fmt)
+                assert N.parse_value(txt, w, fmt) == raw
+
+    with pytest.raises(ValueError):
+        N.parse_value("''", 8, "ascii")
+    for fmt in ("hex", "bin", "oct"):
+        with pytest.raises(ValueError):
+            N.parse_value("-1", 8, fmt)
+    with pytest.raises(ValueError):
+        N.parse_value("-0x1", 8, "hex")
+
+
+def test_axilpack_comma_separated_ansi_ports():
+    src = """
+    module multi_decl (
+        input wire ACLK, ARESETN,
+        input wire S_AXI_AWVALID, S_AXI_WVALID, S_AXI_BREADY, S_AXI_ARVALID, S_AXI_RREADY,
+        output wire S_AXI_AWREADY, S_AXI_WREADY, S_AXI_BVALID, S_AXI_ARREADY, S_AXI_RVALID,
+        input wire [31:0] S_AXI_AWADDR, S_AXI_WDATA, S_AXI_ARADDR,
+        input wire [2:0] S_AXI_AWPROT, S_AXI_ARPROT,
+        input wire [3:0] S_AXI_WSTRB,
+        output wire [1:0] S_AXI_BRESP, S_AXI_RRESP,
+        output wire [31:0] S_AXI_RDATA
+    );
+    endmodule
+    """
+    info = P.parse_module(src)
+    assert len(info["ports"]) == 21
+    wrapped = P.gen_pack_wrapper(info)
+    assert "multi_decl_pk" in wrapped
+
+
+def test_addrmap_4gb_window_set_base_overflow_and_module_parity():
+    from axil_studio.core import addrmap as A
+    from axil_studio.core.model import IPInstance
+
+    # >= 4 GiB window must fail addrmap.validate()
+    proj = Project(name="p", instances=[
+        IPInstance(name="huge", ip="", base=0x0, span=0x1000, window=1 << 33),
+    ])
+    errs = A.validate(proj)
+    assert any("32-bit" in e for e in errs)
+
+    # set_base must reject moving a bridge so a child would wrap past 4 GiB
+    br = IPInstance(name="sub", base=0x0, fixed=True, bridge=True, children=[
+        IPInstance(name="c0", ip="", base=0x2000, fixed=True, span=0x1000, window=0x1000),
+    ])
+    proj2 = Project(name="p2", instances=[br])
+    with pytest.raises(ValueError):
+        A.set_base(proj2, br, 0xFFFFF000)
+    assert br.base == 0x0 and br.children[0].base == 0x2000
+
+    # Module name parity with xbargen: __ / trailing _ / axilxbar_pk rejected
+    for bad_mod in ("bad__xbar", "bad_xbar_", "axilxbar_pk"):
+        proj3 = Project(name="p3", interconnect={"module": bad_mod}, instances=[
+            IPInstance(name="s0", ip="", base=0x0, span=0x1000, window=0x1000),
+        ])
+        assert A.validate(proj3), f"expected addrmap.validate() to reject {bad_mod}"
+
+
+def test_hdlspec_lgmaxburst_lt2_and_malformed_json():
+    from axil_studio.core import hdlspec as HS
+
+    s = X.XbarSpec(module="ok_xbar", slaves=[X.XbarSlave("s0", 0x0, 0xFFFFF000)])
+    spec = HS.xbar_hdlspec(s)
+    for bad_mb in (0, 1):
+        spec["parameters"]["LGMAXBURST"] = bad_mb
+        assert any("LGMAXBURST" in e for e in HS.validate(spec))
+    spec["parameters"]["LGMAXBURST"] = 2
+    assert HS.validate(spec) == []
+
+    # Malformed non-dict JSON structures must return validation errors, never crash with AttributeError
+    assert HS.validate([])
+    assert HS.validate({"format": HS.IP_FORMAT, "module": "m", "registers": [None]})
+
+
+def test_debug_bridge_rejects_33bit_and_negative_writes_and_raw_addr(qapp, no_dialogs):
+    from axil_studio.core.model import IPInstance
+    from axil_studio.project import ProjectContext
+    from axil_studio.tools.debug_bridge import DebugBridgePage
+
+    spec = G.ModuleSpec(module="dut", registers=[
+        G.RegSpec("CTRL", 0x0, fields=[G.FieldSpec("EN", 0, 1, "RW")]),
+    ])
+    ctx = ProjectContext()
+    ctx.project.ips.append(G.to_ipblock(spec, 0x1000, with_spec=True))
+    ctx.project.instances.append(IPInstance(name="dut0", ip="dut", base=0x1000))
+    page = DebugBridgePage(ctx)
+    try:
+        writes = []
+
+        class RecLink:
+            connected = True
+            ser = None
+
+            def read(self, addr):
+                return 0
+
+            def write(self, addr, value):
+                writes.append((addr, value))
+
+            def close(self):
+                pass
+
+        page.link = RecLink()
+        page.bus.run = lambda fn, ok=None, err=None: ok(fn()) if ok else fn()
+        ip = ctx.project.address_ips()[0]
+        page.ip, page.reg, page.group = ip, ip.registers[0], "project"
+
+        for bad in ("0x100000000", "-1", "-0x10"):
+            page.value_ed.setText(bad)
+            page.write_reg()
+        assert writes == []
+
+        page.value_ed.setText("0x12345678")
+        page.write_reg()
+        assert writes == [(0x1000, 0x12345678)]
+
+        page.raw = None
+        page.raw_ed.setText("0x100000000")
+        page._raw_addr_changed()
+        assert page.raw is None
+        page.raw_ed.setText("-4")
+        page._raw_addr_changed()
+        assert page.raw is None
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_interfaces_discover_and_host_handle_malformed_inputs(qapp, no_dialogs, tmp_path):
+    from axil_studio import interfaces as ifc
+    from axil_studio.interfaces import host as ifhost
+    from axil_studio.project import ProjectContext
+    from axil_studio.tools.debug_bridge import DebugBridgePage
+
+    # Malformed non-object manifest & null protocol must be recorded as errors, never crash discover()
+    d1 = tmp_path / "bad_list"
+    d1.mkdir()
+    (d1 / ifc.MANIFEST).write_text("[]", encoding="utf-8")
+    d2 = tmp_path / "bad_proto"
+    d2.mkdir()
+    (d2 / ifc.MANIFEST).write_text('{"format":"axil-interface","id":"x","command":["echo"],"protocol":null}', encoding="utf-8")
+    found, errors = ifc.discover([str(tmp_path)])
+    assert len(errors) >= 2
+
+    # InterfaceService._handle must reply with error (not crash) on hello for removed IP and non-dict batch op
+    ctx = ProjectContext()
+    page = DebugBridgePage(ctx)
+    try:
+        svc = ifhost.InterfaceService(page)
+        replies = []
+        svc._write = lambda sock, msg: replies.append(msg)
+
+        class FakeSock:
+            def disconnectFromHost(self):
+                pass
+
+        info = ifc.Interface("dummy", "Dummy", ["echo"], str(tmp_path))
+        sess = ifhost.Session("tok1", info, "project", "missing_ip")
+        svc.sessions["tok1"] = sess
+        state = {"session": None}
+        svc._handle(FakeSock(), state, {"id": 1, "op": "hello", "token": "tok1"})
+        assert replies and replies[-1]["ok"] is False and replies[-1]["error"]["code"] == "ip_removed"
+
+        # Non-dict batch op must return bad_request instead of AttributeError
+        class ConnectedLink:
+            connected = True
+            def close(self):
+                pass
+        page.link = ConnectedLink()
+        state["session"] = sess
+        svc._handle(FakeSock(), state, {"id": 2, "op": "batch", "ops": [123]})
+        assert replies[-1]["ok"] is False and replies[-1]["error"]["code"] == "bad_request"
+        svc.shutdown()
+    finally:
+        page.shutdown()
+        page.close()
+
+
+def test_regmap_unknown_kind_and_save_history_and_address_map_guarded_rollback(qapp, no_dialogs):
+    from axil_studio.core.model import IPInstance
+    from axil_studio.project import ProjectContext
+    from axil_studio.tools.address_map import AddressMapPage
+    from axil_studio.tools.regmap import RegMapEditorPage
+
+    ctx = ProjectContext()
+    page = RegMapEditorPage(ctx)
+    try:
+        # Unknown field kind must not crash _refresh_fields()
+        page.spec = G.ModuleSpec(module="weird_ip", registers=[
+            G.RegSpec("R0", 0x0, fields=[G.FieldSpec("F0", 0, 8, "UNKNOWN_KIND")]),
+        ])
+        page._load_spec()
+        assert page.fields.topLevelItemCount() >= 1
+        assert page.fields.topLevelItem(0).text(0) == "F0"
+
+        # _set_name pushes to history so undo after a subsequent edit returns to the saved name
+        page._set_name("renamed_ip")
+        page._set_clean()
+        page.spec.desc = "changed"
+        page._mark()
+        page.undo()
+        assert page.spec.module == "renamed_ip"
+        assert not page.dirty
+    finally:
+        page.close()
+
+    # AddressMapPage._guarded restores proj.debug and _collapsed on fit-error rollback
+    ctx2 = ProjectContext()
+    ctx2.project.debug = {"interfaces": {"s0": {"clk_mhz": 50.0}}}
+    br = IPInstance(name="sub", base=0x0, fixed=True, window=0x1000, bridge=True, children=[
+        IPInstance(name="s0", ip="", base=0x0, span=0x1000, window=0x1000),
+    ])
+    ctx2.project.instances = [br]
+    ap = AddressMapPage(ctx2)
+    try:
+        def bad_edit():
+            ap._rename(br.children[0], "s0_renamed")
+            br.children[0].window = 0x2000  # overflows hand-sized 0x1000 bridge
+            return True
+
+        assert ap._guarded(bad_edit) is False
+        assert ctx2.project.instances[0].children[0].name == "s0"
+        assert "s0" in ctx2.project.debug["interfaces"]
+        assert "s0_renamed" not in ctx2.project.debug["interfaces"]
+    finally:
+        ap.close()
+
+
+def test_uart_validate_tx_only_snapshot_order_and_uart_phy_cycles(qapp, no_dialogs, tmp_path, monkeypatch):
+    from PySide6.QtWidgets import QFileDialog
+    import uart_ui as UI
+
+    # cycles() / timing_value() reject NaN, inf, and negative us with ValueError
+    for bad in (-1.0, float("nan"), float("inf"), float("-inf")):
+        with pytest.raises(ValueError):
+            U.timing_value(50e6, bad, 0.0)
+
+    # Dut.snapshot() writes PHY_TIMING before PHY_CTRL; PairDut restores RX before TX
+    written = []
+
+    class RecLink:
+        def __init__(self):
+            self.regs = {}
+
+        def read(self, addr):
+            return self.regs.get(addr, 0)
+
+        def write(self, addr, val):
+            written.append((addr, val))
+            self.regs[addr] = val
+
+    link = RecLink()
+    dut = V.Dut(link, 0x1000, 50e6)
+    snap = dut.snapshot()
+    dut.restore(snap)
+    offs = [a - 0x1000 for a, _ in written]
+    assert offs.index(U.PHY_TIMING) < offs.index(U.PHY_CTRL)
+
+    written.clear()
+    pdut = V.PairDut(link, tx_base=0x1000, rx_base=0x2000, clk_hz=50e6)
+    psnap = pdut.snapshot()
+    pdut.restore(psnap)
+    rx_ctrl_i = next(i for i, (a, _) in enumerate(written) if a == 0x2000 + U.PHY_CTRL)
+    tx_ctrl_i = next(i for i, (a, _) in enumerate(written) if a == 0x1000 + U.PHY_CTRL)
+    assert rx_ctrl_i < tx_ctrl_i
+
+    # TX-only core (HAS_RX=0): Validator._en_bits() must set CTRL_TX_EN only
+    rep = V.Report()
+    val = V.Validator(dut, None, rep, V.Settings(base=0x1000, clk=50e6))
+    val.caps = U.ST_HAS_TX | U.ST_HAS_DE
+    assert (val.normal_ctrl() & (U.CTRL_TX_EN | U.CTRL_RX_EN)) == U.CTRL_TX_EN
+
+    # UartWindow open_preset / open_val_settings must handle non-dict JSON without crashing or mutating clk
+    class DummyClient:
+        ip = {"name": "uart0", "base": 0x1000}
+        connected = False
+        port = None
+        settings = {"clk_mhz": 50.0}
+        on_event = lambda self, ev: None
+        def peers(self): return []
+        def set_settings(self, **kw): pass
+        def status(self, text): pass
+
+    w = UI.UartWindow(DummyClient())
+    try:
+        bad_json = tmp_path / "list.json"
+        bad_json.write_text("[]", encoding="utf-8")
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad_json), ""))
+        w.open_preset()
+        w.open_val_settings()
+
+        bad_val = tmp_path / "bad_val.json"
+        bad_val.write_text('{"clk": 100000000, "bauds": []}', encoding="utf-8")
+        monkeypatch.setattr(QFileDialog, "getOpenFileName", lambda *a, **k: (str(bad_val), ""))
+        before_clk = w.clk.value()
+        w.open_val_settings()
+        assert w.clk.value() == before_clk
+    finally:
+        w.bus.shutdown()
+        w.close()

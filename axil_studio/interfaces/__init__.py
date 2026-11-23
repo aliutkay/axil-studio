@@ -84,13 +84,16 @@ class Interface:
 def load_manifest(path, source=""):
     with open(path, encoding="utf-8") as fh:
         d = json.load(fh)
-    if d.get("format") != FORMAT:
+    if not isinstance(d, dict) or d.get("format") != FORMAT:
         raise ManifestError(f"{path}: not an IP interface manifest")
     iid = str(d.get("id", "")).strip()
     cmd = d.get("command")
     if not iid or not isinstance(cmd, list) or not cmd:
         raise ManifestError(f"{path}: 'id' and 'command' (a list) are required")
-    proto = int(d.get("protocol", PROTOCOL))
+    try:
+        proto = int(d.get("protocol", PROTOCOL))
+    except (TypeError, ValueError) as exc:
+        raise ManifestError(f"{path}: invalid protocol ({exc})") from exc
     return Interface(iid, d.get("title") or iid, [str(c) for c in cmd], os.path.dirname(os.path.abspath(path)),
                      d.get("desc", ""), str(d.get("version", "")), proto, source)
 
@@ -135,7 +138,7 @@ def discover(settings_folders=(), library_paths=()):
         for path in _manifests(folder):
             try:
                 it = load_manifest(path, src)
-            except (OSError, ValueError) as exc:
+            except (AttributeError, OSError, TypeError, ValueError) as exc:
                 errors.append(str(exc))
                 continue
             if it.id in found:

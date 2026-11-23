@@ -1472,7 +1472,7 @@ class RegMapEditorPage(ToolPage):
         for f in sorted(r.fields, key=lambda f: -f.lsb):
             kind = f.kind + "".join(f" · {s}" for s, on in (("irq", f.irq), ("sync", f.sync)) if on)
             reset = N.format_value(f.reset, f.width, f.fmt) if f.kind in ("RW", "CONST") else ""
-            ports = ", ".join(G.port_names(r, f)) or "—"
+            ports = (", ".join(G.port_names(r, f)) if f.kind in G.KINDS else "") or "—"
             nval = tr("{0} defined  ▾").format(len(f.values)) if f.values else tr("add  ▸")
             it = QTreeWidgetItem([f.name, f.bits, kind, N.label(f.fmt, f.width), reset, nval, ports,
                                   single_line(f.desc)])
@@ -1739,8 +1739,10 @@ class RegMapEditorPage(ToolPage):
         idx = self._sel_unplaced()
         if not idx:
             return
+        cur_kind = self.spec.unplaced[idx[0]].kind
+        cur_idx = G.KINDS.index(cur_kind) if cur_kind in G.KINDS else 0
         kind, ok = QInputDialog.getItem(self, tr("Bit field type"), tr("Type:"), list(G.KINDS),
-                                        G.KINDS.index(self.spec.unplaced[idx[0]].kind), False)
+                                        cur_idx, False)
         if ok:
             for i in idx:
                 f = self.spec.unplaced[i]
@@ -2122,6 +2124,7 @@ class RegMapEditorPage(ToolPage):
             self._loading = True
             self.name_ed.setText(name)
             self._loading = False
+            self.history.push(self.spec.to_dict())
 
     def _save_project(self, name, ask=False):
         """Store the register map as a project IP definition (instances in the address map follow it)."""
@@ -2171,6 +2174,7 @@ class RegMapEditorPage(ToolPage):
             self._loading = True
             self.version_ed.setText(version)
             self._loading = False
+            self.history.push(self.spec.to_dict())
         self.origin, self.source_lib = ("library", lib.name), lib.name
         self._set_clean()
         self._show_origin()
