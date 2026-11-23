@@ -186,7 +186,7 @@ class IPBlock:
     version: str = ""       # IP version (from the register map / library)
     regspec: Optional[dict] = None   # full register spec (axilgen.ModuleSpec.to_dict()) when known
     ref: str = ""           # address-map view only: name of the IP definition (not saved)
-    panel: str = ""         # IP interface (axil_studio.panels id) opened from the Debug Bridge; "" = none
+    panel: str = ""         # IP interface id (axil_studio.interfaces), started from the Debug Bridge; "" = none
 
     def get_register(self, name) -> Optional[Register]:
         return next((r for r in self.registers if r.name == name), None)

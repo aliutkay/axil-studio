@@ -11,6 +11,25 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.23 — IP arayüzleri ayrı uygulama
+
+- **IP arayüzleri artık AXIL Studio'nun dışında çalışan ayrı uygulamalar.** Debug Bridge arayüzü bir süreç olarak
+  başlatır; arayüz bilgisayar içindeki yerel bir servise (127.0.0.1, oturum anahtarlı, satır başına JSON) bağlanır ve
+  Debug Bridge'in bağlantısını ve istek kuyruğunu kullanır: register okuma/yazma, toplu erişim, FIFO boşaltma,
+  bağlantıyı tutma (kilit), Debug Bridge'de register gösterme, config listesine ekleme, projede ayar saklama; bağlantı,
+  IP, tema ve kapanma olayları. Arayüz zaten açıksa penceresi öne gelir; Studio kapanınca arayüzler de kapanır.
+- Arayüzler `axil-interface.json` tanıtım dosyalarıyla bulunur: önce *Debug → IP arayüzü klasörleri…* ayarındaki
+  klasörler, sonra açık IP kütüphanelerinin klasörleri, en son `interfaces/`. Bulunamayan arayüz için Debug Bridge
+  aranan kimliği yazar ve klasör ayarını açar. Register Map Editor'daki *IP arayüzü* alanı bulunan kimlikleri listeler,
+  kurulu olmayan bir kimlik de yazılabilir.
+- Python istemcisi `interfaces/sdk/axil_client.py` (tek dosya, standart kütüphane); Studio başlattığı Python
+  arayüzlerinin yoluna ekler. Protokol: `interfaces/README.md`.
+- **UART arayüzü** `interfaces/axiluart_phy/` altında ayrı bir uygulama oldu (kendi çevirileri ve AXIL Studio'dan
+  aldığı temayla); yalnızca Debug Bridge üzerinden çalışır. `axil_studio/panels/` ve `axil_studio/core/uart_*.py`
+  kaldırıldı; doğrulama testleri arayüzün klasörüne taşındı.
+- Komut satırı doğrulama aracı (`scripts/uart_validate.py`) kaldırıldı: doğrulama UART arayüzünün Doğrulama
+  sekmesinden çalışır.
+
 ## early-alpha 0.1.22 — IP arayüzleri, axiluart_phy ve UART arayüzü
 
 - **IP arayüzü:** bir IP'nin register haritası artık kendi Python arayüzünü adlandırabilir (Register Map Editor → *IP

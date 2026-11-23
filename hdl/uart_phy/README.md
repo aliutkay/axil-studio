@@ -4,8 +4,9 @@ ZipCPU `axiluart` (patched as `axiluart_v2`) behind a line interface adapter: DE
 for RS-422 / RS-485 transceivers, half duplex, echo, polarity and TX / RX enable.
 
 In AXIL Studio the IP is in the `examples/uart_phy/uart_phy.axlib.json` library. Its register map
-carries the **UART interface** (`"panel": "axiluart_phy"`): select the IP in the UART-to-AXI Debug
-Bridge and open *IP interface* for line settings, a terminal and hardware validation.
+names the **UART interface** (`"panel": "axiluart_phy"`, the application in `interfaces/axiluart_phy`):
+select the IP in the UART-to-AXI Debug Bridge and open it for line settings, a terminal and hardware
+validation.
 
 ## Files
 | Path | Content |
@@ -65,11 +66,7 @@ vvp sim
 ## Hardware validation
 The *Validation* tab of the UART interface runs the board tests (register access, data in every
 baud × format, bursts, parity / frame / break / overflow injection, DE timing, 2-wire echo, DE
-lead / tail sweep). The same tests run from the command line:
-```
-python -m axil_studio.core.uart_validate --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-python -m axil_studio.core.uart_validate --config examples/uart_phy/bench_rs485_4w.json
-```
+lead / tail sweep) through the Debug Bridge connection, with an optional PC adapter on the UART line.
 
 ## Libero
 - Create the HDL+ core from `axiluart_phy`; bus interface AXI4 slave, prefix `S_AXI_`.

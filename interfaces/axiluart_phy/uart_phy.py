@@ -3,12 +3,11 @@
 axiluart_phy (hdl/uart_phy) is the ZipCPU axiluart (patched as axiluart_v2) with a line
 interface adapter: DE / /RE sequencing for RS-422 / RS-485 transceivers, half duplex, echo,
 polarity and TX / RX enable. This module holds everything the UART interface and the hardware
-validation need that does not touch Qt or a serial port.
+validation need that does not touch Qt or a serial port. The register map itself comes from
+AXIL Studio (the IP's register map, examples/uart_phy/uart_phy.axlib.json).
 """
 
 import re
-
-from .model import EnumValue, Field, IPBlock, Register
 
 PANEL_ID = "axiluart_phy"
 
@@ -288,66 +287,3 @@ class LineSplitter:
             if b == 10 and prev_cr:
                 return "nl"
         return None
-
-
-# ---------------------------------------------------------------- register map
-def axiluart_phy_ip(name="UART0", base=0):
-    """Register map of axiluart_phy with field kinds, value meanings and its UART interface."""
-    F, R, V = Field, Register, EnumValue
-    yes_no = lambda r1, r0="": [V(0, r0), V(1, r1)]
-    return IPBlock(name, base, "AXI4-Lite UART (ZipCPU axiluart_v2) with a configurable line interface: "
-                               "RS-232, RS-422, RS-485 2/4-wire, half duplex, echo, polarity.", [
-        R("SETUP", SETUP, "RW", 0x400001B2, "Line format and baud divider (a write resets RX and TX)", [
-            F("BAUD_DIV", 0, 24, "ACLK / baud", "RW", fmt="udec"),
-            F("PAR_SEL", 24, 1, "Parity: 1 even / 0 odd, or mark / space when PAR_FIXED", "RW"),
-            F("PAR_FIXED", 25, 1, "Fixed (mark / space) parity bit", "RW"),
-            F("PAR_EN", 26, 1, "Parity enable", "RW"),
-            F("STOP2", 27, 1, "Two stop bits", "RW", yes_no("2 stop bits", "1 stop bit")),
-            F("DATA_BITS", 28, 2, "Data bits", "RW",
-              [V(0, "8 bits"), V(1, "7 bits"), V(2, "6 bits"), V(3, "5 bits")], "enum"),
-            F("NO_FLOW", 30, 1, "1: RTS/CTS flow control off", "RW")]),
-        R("FIFO", FIFO, "RO", 0, "RX [15:0] and TX [31:16] FIFO status", [
-            F("RX_AVAIL", 0, 1, "RX data available", "RO"),
-            F("RX_HALF", 1, 1, "RX FIFO at least half full", "RO"),
-            F("RX_FILL", 2, 10, "Bytes waiting in the RX FIFO", "RO", fmt="udec"),
-            F("RX_LGLEN", 12, 4, "log2 RX FIFO depth", "RO", fmt="udec"),
-            F("TX_SPACE", 16, 1, "TX FIFO can accept data", "RO"),
-            F("TX_HALF", 17, 1, "TX FIFO at least half empty", "RO"),
-            F("TX_FREE", 18, 10, "Free TX FIFO entries", "RO", fmt="udec"),
-            F("TX_LGLEN", 28, 4, "log2 TX FIFO depth", "RO", fmt="udec")]),
-        R("RXREG", RXREG, "RW", 0x100, "Received byte and flags. Reading pops the RX FIFO.", [
-            F("DATA", 0, 8, "Received byte", "RO"),
-            F("EMPTY", 8, 1, "1: no data, DATA is not valid", "RO", yes_no("Empty", "Data")),
-            F("PERR", 9, 1, "Parity error seen (sticky); write 1 to clear", "W1C"),
-            F("FERR", 10, 1, "Frame error seen (sticky); write 1 to clear", "W1C"),
-            F("BREAK", 11, 1, "Break condition on the line", "RO"),
-            F("OVFL", 12, 1, "RX FIFO overflow (sticky); writing 1 resets the receiver and the RX FIFO", "W1C"),
-            F("BYTE_PERR", 13, 1, "This byte had a parity error", "RO"),
-            F("BYTE_FERR", 14, 1, "This byte had a frame error", "RO")]),
-        R("TXREG", TXREG, "WO", 0, "Write a byte to the TX FIFO", [
-            F("DATA", 0, 8, "Byte to send", "RW"),
-            F("BREAK", 9, 1, "1: hold the line in break", "RW"),
-            F("TX_RESET", 12, 1, "1: reset the transmitter and the TX FIFO", "PULSE")]),
-        R("PHY_CTRL", PHY_CTRL, "RW", 0xC2, "Line interface control (applied when TX is idle)", [
-            F("DE_MODE", 0, 2, "Transceiver driver enable", "RW",
-              [V(0, "DE low (RS-232 / TTL)", "Driver off"), V(1, "DE high (RS-422)", "Driver always on"),
-               V(2, "DE while transmitting (RS-485)", "Driver on while transmitting")], "enum"),
-            F("HALF", 2, 1, "Half duplex: receiver off while driving", "RW"),
-            F("ECHO", 3, 1, "Keep the receiver on while driving (HALF only)", "RW"),
-            F("TX_INV", 4, 1, "Invert the TX line", "RW"),
-            F("RX_INV", 5, 1, "Invert the RX line", "RW"),
-            F("TX_EN", 6, 1, "Transmitter enable", "RW"),
-            F("RX_EN", 7, 1, "Receiver enable", "RW"),
-            F("APPLY_NOW", 31, 1, "Apply now even if TX is busy", "PULSE")]),
-        R("PHY_TIMING", PHY_TIMING, "RW", 0x00FA0032, "Driver enable timing in ACLK cycles", [
-            F("LEAD", 0, 16, "DE on -> start bit", "RW", fmt="udec"),
-            F("TAIL", 16, 16, "End of stop bit -> DE off", "RW", fmt="udec")]),
-        R("PHY_STATUS", PHY_STATUS, "RW", 0x0F, "Capabilities and live line state", [
-            F("HAS_TX", 0, 1, "Transmitter present", "RO"), F("HAS_RX", 1, 1, "Receiver present", "RO"),
-            F("HAS_DE", 2, 1, "DE pin present", "RO"), F("HAS_RE", 3, 1, "/RE pin present", "RO"),
-            F("HAS_FLOW", 4, 1, "RTS/CTS pins present", "RO"),
-            F("DRIVING", 8, 1, "DE sequence active", "RO"), F("DE", 9, 1, "DE pin", "RO"),
-            F("RE_N", 10, 1, "/RE pin", "RO"),
-            F("PENDING", 11, 1, "New settings waiting for TX idle", "RO"),
-            F("CFG_ERR", 12, 1, "An unsupported setting was written; write 1 to clear", "W1C")]),
-    ], version="2.0.0", panel=PANEL_ID)

@@ -13,26 +13,19 @@ The line interface (PHY_CTRL / PHY_TIMING) is set from the line type, DE mode an
 times before the tests, never taken from the board; every register is restored when the run
 ends, also after Stop.
 
-The tests run on one thread and report each result through a callback (the UART interface's
-Validation tab). From the command line:
-
-  python -m axil_studio.core.uart_validate --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-  python -m axil_studio.core.uart_validate --config bench.json --bauds 460800,921600
-  python -m axil_studio.core.uart_validate --hexbus COM5 --line COM7 --sweep lead
+The tests run on one thread and report each result through a callback (the Validation tab of the
+UART interface). The link is anything with read(addr) / write(addr, value) that raises LinkError
+on a failed access; in the UART interface it goes through AXIL Studio's Debug Bridge.
 """
 
-import argparse
 import dataclasses
-import json
 import random
-import sys
 import threading
 import time
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from .hexbus import HexbusError, HexbusLink
-from .uart_phy import (CTRL_APPLY_NOW, CTRL_DE_HIGH, CTRL_DE_LOW, CTRL_DE_TX, CTRL_ECHO, CTRL_HALF,
+from uart_phy import (CTRL_APPLY_NOW, CTRL_DE_HIGH, CTRL_DE_LOW, CTRL_DE_TX, CTRL_ECHO, CTRL_HALF,
                        CTRL_RX_EN, CTRL_TX_EN, DE_CODES, FIFO, LINE_TYPES, PHY_CTRL, PHY_STATUS, PHY_TIMING,
                        RX_BREAK, RX_BYTE_FERR, RX_BYTE_PERR, RX_EMPTY, RX_FERR, RX_OVFL, RX_PERR, RXREG, SETUP,
                        SETUP_NO_FLOW, ST_CFG_ERR, ST_DE, ST_DRIVING, ST_HAS_DE, ST_HAS_FLOW, ST_HAS_RE, ST_HAS_RX,
@@ -50,8 +43,12 @@ class Cancelled(Exception):
     """The run was stopped."""
 
 
+class LinkError(Exception):
+    """A register access failed (the link raises it, or an error derived from it)."""
+
+
 # ----------------------------------------------------------------------------
-# Settings (the command line options; also the JSON settings file)
+# Settings (also the JSON settings file)
 # ----------------------------------------------------------------------------
 CONFIG_KEYS = ("hexbus", "hexbus_baud", "line", "loopback", "base", "clk", "bauds", "formats",
                "count", "quick", "burst_all", "line_type", "de", "lead_us", "tail_us", "report")
@@ -246,7 +243,7 @@ class Dut:
             free = self.fifo()["tx_free"]
             if free == 0:
                 if time.monotonic() > deadline:
-                    raise HexbusError("TX FIFO stays full")
+                    raise LinkError("TX FIFO stays full")
                 self.sleep(self.frame_s)
                 continue
             for b in data[:free]:
@@ -915,7 +912,7 @@ class Validator:
                 d.wr(PHY_CTRL, saved[1] | CTRL_APPLY_NOW)
                 d.drain()
                 d.clear_flags()
-            except HexbusError as exc:
+            except LinkError as exc:
                 r.add("INFO", "Restore registers", f"could not restore the registers: {exc}")
 
 
@@ -940,7 +937,7 @@ def run_validation(link, settings: Settings, report: Report, line_port=None):
     except Cancelled:
         report.add("INFO", "Stopped", "the run was stopped; the registers were restored")
         return "stopped"
-    except HexbusError as exc:
+    except LinkError as exc:
         report.add("FAIL", "Hexbus communication", str(exc))
         return "error"
     except SERIAL_ERRORS + (OSError,) as exc:
@@ -952,128 +949,5 @@ def run_validation(link, settings: Settings, report: Report, line_port=None):
 def open_line(port):
     """Open the PC adapter on the UART line (the tests set its baud rate and format)."""
     if serial is None:
-        raise HexbusError("pyserial is not installed (pip install pyserial)")
+        raise LinkError("pyserial is not installed (pip install pyserial)")
     return serial.Serial(port, 9600, timeout=0.05)
-
-
-def build_parser():
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    g = ap.add_argument_group("connections")
-    g.add_argument("--config", help="JSON file with any of the options below (command line wins)")
-    g.add_argument("--save-config", metavar="FILE", help="write the effective settings to FILE and exit")
-    g.add_argument("--hexbus", help="hexbus debug COM port")
-    g.add_argument("--hexbus-baud", type=int, default=115200)
-    g.add_argument("--line", help="PC adapter COM port on the UART line")
-    g.add_argument("--loopback", action="store_true", help="UART TX wired to its own RX")
-
-    g = ap.add_argument_group("device")
-    g.add_argument("--base", type=lambda s: int(s, 0), default=0x80000000, help="UART base address")
-    g.add_argument("--clk", type=float, default=50e6, help="ACLK frequency in Hz")
-
-    g = ap.add_argument_group("line interface (written to PHY_CTRL / PHY_TIMING before the tests)")
-    g.add_argument("--line-type", choices=LINE_TYPES, default="rs485-4w",
-                   help="; ".join(f"{k}: {v['label']}" for k, v in LINE_TYPES.items()))
-    g.add_argument("--de", choices=DE_CODES, help="override the DE mode of --line-type")
-    g.add_argument("--lead-us", type=float, default=10.0,
-                   help="DE to start bit, microseconds (default 10; >= 2x transceiver tZH)")
-    g.add_argument("--tail-us", default="auto",
-                   help="stop bit to DE release, microseconds, or 'auto' = one bit time (default)")
-
-    g = ap.add_argument_group("test matrix")
-    g.add_argument("--bauds", default="9600,19200,38400,57600,115200")
-    g.add_argument("--formats", default="8N1,8E1,8O1,8N2,7E1,7O1,8M1,8S1",
-                   help="data bits 5-8, parity N/E/O/M/S, stop 1-2, e.g. 5N1,6E1,7O2")
-    g.add_argument("--count", type=int, default=64, help="bytes per data test")
-    g.add_argument("--quick", action="store_true", help="skip parity/frame injection")
-    g.add_argument("--burst-all", action="store_true",
-                   help="run the full-FIFO burst test for every format, not only the first")
-
-    g = ap.add_argument_group("DE timing sweep (instead of the normal tests)")
-    g.add_argument("--sweep", choices=("lead", "tail"),
-                   help="find the smallest working DE lead/tail at the LAST --bauds value "
-                        "and the first --formats value, DE switched per transmission")
-    g.add_argument("--sweep-trials", type=int, default=3,
-                   help="error-free runs of --count bytes needed in the final check")
-    g.add_argument("--sweep-resolution", type=float, default=5.0,
-                   help="smart mode: stop bisecting when the gap is below this %% (default 5)")
-    g.add_argument("--sweep-mode", choices=("smart", "linear"), default="smart",
-                   help="smart: coarse doubling, bisection, then full verify (default); "
-                        "linear: fixed list, full test at every step")
-
-    g = ap.add_argument_group("output")
-    g.add_argument("--report", help="write results to a JSON file")
-    g.add_argument("--no-color", action="store_true")
-    return ap
-
-
-def parse_args(argv):
-    ap = build_parser()
-    pre, _ = ap.parse_known_args(argv)
-    if pre.config:
-        with open(pre.config, encoding="utf-8") as fh:
-            cfg = json.load(fh)
-        unknown = set(cfg) - set(CONFIG_KEYS) - {"sweep", "sweep_mode", "sweep_trials", "sweep_resolution"}
-        if unknown:
-            ap.error(f"unknown keys in {pre.config}: {', '.join(sorted(unknown))}")
-        for key in ("bauds", "formats"):
-            if isinstance(cfg.get(key), list):
-                cfg[key] = ",".join(str(x) for x in cfg[key])
-        if isinstance(cfg.get("base"), str):
-            cfg["base"] = int(cfg["base"], 0)
-        ap.set_defaults(**cfg)
-    args = ap.parse_args(argv)
-    kw = {k: getattr(args, k) for k in ("base", "clk", "loopback", "line_type", "lead_us", "tail_us", "bauds",
-                                        "formats", "count", "quick", "burst_all", "sweep", "sweep_mode",
-                                        "sweep_trials", "sweep_resolution", "hexbus_baud")}
-    kw.update(line=args.line or "", de=args.de or "", hexbus=args.hexbus or "", report=args.report or "")
-    try:
-        settings = Settings(**kw)
-    except ValueError as exc:
-        ap.error(str(exc))
-    if args.save_config:
-        with open(args.save_config, "w", encoding="utf-8") as fh:
-            json.dump(settings.to_dict(), fh, indent=2)
-        print(f"settings written to {args.save_config}")
-        sys.exit(0)
-    return settings, args.no_color
-
-
-COLORS = {"PASS": "\033[32m", "FAIL": "\033[31m", "SKIP": "\033[33m", "INFO": "\033[36m"}
-
-
-def main(argv=None):
-    settings, no_color = parse_args(argv)
-    color = not no_color and sys.stdout.isatty()
-
-    def show(row):
-        tag = f"[{row['status']}]"
-        if color:
-            tag = f"{COLORS[row['status']]}{tag}\033[0m"
-        print(f"{tag:>6} {row['test']}" + (f" — {row['detail']}" if row["detail"] else ""), flush=True)
-
-    rep = Report(on_row=show, on_log=lambda t: print(t, flush=True) if not t.startswith("[") else None)
-    if not settings.hexbus:
-        sys.exit("--hexbus PORT is required")
-    link, line_port = HexbusLink(timeout=2.0), None
-    try:
-        link.open(settings.hexbus, settings.hexbus_baud)
-        if settings.line:
-            line_port = open_line(settings.line)
-        link.reset()
-        run_validation(link, settings, rep, line_port)
-    except (HexbusError,) + SERIAL_ERRORS as exc:
-        rep.add("FAIL", "Connection", str(exc))
-    finally:
-        link.close()
-        if line_port is not None:
-            line_port.close()
-    counts = rep.counts()
-    print("\n" + "  ".join(f"{k}: {v}" for k, v in counts.items()))
-    if settings.report:
-        with open(settings.report, "w", encoding="utf-8") as fh:
-            json.dump(rep.to_dict(settings), fh, indent=2)
-    return 0 if rep.passed else 1
-
-
-if __name__ == "__main__":
-    sys.exit(main())

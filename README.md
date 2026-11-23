@@ -331,17 +331,21 @@ HDL Designer'da: hexbus `MASTER_AXI_REQ/RSP` ↔ xbar `_pk` `MASTER0_AXI_REQ/RSP
 - Sağ tarafta üstte sekmeler: **Register**, **Canlı izleme**, **Config**; **Trafik** altta, yüksekliği ayarlanabilir. Hangi ekrandan okunursa okunsun (register paneli, canlı izleme, config) son okunan değer ve saati her ekranda gösterilir.
 - **Canlı izleme**: İzle düğmesi ya da ağaçta sağ tık ile eklenen registerlar seçilen periyotta (ms) okunur; değişen değerler vurgulanır. Register satırına tıklayınca bit alanları alt satırlarda değer ve anlamlarıyla açılır. Seçili registerın **geçmişi** (milisaniye zaman damgalı her okuma ya da yalnızca değişimler, değişen bit alanlarıyla) altta listelenir; tüm kayıt **CSV'ye aktar** ile dışa alınır.
 - **Config**: Config'e ekle ile register panelindeki yazılacak değer listeye eklenir; satıra çift tıklayınca bit alanlarıyla düzenlenip güncellenir. Satıra tıklayınca bit alanları açılır; *Cihazda* sütunu son okunan değeri gösterir, config'ten farklı alanlar kırmızıdır. Sıralama, Cihazdan oku, Karşılaştır, Cihaza gönder (sırayla yazar ve geri okur), `.axcfg.json` aç / kaydet.
-- **IP arayüzü:** register haritasında bir arayüz adı taşıyan IP'ler (Register Map Editor → *IP arayüzü*; kütüphanede ve
-  projede IP ile birlikte saklanır) ağaçta simgeyle görünür. IP seçilince register panelinin üstünde arayüzün düğmesi çıkar;
-  IP'ye çift tık ya da sağ tık → *… aç* da açar. Arayüz Debug Bridge'in **aynı bağlantısını ve istek kuyruğunu** kullanır
-  (port ikinci kez açılmaz), okuduğu değerler Debug Bridge'in ekranlarına ve trafik günlüğüne düşer, *Debug Bridge'de göster*
-  ile aynı IP'nin register görünümüne dönülür. Arayüzler `axil_studio/panels/` altındadır (`panels.register(PanelInfo(...))`).
+- **IP arayüzü:** register haritası bir arayüz kimliği taşıyan IP'ler (Register Map Editor → *IP arayüzü*; projede
+  ve kütüphanede IP ile birlikte saklanır) ağaçta simgeyle görünür. IP seçilince register panelinin üstünde arayüzün
+  düğmesi çıkar; IP'ye çift tık ya da sağ tık da açar. Arayüz **ayrı bir uygulamadır**: Debug Bridge onu başlatır,
+  arayüz de Debug Bridge'e yerel bir servisle bağlanır ve **aynı bağlantıyı ve istek kuyruğunu** kullanır (port
+  ikinci kez açılmaz). Okuduğu değerler Debug Bridge'in ekranlarına ve trafik günlüğüne düşer, *Debug Bridge'de
+  göster* ile aynı IP'nin register görünümüne dönülür. Arayüzler AXIL Studio'nun dışında da durabilir:
+  *Debug* menüsü → *IP arayüzü klasörleri…* ile eklenen klasörlerde, açık IP kütüphanelerinin yanında ve
+  `interfaces/` altında aranır. Tanıtım dosyası, protokol ve Python istemcisi: [`interfaces/README.md`](interfaces/README.md).
 
 ### UART arayüzü (axiluart_phy)
 
-`hdl/uart_phy` altındaki axiluart_phy IP'sinin arayüzü; IP `examples/uart_phy/uart_phy.axlib.json` kütüphanesinde,
-örnek proje `examples/uart_phy/uart_phy_demo.axproj.json`. Üstte ACLK frekansı (baud bölücüleri ve DE zamanlaması
-buna göre hesaplanır; projede saklanır).
+`hdl/uart_phy` altındaki axiluart_phy IP'sinin arayüzü (`interfaces/axiluart_phy/`, AXIL Studio ile gelen ayrı
+uygulama); IP `examples/uart_phy/uart_phy.axlib.json` kütüphanesinde, örnek proje
+`examples/uart_phy/uart_phy_demo.axproj.json`. Üstte ACLK frekansı (baud bölücüleri ve DE zamanlaması buna göre
+hesaplanır; projede saklanır). Pencere AXIL Studio'nun temasını ve dilini kullanır.
 
 - **Hat ayarları:** baud, veri biti, parity, stop biti ve RTS/CTS → SETUP (bölücü ve gerçek baud hatası gösterilir);
   hat tipi (TTL / RS-232, RS-422, RS-485 4 telli, 2 telli, echo'lu), DE modu, half duplex, echo, polarite, TX/RX açık,
@@ -354,8 +358,7 @@ buna göre hesaplanır; projede saklanır).
 - **Doğrulama:** aşağıdaki donanım testlerinin arayüzü. Hat adaptörü portu (ya da loopback), test edilen hat, test
   matrisi ya da DE lead / tail taraması seçilir; **Başlat** ile testler arka planda çalışır, sonuçlar canlı tabloya ve
   günlüğe düşer, **Durdur** testi keser. Çalışırken Debug Bridge'in canlı izlemesi durur ve bağlantısı kilitlenir; test
-  bitince (durdurulsa da) kartın register'ları eski değerlerine döner. Ayarlar ve rapor JSON olarak kaydedilir; ayar
-  dosyası komut satırıyla aynıdır.
+  bitince (durdurulsa da) kartın register'ları eski değerlerine döner. Ayarlar ve rapor JSON olarak kaydedilir.
 
 
 ## IP Library
@@ -484,9 +487,10 @@ commit'in yanında görünür.
 | `studio.py` | Başlatıcı (`python studio.py`) |
 | `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py`; `history.py` (geri al / yinele), `errors.py` (hata yakalayıcı ve log) |
 | `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
-| `axil_studio/panels/` | IP arayüzleri (Debug Bridge'den açılır): kayıt sistemi (`__init__.py`), UART arayüzü (`uart_phy_panel.py`) |
+| `axil_studio/interfaces/` | IP arayüzleri için Studio tarafı: arama (`__init__.py`), yerel servis, başlatıcı ve klasör ayarları (`host.py`) |
+| `interfaces/` | IP arayüzü uygulamaları (Studio'nun dışında çalışır): Python istemcisi `sdk/axil_client.py`, UART arayüzü `axiluart_phy/`; protokol `interfaces/README.md` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
-| `scripts/` | Komut satırı araçları: `uart_validate.py` (donanım doğrulama, `axil_studio/core/uart_validate.py`'yi çalıştırır), `i18n_check.py` (çeviri denetimi), `bump_version.py` |
+| `scripts/` | Komut satırı araçları: `i18n_check.py` (çeviri denetimi), `bump_version.py` |
 | `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`) |
 | `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
@@ -510,8 +514,6 @@ commit'in yanında görünür.
 | `regmap_xlsx.py` | Kütük haritası Excel çıktısı |
 | `numfmt.py` | Bit alanı veri tipleri ve gösterimleri |
 | `portparse.py` | Verilog / SystemVerilog / VHDL port listesi çözümleyici (Port içe aktar) |
-| `uart_phy.py` | axiluart_phy: register yerleşimi, karakter formatı, hat tipleri, SETUP / PHY_CTRL / PHY_TIMING hesapları, terminal ayrıştırıcıları, register haritası |
-| `uart_validate.py` | axiluart_phy donanım doğrulaması (UART arayüzünün Doğrulama sekmesi ve komut satırı: `python -m axil_studio.core.uart_validate`) |
 
 Hexbus notları: her işlem `A<adres|1>W<veri>\n` veya `A<adres|1>R\n` olarak gönderilir (adres artırma kapalı);
 yanıtlar `A` adres, `K` yazma onayı, `R` okuma verisi, `E` AXI bus hatası, `Z` idle. Hexbus'ta FIFO yoktur;
@@ -519,36 +521,23 @@ her isteğin yanıtı beklenerek sıralı çalışılır.
 
 ## Donanım doğrulama (axiluart_phy)
 
-UART arayüzünün **Doğrulama** sekmesi ile aynı testler komut satırından da çalışır:
-```
-python scripts/uart_validate.py --hexbus COM5 --line COM7 --line-type rs485-4w --lead-us 10
-python scripts/uart_validate.py --config examples/uart_phy/bench_rs485_4w.json   # ayarlar dosyadan
-python scripts/uart_validate.py --config bench.json --bauds 460800,921600      # komut satırı dosyayı ezer
-python scripts/uart_validate.py --hexbus COM5 --line COM7 --save-config bench.json   # ayarları kaydet
-```
-Hat ayarları (PHY_CTRL / PHY_TIMING) testten önce script tarafından yazılır, kartta o an
-yazılı olan değerler kullanılmaz. Test bitince kartın register'ları eski hâline döner.
+UART arayüzünün **Doğrulama** sekmesi (`interfaces/axiluart_phy/uart_validate.py`). Ayarlar sekmedeki alanlardır;
+JSON olarak kaydedilip açılabilir (ör. `examples/uart_phy/bench_rs485_4w.json`). Hat ayarları (PHY_CTRL /
+PHY_TIMING) testten önce yazılır, kartta o an yazılı olan değerler kullanılmaz; test bitince (durdurulsa da) kartın
+register'ları eski hâline döner.
 
-| Seçenek | Anlamı |
+| Ayar | Anlamı |
 |---|---|
-| `--config` / `--save-config` | Ayarları JSON dosyasından oku / dosyaya yaz |
-| `--hexbus`, `--line` | Hexbus debug portu, UART hattındaki PC adaptörü |
-| `--loopback` | Adaptör yok, UART TX kendi RX'ine bağlı |
-| `--base`, `--clk` | UART base adresi, ACLK frekansı (varsayılan 0x80000000, 50 MHz) |
-| `--line-type` | `ttl`, `rs232` (DE 0), `rs422` (DE 1), `rs485-4w` (DE gönderirken), `rs485-2w` (DE gönderirken + half duplex, echo testleri), `rs485-2w-echo` (aynısı, echo açık) |
-| `--de` | Hat tipinin DE modunu ez: `low`, `high`, `tx` |
-| `--lead-us` | DE açılması → start biti, µs (varsayılan 10; transceiver tZH'nin en az 2 katı) |
-| `--tail-us` | Stop biti → DE kapanması, µs ya da `auto` = her baud'da 1 bit süresi (varsayılan) |
-| `--bauds`, `--formats` | Test matrisi. 5–6 bit için ör. `--formats 5N1,5E1,6O1,6N2` |
-| `--count`, `--quick`, `--burst-all` | Byte sayısı, hata enjeksiyonunu atla, burst testini her formatta çalıştır |
-| `--report sonuc.json` | Sonuçları JSON olarak kaydet |
-| `--sweep lead` / `--sweep tail` | Normal testler yerine: son `--bauds` değerinde, DE gönderirken açılırken hatasız çalışan en küçük lead/tail değerini bulur ve önerilen değeri (2× pay) DEF_TIMING olarak yazar |
-| `--sweep-mode` | `smart` (varsayılan): 8 uç byte ile değeri ikiye katlayarak aralığı bulur, ikiye bölerek daraltır, sonucu tam veriyle doğrular. `linear`: sabit listeyi her adımda tam veriyle dener |
-| `--sweep-resolution` | Smart modda daraltmanın duracağı aralık, % (varsayılan 5) |
-| `--sweep-trials` | Son doğrulamada gereken hatasız deneme sayısı (varsayılan 3) |
+| Hat adaptörü / loopback | UART hattındaki PC adaptörü (PC hattın karşı ucu olur) ya da adaptörsüz TX→RX bağlantısı |
+| Hat tipi | `ttl`, `rs232` (DE 0), `rs422` (DE 1), `rs485-4w` (DE gönderirken), `rs485-2w` (DE gönderirken + half duplex, echo testleri), `rs485-2w-echo` |
+| DE modu | Hat tipinin DE modunu ezer: düşük, yüksek, gönderirken |
+| DE lead / tail | DE açılması → start biti; stop biti → DE kapanması (µs; tail istenirse 1 bit süresi) |
+| Baud hızları, formatlar | Test matrisi; 5–6 bit için ör. `5N1, 5E1, 6O1, 6N2` |
+| Test başına byte, enjeksiyonu atla, burst her formatta | Veri miktarı ve kapsam |
+| DE lead / tail taraması | Normal testler yerine: son baud hızında, DE gönderirken açılırken hatasız çalışan en küçük lead/tail değerini bulur ve önerilen değeri (2× pay) DEF_TIMING olarak yazar. *Akıllı*: 8 uç byte ile değeri ikiye katlayarak aralığı bulur, ikiye bölerek daraltır, sonucu tam veriyle doğrular; *Doğrusal*: sabit listeyi her adımda tam veriyle dener |
 
 Testler: register erişimi (WSTRB dahil), PHY_CTRL/TIMING, geçersiz ayar reddi, FIFO derinliği;
 her baud × format için TX ve RX veri bütünlüğü; FIFO kapasitesinde kesintisiz burst alımı;
 TX parity bitinin doğruluğu (5–7 bit formatlarda PC bir fazla data biti okur); parity hatası
 (karşı parity), frame hatası (PC'de fazladan parity), break, overflow, TX_EN/RX_EN, DE zamanlaması
-ve DE modları; `rs485-2w` ile echo bastırma. Hata varsa çıkış kodu 1'dir.
+ve DE modları; `rs485-2w` ile echo bastırma.

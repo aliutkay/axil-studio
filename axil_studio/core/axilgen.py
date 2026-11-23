@@ -221,7 +221,7 @@ class ModuleSpec:
     version: str = "1.0.0"  # IP version (written into the generated files and the IP library)
     unplaced: List[FieldSpec] = field(default_factory=list)   # bit fields not in a register yet
                             # (e.g. imported from the ports of the IP core); not part of the HDL
-    panel: str = ""         # IP interface (axil_studio.panels id); "" = none
+    panel: str = ""         # IP interface id (axil_studio.interfaces); "" = none
 
     # -------------------------------------------------------------- persistence
     def to_dict(self):

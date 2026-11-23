@@ -9,8 +9,9 @@ in the field's format, a switch for booleans, a list for defined values, a butto
 commands and for clearing W1C flags.
 
 An IP whose register map names an IP interface (IPBlock.panel, e.g. the UART interface of
-axiluart_phy) opens it from here: the interface works through this page's connection and request
-queue (see axil_studio.panels).
+axiluart_phy) opens it from here: the interface is a separate application found through its
+manifest; it connects to this page's local service and works through this page's connection and
+request queue (see axil_studio.interfaces).
 """
 
 import collections
@@ -31,7 +32,9 @@ from axil_studio.core import axilgen as G
 from axil_studio.core import hexbus
 from axil_studio.core import numfmt as N
 from axil_studio import ROOT, icons, theme, ui
-from axil_studio import panels
+from axil_studio import interfaces as ifc
+from axil_studio.interfaces import host as ifhost
+from axil_studio.i18n import language
 from axil_studio.dialogs import BaseDialog, CustomValueDialog, FieldMapDialog
 from axil_studio.tools.base import ToolPage
 from axil_studio.core.model import KIND_READS, KIND_WRITES
@@ -84,7 +87,8 @@ class DebugBridgePage(ToolPage):
         self.poll_timer = QTimer(self)
         self.poll_timer.timeout.connect(self._poll)
         self._loading = False
-        self._panels = {}             # (group, ip name) -> open IP interface window
+        self.service = None           # local service of the IP interfaces (started on first use)
+        self.ifaces = {}              # interface id -> interfaces.Interface (found on disk)
         self._exclusive = None        # IP interface holding the link (hardware validation)
         self._was_connected = False
 
@@ -169,7 +173,7 @@ class DebugBridgePage(ToolPage):
         col.addWidget(self.reg_title)
         col.addWidget(self.reg_desc)
         top.addLayout(col, 1)
-        self.panel_btn = ui.button(tr("IP interface"), "external", None, self.open_panel,
+        self.panel_btn = ui.button(tr("IP interface"), "external", None, lambda: self.open_panel(),
                                    tr("Open the IP's own interface (it uses this connection)"))
         self.panel_btn.hide()
         top.addWidget(self.panel_btn, 0, Qt.AlignmentFlag.AlignTop)
@@ -277,6 +281,7 @@ class DebugBridgePage(ToolPage):
         self.body.addWidget(split, 1)
 
         self._log.connect(self._append_log)
+        self.refresh_interfaces()
         self.refresh_ports()
         self._fill_tree()
         self._update_controls()
@@ -301,6 +306,8 @@ class DebugBridgePage(ToolPage):
             if key:
                 a.setShortcut(QKeySequence(key))
             m.addAction(a)
+        m.addSeparator()
+        m.addAction(tr("IP interface folders…"), self.interface_folders)
         m.addSeparator()
         m.addAction(tr("Clear traffic"), self.log.clear)
 
@@ -439,10 +446,12 @@ class DebugBridgePage(ToolPage):
             top.setFont(0, bf)
             top.setToolTip(0, single_line(ip.desc))
             top.setData(0, ROLE, (group, ip.name, None))
-            info = panels.get(ip.panel)
-            if info is not None:
-                top.setIcon(0, icons.icon("external", "accent", 14))
-                top.setToolTip(0, single_line(ip.desc) + "\n" + tr("{0}: double-click to open").format(info.title))
+            if ip.panel:
+                info = self.ifaces.get(ip.panel)
+                top.setIcon(0, icons.icon("external", "accent" if info else "muted", 14))
+                top.setToolTip(0, single_line(ip.desc) + "\n" + (
+                    tr("{0}: double-click to open").format(info.label(language())) if info
+                    else tr("IP interface: {0} (not found)").format(ip.panel)))
             for reg in ip.registers:
                 it = QTreeWidgetItem([reg.name, hex32(ip.address(reg)), reg.access])
                 it.setFont(1, mono)
@@ -490,6 +499,10 @@ class DebugBridgePage(ToolPage):
         self.staged = None
         self._show_register()
         self._update_panel_btn()
+
+    def on_project_replaced(self):
+        self.refresh_interfaces()          # the project's libraries may hold other interfaces
+        self.on_project_modified()
 
     def on_project_modified(self):
         self._fill_tree()
@@ -959,49 +972,74 @@ class DebugBridgePage(ToolPage):
     def record(self, addr, value, source):
         self._record(addr, value, source)
 
-    def _panel_info(self):
-        return panels.get(self.ip.panel) if self.ip is not None and self.group != "raw" else None
+    def port_name(self):
+        return self.port_cb.currentText() if self.link.connected else ""
+
+    def refresh_interfaces(self):
+        """Look for the interface applications again (settings folders, libraries, built-in)."""
+        self.ifaces, errors = ifhost.discover(self.ctx)
+        for e in errors:
+            self._log.emit("ERR", e)
+
+    def interface_folders(self):
+        if ifhost.folders_dialog(self, self.ctx):
+            self.refresh_interfaces()
+            self._fill_tree()
+            self._update_panel_btn()
 
     def _update_panel_btn(self):
-        info = self._panel_info()
-        self.panel_btn.setVisible(info is not None)
-        if info is not None:
-            self.panel_btn.setText(info.title)
-            self.panel_btn.setToolTip(info.desc + "\n" + tr("It uses this connection."))
+        ip = self.ip if self.group in ("project", "extra") else None
+        pid = ip.panel if ip is not None else ""
+        self.panel_btn.setVisible(bool(pid))
+        if pid:
+            info = self.ifaces.get(pid)
+            self.panel_btn.setText(info.label(language()) if info else tr("IP interface"))
+            self.panel_btn.setToolTip((info.description(language()) + "\n" + tr("It uses this connection.")) if info
+                                      else tr("IP interface: {0} (not found)").format(pid))
 
     def _tree_double_click(self, item, _col=0):
         key = item.data(0, ROLE) if item else None
         if key and key[2] is None and key[0] != "raw":
             ip = self._find_ip(key[0], key[1])
-            if ip is not None and panels.get(ip.panel) is not None:
+            if ip is not None and ip.panel:
                 self.open_panel(key[0], key[1])
 
     def open_panel(self, group=None, name=None):
-        """Open (or raise) the IP interface of an IP."""
+        """Start (or bring to the front) the IP interface application of an IP."""
         if group is None:
             if self.ip is None:
                 return
             group, name = self.group, self.ip.name
         ip = self._find_ip(group, name)
-        info = panels.get(ip.panel) if ip else None
-        if info is None:
+        if ip is None or not ip.panel:
             return
-        w = self._panels.get((group, name))
+        info = self.ifaces.get(ip.panel)
+        if info is None:
+            self.refresh_interfaces()
+            info = self.ifaces.get(ip.panel)
+        if info is None:
+            box = QMessageBox(self)
+            box.setIcon(QMessageBox.Icon.Warning)
+            box.setWindowTitle(tr("IP interface"))
+            box.setText(tr("The interface '{0}' of {1} was not found.").format(ip.panel, name))
+            box.setInformativeText(tr("Add the folder that holds it (with its axil-interface.json) to the IP interface folders."))
+            folders = box.addButton(tr("IP interface folders…"), QMessageBox.ButtonRole.ActionRole)
+            box.addButton(QMessageBox.StandardButton.Close)
+            box.exec()
+            if box.clickedButton() is folders:
+                self.interface_folders()
+            return None
+        if info.protocol != ifc.PROTOCOL:
+            self.error(tr("IP interface"), tr("{0} uses protocol {1}; this AXIL Studio speaks {2}.").format(
+                info.label(language()), info.protocol, ifc.PROTOCOL))
+            return None
+        if self.service is None:
+            self.service = ifhost.InterfaceService(self)
         try:
-            if w is not None and w.isVisible():
-                w.showNormal()
-                w.raise_()
-                w.activateWindow()
-                return w
-        except RuntimeError:          # deleted on close
-            pass
-        w = info.factory(self, group, name)
-        w.destroyed.connect(lambda *_, k=(group, name): self._panels.pop(k, None))
-        self._panels[(group, name)] = w
-        geo = self.window().geometry()
-        w.move(geo.left() + 80, geo.top() + 60)
-        w.show()
-        return w
+            return self.service.open(info, group, name)
+        except RuntimeError as exc:
+            self.error(tr("IP interface"), exc)
+            return None
 
     def show_register(self, group, ip_name, reg_name=None):
         """Select a register (or the IP) in the tree and bring this window to the front."""
@@ -1066,9 +1104,10 @@ class DebugBridgePage(ToolPage):
             return
         m = QMenu(self)
         ip = self._find_ip(key[0], key[1])
-        info = panels.get(ip.panel) if ip else None
-        if info is not None:
-            m.addAction(tr("Open {0}…").format(info.title), lambda: self.open_panel(key[0], key[1]))
+        if ip is not None and ip.panel:
+            info = self.ifaces.get(ip.panel)
+            m.addAction(tr("Open {0}…").format(info.label(language()) if info else tr("IP interface")),
+                        lambda: self.open_panel(key[0], key[1]))
             m.addSeparator()
         if key[2] is None and ip:
             regs = [(key[0], ip.name, r.name) for r in ip.registers if r.readable]
@@ -1696,12 +1735,8 @@ class DebugBridgePage(ToolPage):
             self._fill_fields()
 
     def shutdown(self):
-        for w in list(self._panels.values()):
-            try:
-                w.cancel.set() if getattr(w, "validating", False) else None
-                w.close()
-            except RuntimeError:
-                pass
+        if self.service is not None:
+            self.service.shutdown()
         self.poll_timer.stop()
         self.link.close()
         self.bus.shutdown()

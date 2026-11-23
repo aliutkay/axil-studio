@@ -1,0 +1,12 @@
+{
+  "format": "axil-interface",
+  "protocol": 1,
+  "id": "axiluart_phy",
+  "version": "1.0.0",
+  "title": {"en": "UART interface", "tr": "UART arayüzü"},
+  "desc": {
+    "en": "axiluart_phy: line settings (baud, format, RS-232 / RS-422 / RS-485), terminal and hardware validation",
+    "tr": "axiluart_phy: hat ayarları (baud, format, RS-232 / RS-422 / RS-485), terminal ve donanım doğrulaması"
+  },
+  "command": ["{python}", "uart_ui.py"]
+}
