@@ -39,9 +39,8 @@ DEPTH = {"bmc": 30, "prove": 20, "cover": 40}
 
 def python_bitwuzla(workdir):
     """Use the bitwuzla Python package as the solver program (bitwuzla_smt2.py)."""
-    try:
-        import bitwuzla  # noqa: F401
-    except ImportError:
+    import importlib.util
+    if importlib.util.find_spec("bitwuzla") is None:    # not imported here: the shim runs it
         return False
     bindir = os.path.join(workdir, "bin")
     os.makedirs(bindir, exist_ok=True)

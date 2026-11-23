@@ -2,6 +2,7 @@
 directed and random simulation, formal proof."""
 
 import importlib
+import importlib.util
 import os
 import shutil
 import sys
@@ -93,11 +94,8 @@ def test_random_against_model(maxd):
 def _have_solver():
     if any(shutil.which(s) for s in ("yices-smt2", "bitwuzla")):
         return True
-    try:
-        import bitwuzla  # noqa: F401
-        return True
-    except ImportError:
-        return False
+    # find_spec only: importing bitwuzla next to Qt in the test process crashes at exit
+    return importlib.util.find_spec("bitwuzla") is not None
 
 
 @pytest.mark.skipif(not (shutil.which("yosys") and shutil.which("yosys-smtbmc") and _have_solver()),

@@ -11,6 +11,11 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.27 — cmd_seq testleri
+
+- `tests/test_cmd_seq.py` ve `run_formal.py` bitwuzla paketini test sürecine import etmiyor (yalnızca varlığına
+  bakıyor; çözücü ayrı süreçte çalışıyor). Paket Qt ile aynı süreçte yüklenince çıkışta bellek hatası olabiliyordu.
+
 ## early-alpha 0.1.26 — cmd_seq: Verilog, düzeltmeler ve doğrulama ortamı
 
 - Programlanabilir komut sıralayıcı `hdl/cmd_seq` olarak eklendi (ilk VHDL sürümünden Verilog'a çevrildi;
