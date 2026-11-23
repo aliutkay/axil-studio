@@ -318,6 +318,8 @@ class AddressMapPage(ToolPage):
         bar.add(tr("C header…"), "file", self.export_header,
                 tr("C header of the address map: every instance's base address and register addresses, and the "
                    "offsets, masks and shifts of the register maps (.h)"))
+        bar.add(tr("Assembler include…"), "file", self.export_asm_include,
+                tr("The same names as .equ lines for the cmd_seq assembler (.inc); in a program: .include \"<file>\""))
         bar.sep()
         bar.add("Interconnect Configurator", "interconnect", lambda: self.open_tool("interconnect"),
                 tr("Configure and generate the crossbars of this address map"))
@@ -406,7 +408,8 @@ class AddressMapPage(ToolPage):
                            (tr("Lock / unlock every address"), self.toggle_all_addr_locks),
                            (tr("Lock / unlock every size"), self.toggle_all_size_locks), (None, None),
                            (tr("Edit register map"), self.edit_regs),
-                           (tr("Export to Excel…"), self.export_xlsx), (tr("C header…"), self.export_header), (None, None),
+                           (tr("Export to Excel…"), self.export_xlsx), (tr("C header…"), self.export_header),
+                           (tr("Assembler include…"), self.export_asm_include), (None, None),
                            ("Interconnect Configurator", lambda: self.open_tool("interconnect"))):
             if text is None:
                 m.addSeparator()
@@ -515,20 +518,22 @@ class AddressMapPage(ToolPage):
         sl = A.xbar_slaves(self.proj, bridge)
         bad = A.overlapping(self.proj, bridge) | (A.outside(self.proj, bridge) if bridge is not None else set())
         if bridge is not None and bridge.self_window:
-            own = QTreeWidgetItem(["", tr("own window"), BRIDGE, "", hex32(bridge.base), "",
+            own = QTreeWidgetItem(["", tr("cmd_seq registers") if bridge.sequencer else tr("own window"),
+                                   "cmd_seq" if bridge.sequencer else BRIDGE, "", hex32(bridge.base), "",
                                    size_text(bridge.self_window), ""])
             own.setData(0, ROLE, "")
             own.setFlags(Qt.ItemFlag.ItemIsEnabled)
             own.setFont(C_ADDR, mono)
             for c in range(C_ACT):
                 own.setForeground(c, muted)
-            own.setToolTip(C_NAME, tr("Space kept for the subsystem {0} itself (not forwarded): {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + bridge.self_window - 1)))
+            own.setToolTip(C_NAME, tr("Space kept for the subsystem {0} itself (not forwarded): {1} – {2}").format(bridge.name, hex32(bridge.base), hex32(bridge.base + bridge.self_window - 1))
+                           + (("\n" + tr("Command sequencer registers (CTRL, STATUS, R0–R15, D-mem); in the Debug Bridge as {0}").format(bridge.name)) if bridge.sequencer else ""))
             parent_item.addChild(own)
         ro = (Qt.ItemFlag.ItemIsEnabled | Qt.ItemFlag.ItemIsSelectable | Qt.ItemFlag.ItemIsDragEnabled)
         for j, (inst, s) in enumerate(zip(items, sl)):
             ip = self.proj.get_ip(inst.ip) if inst.ip else None
             if inst.bridge:
-                kind = BRIDGE + (tr(" · crossbar") if A.has_xbar(self.proj, inst) else tr(" · direct"))
+                kind = (tr("Command sequencer") if inst.sequencer else BRIDGE) + (tr(" · crossbar") if A.has_xbar(self.proj, inst) else tr(" · direct"))
             elif inst.external:
                 kind = tr("external")
             elif ip is None:
@@ -861,16 +866,17 @@ class AddressMapPage(ToolPage):
         j = self.proj.level(parent).index(inst)
         if inst.bridge:
             new = BridgeDialog.ask(self, f"{BRIDGE}: {inst.name}", inst.name, inst.base, inst.self_window,
-                                   inst.window, inst.fixed, A.content_end(self.proj, inst))
+                                   inst.window, inst.fixed, A.content_end(self.proj, inst), inst.kind, inst.seq)
             if new is None:
                 return
-            name, base, own, window, fixed = new
+            name, base, own, window, fixed, kind, seq = new
             if name != inst.name and not self._name_ok(inst, name):
                 return
 
             def apply():
                 self._rename(inst, name)
                 inst.self_window, inst.window = own, window
+                inst.kind, inst.seq = kind, seq
                 if fixed:
                     A.set_base(self.proj, inst, base)    # its contents move along
                 inst.fixed = fixed
@@ -925,12 +931,12 @@ class AddressMapPage(ToolPage):
         new = BridgeDialog.ask(self, tr("Add {0}").format(BRIDGE), name, 0, 0, 0, False, 0)
         if new is None:
             return
-        name, base, own, window, fixed = new
+        name, base, own, window, fixed, kind, seq = new
         if any(i.name.lower() == name.lower() for i in self.proj.all_instances()) or not X.IDENT.match(name):
             QMessageBox.warning(self, self.title, tr("“{0}” cannot be used: the name must be unique, start with a letter and contain only letters, digits and _.").format(name))
             return
         inst = IPInstance(name, "", base, window, fixed, bridge=True, self_window=own,
-                          xbar={"module": "", "masters": []})
+                          xbar={"module": "", "masters": []}, kind=kind, seq=seq)
         if self._guarded(lambda: self._add(inst), inst) is not False:
             self.status(tr("{0} added ({1}); to add IPs into it, keep it selected and use 'Add slave from IP Library…'").format(inst.name, hex32(inst.base)))
 
@@ -988,6 +994,23 @@ class AddressMapPage(ToolPage):
         except OSError as exc:
             return self.error(tr("Could not save"), exc)
         self.status(tr("C header written: {0}").format(path))
+
+    def export_asm_include(self):
+        from axil_studio.core import cheader
+        if not self.proj.all_instances():
+            QMessageBox.information(self, self.title, tr("The address map is empty."))
+            return
+        path, _ = QFileDialog.getSaveFileName(self, tr("Assembler include of the address map"),
+                                              os.path.join(os.path.dirname(self.ctx.path or ROOT), cheader.asm_include_name(self.proj)),
+                                              tr("Assembler include (*.inc)"))
+        if not path:
+            return
+        try:
+            with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                fh.write(cheader.gen_asm_include(self.proj))
+        except OSError as exc:
+            return self.error(tr("Could not save"), exc)
+        self.status(tr("Assembler include written: {0}").format(path))
 
     def export_xlsx(self):
         ips = self.ctx.address_ips()

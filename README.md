@@ -211,6 +211,15 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   kuvvetidir; içerik büyüdükçe büyür ve ondan sonraki otomatik adresler yeniden dizilir. Elle seçilen (kilitli) pencere
   sabit kalır; sığmayan bir ekleme, taşıma ya da boyut değişikliği yapılmaz ve hata gösterilir. Tek slave'li alt
   sistemde adres çözülmediği için penceresinin slave'in penceresinden büyük olan kısmı da o slave'e gider.
+- **Alt sistem türü**: *Slave grubu* (yukarıdaki gibi) ya da **Komut sıralayıcı (cmd_seq)**. Her alt sistem komut
+  sıralayıcı değildir; tür alt sistem eklenirken ya da düzenlenirken seçilir. Komut sıralayıcı alt sistemde
+  üst bus'taki SLAVE portu ile alt sistemin MASTER0'ı (ya da tek slave'i) arasında `hdl/cmd_seq` bloğu durur:
+  pencerenin ilk **64 KB**'ı (kilitli kendi penceresi) cmd_seq'in registerlarıdır (CTRL, STATUS, R0–R15, D-mem),
+  geri kalanı değişmeden içindekilere iletilir. Ayarları: I-mem / D-mem adres bitleri, pass-through ve sıralayıcı
+  zaman aşımları. `SELF_ID` tabanın [23:16] bitlerinden gelir; kurallar: taban 64 KB'ye hizalı, pencere en fazla
+  16 MB, `DMEM_AW` ≤ 13. cmd_seq'in registerları alt sistemin adıyla Debug Bridge'de, C header'da ve Excel'de görünür;
+  Debug Bridge'den **Komut sıralayıcı** arayüzü açılır. cmd_seq IP kütüphanesine slave olarak eklenmez (hata verir).
+  Örnek proje: `examples/cmd_seq/cmd_seq_demo.axproj.json`.
 - Üstteki şerit haritayı adres sırasıyla çizer; alt sistemler çerçeveli blok olarak, kendi penceresi taralı, içindekiler
   içinde gösterilir. Renkler blok diyagramıyla aynıdır: IP mavi, harici slave gri, alt sistem şeftali.
 - **Varsayılan pencere** (başlangıç adresinin altında): boyutu elle seçilmemiş her slave'in adres aralığı, 4 KB ile
@@ -228,6 +237,9 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   register adresleri (`UART0_PHY_CTRL = UART0_BASE + AXILUART_PHY_PHY_CTRL_OFFSET`); harici slave'ler ve alt sistemler
   için taban ve pencere. Register haritasının kendi adresi olmadığı için (bir IP birden çok yerde olabilir) header
   Wrapper'da değil burada üretilir. Komut satırı: `python -m axil_studio.core.cheader proje.axproj.json -o map.h`.
+- **Assembler include…** aynı adları cmd_seq assembler'ı için `.equ` satırları olarak yazar (`<proje>_map.inc`;
+  register adresleri mutlak, bit alanları `_SHIFT` / `_MASK`). Programda `.include "<proje>_map.inc"`. Komut
+  sıralayıcı arayüzü bu adları dosyaya gerek kalmadan doğrudan projeden alır.
 
 ## Interconnect Configurator
 
@@ -238,6 +250,10 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
   `axil_xbar_<alt sistem>`) ve **master'ları** ayarlanır. Bir alt sistemin crossbar'ında MASTER0 her zaman üst bus'tan
   gelen isteklerdir; ek master'lar (ör. yerel DMA) eklenebilir ve yalnızca o crossbar'ın slave'lerine erişir (tek
   slave'li alt sisteme master eklemek ona crossbar kazandırır). **Wrapper** stili tüm interconnect'ler için ortaktır.
+- **Komut sıralayıcı alt sistemlerde** MASTER0'ı cmd_seq bloğu sürer (üst bus'tan gelen istekler cmd_seq'ten
+  geçer). Üretilen dosyalara her biri için parametreleri doldurulmuş bir cmd_seq instance şablonu eklenir
+  (`<alt sistem>_cmd_seq_inst.v`: `SELF_ID`, `IMEM_AW`, `DMEM_AW`, zaman aşımları; S_AXI üst bus'taki SLAVE portuna,
+  M_AXI alt sistemin MASTER0'ına ya da tek slave'ine). RTL `hdl/cmd_seq/rtl`, HDL Designer için `hdl/cmd_seq_pk.v`.
 - Slave portları adres haritasından gelir (salt okunur liste; satıra çift tık Address Map Editor'u açar, alt sistem
   satırına çift tık o alt sistemi seçer). Master'larda satırdaki kalem adı değiştirir, çöp kutusu siler;
   ada çift tık da olur.
@@ -379,6 +395,23 @@ hesaplanır; projede saklanır). Pencere AXIL Studio'nun temasını ve dilini ku
   bitince (durdurulsa da) kartın register'ları eski değerlerine döner. Ayarlar ve rapor JSON olarak kaydedilir.
 
 
+### Komut sıralayıcı arayüzü (cmd_seq)
+
+Komut sıralayıcı alt sistemlerin arayüzü (`interfaces/cmd_seq/`). Başlıkta kartın I-mem / D-mem boyutu (CAPS),
+çalışma durumu ve I-mem'deki programın editördeki programla aynı olup olmadığı (IMEM_CNT / IMEM_SUM) görünür.
+
+- **Program:** editör (yeni, aç, kaydet), **Derle** (F5): hatalı satır işaretlenir, sağda listing (PC, 64 bit kelime,
+  disassembly, kaynak). Programda projenin adresleri adıyla kullanılır (`UART0_PHY_CTRL`, `ADC_BASE+4`, alan
+  `_SHIFT` / `_MASK`), `.include` da çalışır. **I-mem'e yükle**: bağlantı kilitlenir, sıralayıcı durdurulup
+  resetlenir, program yazılır ve IMEM_CNT / IMEM_SUM / IMEM_PHASE ile doğrulanır; **Yükle ve çalıştır** ardından
+  başlatır. Program dosyasının yolu ve son yüklenen programın toplamı projede saklanır.
+- **Çalıştır:** Çalıştır, Durdur, Adım, Reset, **Satıra kadar çalıştır** (editördeki imleç satırına kadar adım adım;
+  donanımda breakpoint yok), ENTRY; CTRL ayarları (ERR_HALT, SNAP_EN, PT_WR_RUN, IRQ_EN). Durum: PC ve kaynak satırı
+  (editörde ve listing'de vurgulanır), bayraklar, hata kodu açıklamasıyla, ERR_PC / ERR_ADDR, IRQ_STAT (temizle),
+  SNAP_CNT, TIMER, terk edilmiş transfer; R0–R15. **İzle** seçiliyken 250 ms'de bir okunur (Debug Bridge
+  günlüğüne yazılmaz).
+- **D-mem:** tüm D-mem penceresi (SNAP_EN açıksa yayınlanan bank); değere çift tıklayıp yazılır.
+
 ## IP Library
 
 - **Bu projedeki IP'ler**: projedeki tüm IP tanımları; altlarında adres haritasındaki örnekleri ve adresleri.
@@ -506,11 +539,11 @@ commit'in yanında görünür.
 | `axil_studio/` | Hub ve ortak arayüz parçaları (PySide6): `hub.py`, `ui.py`, `dialogs.py`, `theme.py`, `icons.py`, `project.py`; `history.py` (geri al / yinele), `errors.py` (hata yakalayıcı ve log) |
 | `axil_studio/tools/` | Araçlar: `regmap.py`, `wrapper.py`, `address_map.py`, `interconnect.py` (+ `xbar_diagram.py`), `debug_bridge.py`, `ip_library.py` |
 | `axil_studio/interfaces/` | IP arayüzleri için Studio tarafı: arama (`__init__.py`), yerel servis, başlatıcı ve klasör ayarları (`host.py`) |
-| `interfaces/` | IP arayüzü uygulamaları (Studio'nun dışında çalışır): Python istemcisi `sdk/axil_client.py`, UART arayüzü `axiluart_phy/`; protokol `interfaces/README.md` |
+| `interfaces/` | IP arayüzü uygulamaları (Studio'nun dışında çalışır): Python istemcisi `sdk/axil_client.py`, UART arayüzü `axiluart_phy/`, komut sıralayıcı arayüzü `cmd_seq/`; protokol `interfaces/README.md` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
 | `scripts/` | Komut satırı araçları: `i18n_check.py` (çeviri denetimi), `bump_version.py` |
 | `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`); `cmd_seq/`: programlanabilir komut sıralayıcı, assembler'ı ve doğrulama ortamı (formal, referans model, rastgele ve yönlendirilmiş testler; bkz. `hdl/cmd_seq/README.md`) |
-| `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları |
+| `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları; `cmd_seq/`: cmd_seq register haritası kütüphanesi ve komut sıralayıcılı örnek proje |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 | `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |
 | `axil_studio/assets/` | Uygulama simgesi (`axil_studio.svg`; kurulum paketleri için `.png` ve `.ico`) |
@@ -532,6 +565,8 @@ commit'in yanında görünür.
 | `regmap_xlsx.py` | Kütük haritası Excel çıktısı |
 | `numfmt.py` | Bit alanı veri tipleri ve gösterimleri |
 | `portparse.py` | Verilog / SystemVerilog / VHDL port listesi çözümleyici (Port içe aktar) |
+| `cmdseq.py` | Komut sıralayıcı alt sistem türü: cmd_seq register haritası, ayarlar, kurallar, instance şablonu |
+| `cheader.py` | Adres haritasının C header'ı ve assembler include dosyası |
 
 Hexbus notları: her işlem `A<adres|1>W<veri>\n` veya `A<adres|1>R\n` olarak gönderilir (adres artırma kapalı);
 yanıtlar `A` adres, `K` yazma onayı, `R` okuma verisi, `E` AXI bus hatası, `Z` idle. Hexbus'ta FIFO yoktur;

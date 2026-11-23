@@ -244,6 +244,12 @@ class IPInstance:
     self_window: int = 0    # bridges: bytes reserved for the bridge itself at the start of its window
     children: list = field(default_factory=list)
     xbar: Optional[dict] = None
+    kind: str = ""          # subsystems: "" = group of slaves, "cmd_seq" = command sequencer (core/cmdseq.py)
+    seq: Optional[dict] = None   # command sequencer settings (cmd_seq parameters)
+
+    @property
+    def sequencer(self):
+        return self.bridge and self.kind == "cmd_seq"
 
     @property
     def external(self):
@@ -272,6 +278,10 @@ class IPInstance:
                 d["self_window"] = f"0x{self.self_window:X}"
             if self.xbar and (self.xbar.get("module") or self.xbar.get("masters")):
                 d["xbar"] = self.xbar
+            if self.kind:
+                d["type"] = self.kind
+            if self.seq:
+                d["seq"] = dict(self.seq)
             d["children"] = [c.to_dict() for c in self.children]
         return d
 
@@ -282,7 +292,8 @@ class IPInstance:
                           parse_int(d.get("window", 0)), bool(d.get("fixed", False)), parse_int(d.get("span", 0)),
                           bridge, parse_int(d.get("self_window", 0)),
                           [IPInstance.from_dict(c) for c in d.get("children", [])] if bridge else [],
-                          d.get("xbar") if bridge else None)
+                          d.get("xbar") if bridge else None,
+                          d.get("type", "") if bridge else "", d.get("seq") if bridge else None)
 
 
 @dataclass
@@ -340,12 +351,24 @@ class Project:
     def instances_of(self, ip_name):
         return [i for i in self.leaf_instances() if i.ip == ip_name]
 
+    def definition_of(self, inst) -> Optional[IPBlock]:
+        """Register map of an address-map entry: the IP definition of an IP instance, the
+        cmd_seq register map of a command sequencer subsystem (its own window), else None."""
+        if inst.sequencer:
+            from . import cmdseq
+            st = cmdseq.settings(inst)
+            return cmdseq.register_map(st["DMEM_AW"], st["IMEM_AW"])
+        if inst.bridge or not inst.ip:
+            return None
+        return self.get_ip(inst.ip)
+
     def address_ips(self) -> List[IPBlock]:
-        """One IPBlock per address-map instance of an IP: instance name, instance base and the
-        definition's registers (shared, not copied). External slaves and bridges are left out."""
+        """One IPBlock per address-map entry with a register map: instance name, instance base and
+        the definition's registers (shared, not copied). IP instances and command sequencer
+        subsystems (their own window); external slaves and plain subsystems are left out."""
         out = []
-        for inst in self.leaf_instances():
-            d = self.get_ip(inst.ip) if inst.ip else None
+        for inst, _ in self.walk():
+            d = self.definition_of(inst)
             if d is not None:
                 out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name,
                                    panel=d.panel))

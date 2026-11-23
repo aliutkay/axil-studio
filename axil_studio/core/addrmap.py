@@ -324,6 +324,9 @@ def validate(project):
                 errs.append(tr("{0}: window must be a power of two").format(tag))
             if not inst.external and not inst.bridge and project.get_ip(inst.ip) is None:
                 errs.append(tr("{0}: IP definition “{1}” is not in the project").format(tag, inst.ip))
+            ipd = project.get_ip(inst.ip) if inst.ip and not inst.bridge else None
+            if ipd is not None and ipd.panel == "cmd_seq":
+                errs.append(tr("{0}: cmd_seq is a subsystem type (Add subsystem, type Command sequencer), not a slave").format(tag))
             if s.base & (s.window - 1):
                 errs.append(tr("{0}: base {1} is not aligned to its window ({2:#x})").format(tag, hex32(s.base), s.window))
             if s.base + s.window > 1 << 32:
@@ -336,6 +339,9 @@ def validate(project):
                     errs.append(tr("{0} overlaps {1}SLAVE{2} ({3})").format(tag, where, k, o.name))
         if bridge is not None and not items:
             errs.append(tr("{0}: the subsystem is empty; add at least one slave to it").format(bridge.name))
+        if bridge is not None and bridge.sequencer:
+            from . import cmdseq
+            errs += cmdseq.check(project, bridge, window_of(project, bridge))
         if has_xbar(project, bridge):
             bname = level_name(project, bridge)
             mod = xbar_module(project, bridge)
@@ -398,10 +404,13 @@ def add_instance(project, ip_name, name=None, parent=None):
     return inst
 
 
-def add_bridge(project, parent=None, self_window=0, window=0, name=None):
-    """A new subsystem at the end of a bus."""
+def add_bridge(project, parent=None, self_window=0, window=0, name=None, kind="", seq=None):
+    """A new subsystem at the end of a bus (kind "cmd_seq": command sequencer, 64 KB own window)."""
+    if kind == "cmd_seq":
+        from . import cmdseq
+        self_window = cmdseq.OWN_WINDOW
     inst = IPInstance(name or unique_name(project, BRIDGE_STEM), bridge=True, self_window=self_window,
-                      window=window, xbar={"module": "", "masters": []})
+                      window=window, xbar={"module": "", "masters": []}, kind=kind, seq=seq)
     project.level(parent).append(inst)
     _settle(project)
     return inst

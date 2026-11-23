@@ -11,6 +11,32 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.28 — Komut sıralayıcı alt sistem türü
+
+- **Alt sistem türü:** alt sistem eklerken / düzenlerken *Slave grubu* ya da *Komut sıralayıcı (cmd_seq)*
+  seçilir; her alt sistem komut sıralayıcı değildir.
+  - Komut sıralayıcıda pencerenin ilk 64 KB'ı cmd_seq registerlarıdır (kilitli kendi penceresi), geri kalanı
+    içindekilere iletilir.
+  - Ayarlar: I-mem / D-mem adres bitleri, zaman aşımları.
+  - Kurallar: taban 64 KB hizalı, pencere ≤ 16 MB, `DMEM_AW` ≤ 13. cmd_seq slave olarak eklenirse hata verir.
+- **Register haritası:** cmd_seq'in registerları alt sistemin adıyla Debug Bridge'de, C header'da ve servis
+  isteklerinde görünür. Adres haritası ağacı, blok diyagramı ve şerit komut sıralayıcıyı ayrıca gösterir.
+- **Interconnect Configurator:** her komut sıralayıcı için parametreleri doldurulmuş cmd_seq instance şablonu
+  üretir (`<alt sistem>_cmd_seq_inst.v`). `hdl/cmd_seq_pk.v`: HDL Designer sarmalayıcısı.
+- **Address Map Editor → Assembler include…:** adres haritasını assembler için `.equ` satırları olarak yazar.
+  `seqasm.py` artık `.include` yönergesini destekliyor.
+- **Servis:** yeni `address_map` isteği (SDK: `AxilClient.address_map()`) adres haritasının tüm girişlerini register
+  haritalarıyla verir.
+- **Komut sıralayıcı arayüzü** (`interfaces/cmd_seq/`):
+  - program editörü ve derleme; projenin adresleri adıyla kullanılır, hatalı satır işaretlenir, listing gösterilir;
+  - kilitli yükleme ve IMEM_CNT / IMEM_SUM doğrulaması;
+  - çalıştır, durdur, adım, reset, satıra kadar çalıştır;
+  - PC'nin kaynakta vurgulanması, bayraklar, hata açıklaması, R0–R15 ve D-mem.
+- `examples/cmd_seq`: cmd_seq kütüphanesi ve örnek proje. Testler: `tests/test_cmd_seq_studio.py` (arayüz, cmd_seq
+  davranışlı sahte kartla test ediliyor).
+- Test paketi: oturum sonunda açık kalan Qt pencereleri QApplication kapanmadan siliniyor (`tests/conftest.py`).
+  Önceden pytest testler geçse de çıkışta zaman zaman bellek hatasıyla kapanıyordu.
+
 ## early-alpha 0.1.27 — cmd_seq testleri
 
 - `tests/test_cmd_seq.py` ve `run_formal.py` bitwuzla paketini test sürecine import etmiyor (yalnızca varlığına

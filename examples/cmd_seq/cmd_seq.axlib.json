@@ -1,0 +1,667 @@
+{
+  "format": "axil-ip-library",
+  "version": 1,
+  "name": "Command sequencer",
+  "desc": "cmd_seq: programmable command sequencer (hdl/cmd_seq). In a project it is a subsystem type (Address Map Editor: subsystem, type Command sequencer); this entry carries its register map.",
+  "entries": [
+    {
+      "ip": {
+        "name": "cmd_seq",
+        "desc": "Programmable command sequencer: own registers (hdl/cmd_seq)",
+        "registers": [
+          {
+            "name": "ID",
+            "offset": "0x00000000",
+            "access": "RO",
+            "reset": "0x5EC00200",
+            "desc": "Sequencer signature and version (2.0)",
+            "fields": []
+          },
+          {
+            "name": "CAPS",
+            "offset": "0x00000004",
+            "access": "RO",
+            "reset": "0x00100809",
+            "desc": "Build parameters",
+            "fields": [
+              {
+                "name": "IMEM_AW",
+                "lsb": 0,
+                "width": 8,
+                "desc": "I-mem address width (instructions = 2^IMEM_AW)",
+                "kind": "RO",
+                "fmt": "udec"
+              },
+              {
+                "name": "DMEM_AW",
+                "lsb": 8,
+                "width": 8,
+                "desc": "D-mem address width (words per bank = 2^DMEM_AW)",
+                "kind": "RO",
+                "fmt": "udec"
+              },
+              {
+                "name": "NREGS",
+                "lsb": 16,
+                "width": 8,
+                "desc": "Working registers",
+                "kind": "RO",
+                "fmt": "udec"
+              },
+              {
+                "name": "SELF_ID",
+                "lsb": 24,
+                "width": 8,
+                "desc": "Own value of address bits [23:16]",
+                "kind": "RO"
+              }
+            ]
+          },
+          {
+            "name": "CTRL",
+            "offset": "0x00000008",
+            "access": "RW",
+            "reset": "0x00000040",
+            "desc": "Control (RUN, STOP, RESET, STEP are pulses)",
+            "fields": [
+              {
+                "name": "RUN",
+                "lsb": 0,
+                "width": 1,
+                "desc": "Start at ENTRY, or continue when paused",
+                "kind": "PULSE"
+              },
+              {
+                "name": "STOP",
+                "lsb": 1,
+                "width": 1,
+                "desc": "Pause at the next instruction boundary",
+                "kind": "PULSE"
+              },
+              {
+                "name": "RESET",
+                "lsb": 2,
+                "width": 1,
+                "desc": "Core to IDLE, R0-R15 cleared (I-mem and D-mem kept)",
+                "kind": "PULSE"
+              },
+              {
+                "name": "STEP",
+                "lsb": 3,
+                "width": 1,
+                "desc": "Run one instruction",
+                "kind": "PULSE"
+              },
+              {
+                "name": "SNAP_EN",
+                "lsb": 4,
+                "width": 1,
+                "desc": "Two D-mem banks, swapped by SNAP",
+                "kind": "RW"
+              },
+              {
+                "name": "PT_WR_RUN",
+                "lsb": 5,
+                "width": 1,
+                "desc": "Allow pass-through writes while the program runs",
+                "kind": "RW"
+              },
+              {
+                "name": "ERR_HALT",
+                "lsb": 6,
+                "width": 1,
+                "desc": "Stop on a bus error",
+                "kind": "RW"
+              },
+              {
+                "name": "IRQ_EN",
+                "lsb": 7,
+                "width": 1,
+                "desc": "Interrupt output enable",
+                "kind": "RW"
+              }
+            ]
+          },
+          {
+            "name": "STATUS",
+            "offset": "0x0000000C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Core state, flags and PC",
+            "fields": [
+              {
+                "name": "BUSY",
+                "lsb": 0,
+                "width": 1,
+                "desc": "Program running",
+                "kind": "RO"
+              },
+              {
+                "name": "DONE",
+                "lsb": 1,
+                "width": 1,
+                "desc": "Ended with END",
+                "kind": "RO"
+              },
+              {
+                "name": "ERR",
+                "lsb": 2,
+                "width": 1,
+                "desc": "Stopped with an error (ERR_CODE)",
+                "kind": "RO"
+              },
+              {
+                "name": "PAUSED",
+                "lsb": 3,
+                "width": 1,
+                "desc": "Paused (STOP, STEP, sys_halt)",
+                "kind": "RO"
+              },
+              {
+                "name": "IMEM_PHASE",
+                "lsb": 4,
+                "width": 1,
+                "desc": "Half an instruction written to IMEM_DATA",
+                "kind": "RO"
+              },
+              {
+                "name": "WR_DRAIN",
+                "lsb": 5,
+                "width": 1,
+                "desc": "Abandoned write still on the lower bus",
+                "kind": "RO"
+              },
+              {
+                "name": "RD_DRAIN",
+                "lsb": 6,
+                "width": 1,
+                "desc": "Abandoned read still on the lower bus",
+                "kind": "RO"
+              },
+              {
+                "name": "Z",
+                "lsb": 8,
+                "width": 1,
+                "desc": "Zero flag",
+                "kind": "RO"
+              },
+              {
+                "name": "N",
+                "lsb": 9,
+                "width": 1,
+                "desc": "Negative flag",
+                "kind": "RO"
+              },
+              {
+                "name": "ERR_FLAG",
+                "lsb": 10,
+                "width": 1,
+                "desc": "A bus error happened (ERR_HALT = 0)",
+                "kind": "RO"
+              },
+              {
+                "name": "V",
+                "lsb": 11,
+                "width": 1,
+                "desc": "Overflow flag",
+                "kind": "RO"
+              },
+              {
+                "name": "C",
+                "lsb": 12,
+                "width": 1,
+                "desc": "Carry / no-borrow flag",
+                "kind": "RO"
+              },
+              {
+                "name": "PC",
+                "lsb": 16,
+                "width": 16,
+                "desc": "Program counter",
+                "kind": "RO",
+                "fmt": "udec"
+              }
+            ]
+          },
+          {
+            "name": "ENTRY",
+            "offset": "0x00000010",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "Start address (instruction index)",
+            "fields": [
+              {
+                "name": "ENTRY",
+                "lsb": 0,
+                "width": 9,
+                "desc": "Instruction index",
+                "kind": "RW",
+                "fmt": "udec"
+              }
+            ]
+          },
+          {
+            "name": "ERR_CODE",
+            "offset": "0x00000014",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Error code (0x10-0xFF: KILL code)",
+            "fields": [
+              {
+                "name": "CODE",
+                "lsb": 0,
+                "width": 8,
+                "desc": "Error",
+                "kind": "RO",
+                "values": [
+                  {
+                    "value": "0x1",
+                    "read": "illegal instruction"
+                  },
+                  {
+                    "value": "0x2",
+                    "read": "bus error response"
+                  },
+                  {
+                    "value": "0x3",
+                    "read": "access to the own window"
+                  },
+                  {
+                    "value": "0x4",
+                    "read": "call stack overflow / underflow"
+                  },
+                  {
+                    "value": "0x5",
+                    "read": "bus timeout"
+                  },
+                  {
+                    "value": "0x6",
+                    "read": "PC outside I-mem"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "name": "ERR_PC",
+            "offset": "0x00000018",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "PC of the failing instruction",
+            "fields": [
+              {
+                "name": "PC",
+                "lsb": 0,
+                "width": 9,
+                "desc": "Instruction index",
+                "kind": "RO",
+                "fmt": "udec"
+              }
+            ]
+          },
+          {
+            "name": "ERR_ADDR",
+            "offset": "0x0000001C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Address of the last bus error / own-window access",
+            "fields": []
+          },
+          {
+            "name": "IMEM_PTR",
+            "offset": "0x00000020",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "I-mem load pointer (a write clears the phase, CNT and SUM)",
+            "fields": []
+          },
+          {
+            "name": "IMEM_DATA",
+            "offset": "0x00000024",
+            "access": "WO",
+            "reset": "0x00000000",
+            "desc": "Instruction words: low word, then high word",
+            "fields": []
+          },
+          {
+            "name": "IMEM_CNT",
+            "offset": "0x00000028",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Instructions stored since IMEM_PTR was written",
+            "fields": []
+          },
+          {
+            "name": "IMEM_SUM",
+            "offset": "0x0000002C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "32-bit sum of the accepted IMEM_DATA words",
+            "fields": []
+          },
+          {
+            "name": "DMEM_PTR",
+            "offset": "0x00000030",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem load pointer",
+            "fields": []
+          },
+          {
+            "name": "DMEM_DATA",
+            "offset": "0x00000034",
+            "access": "WO",
+            "reset": "0x00000000",
+            "desc": "D[DMEM_PTR] <= data, DMEM_PTR++",
+            "fields": []
+          },
+          {
+            "name": "SNAP_CNT",
+            "offset": "0x00000038",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Number of SNAP instructions",
+            "fields": []
+          },
+          {
+            "name": "TIMER",
+            "offset": "0x0000003C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Free-running cycle counter",
+            "fields": []
+          },
+          {
+            "name": "IRQ_STAT",
+            "offset": "0x00000040",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "Interrupt causes (write 1 to clear)",
+            "fields": [
+              {
+                "name": "DONE",
+                "lsb": 0,
+                "width": 1,
+                "desc": "Program ended with END",
+                "kind": "W1C"
+              },
+              {
+                "name": "ERR",
+                "lsb": 1,
+                "width": 1,
+                "desc": "Program stopped with an error",
+                "kind": "W1C"
+              },
+              {
+                "name": "IRQ",
+                "lsb": 2,
+                "width": 1,
+                "desc": "IRQ instruction",
+                "kind": "W1C"
+              }
+            ]
+          },
+          {
+            "name": "R0",
+            "offset": "0x00000100",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R0 (always 0)",
+            "fields": []
+          },
+          {
+            "name": "R1",
+            "offset": "0x00000104",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R1",
+            "fields": []
+          },
+          {
+            "name": "R2",
+            "offset": "0x00000108",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R2",
+            "fields": []
+          },
+          {
+            "name": "R3",
+            "offset": "0x0000010C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R3",
+            "fields": []
+          },
+          {
+            "name": "R4",
+            "offset": "0x00000110",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R4",
+            "fields": []
+          },
+          {
+            "name": "R5",
+            "offset": "0x00000114",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R5",
+            "fields": []
+          },
+          {
+            "name": "R6",
+            "offset": "0x00000118",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R6",
+            "fields": []
+          },
+          {
+            "name": "R7",
+            "offset": "0x0000011C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R7",
+            "fields": []
+          },
+          {
+            "name": "R8",
+            "offset": "0x00000120",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R8",
+            "fields": []
+          },
+          {
+            "name": "R9",
+            "offset": "0x00000124",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R9",
+            "fields": []
+          },
+          {
+            "name": "R10",
+            "offset": "0x00000128",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R10",
+            "fields": []
+          },
+          {
+            "name": "R11",
+            "offset": "0x0000012C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R11",
+            "fields": []
+          },
+          {
+            "name": "R12",
+            "offset": "0x00000130",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R12",
+            "fields": []
+          },
+          {
+            "name": "R13",
+            "offset": "0x00000134",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R13",
+            "fields": []
+          },
+          {
+            "name": "R14",
+            "offset": "0x00000138",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R14",
+            "fields": []
+          },
+          {
+            "name": "R15",
+            "offset": "0x0000013C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Working register R15",
+            "fields": []
+          },
+          {
+            "name": "D0",
+            "offset": "0x00000400",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 0 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D1",
+            "offset": "0x00000404",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 1 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D2",
+            "offset": "0x00000408",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 2 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D3",
+            "offset": "0x0000040C",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 3 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D4",
+            "offset": "0x00000410",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 4 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D5",
+            "offset": "0x00000414",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 5 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D6",
+            "offset": "0x00000418",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 6 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D7",
+            "offset": "0x0000041C",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 7 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D8",
+            "offset": "0x00000420",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 8 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D9",
+            "offset": "0x00000424",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 9 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D10",
+            "offset": "0x00000428",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 10 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D11",
+            "offset": "0x0000042C",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 11 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D12",
+            "offset": "0x00000430",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 12 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D13",
+            "offset": "0x00000434",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 13 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D14",
+            "offset": "0x00000438",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 14 (published bank when SNAP_EN = 1)",
+            "fields": []
+          },
+          {
+            "name": "D15",
+            "offset": "0x0000043C",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "D-mem word 15 (published bank when SNAP_EN = 1)",
+            "fields": []
+          }
+        ],
+        "version": "2.0.0",
+        "panel": "cmd_seq"
+      },
+      "updated": "2026-11-24"
+    }
+  ]
+}

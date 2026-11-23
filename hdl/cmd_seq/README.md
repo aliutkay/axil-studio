@@ -14,6 +14,16 @@ It has three jobs:
 - **Local data memory (D-mem).** Values read by the program are kept here; the upper master
   reads them from the block's own window.
 
+## In AXIL Studio
+cmd_seq is a **subsystem type**: Address Map Editor → *Add subsystem* → type *Command sequencer
+(cmd_seq)* (other subsystems stay plain groups of slaves). Its first 64 KB are the registers below
+(`SELF_ID` = base[23:16]); the slaves added to the subsystem are behind it. The Interconnect
+Configurator writes `<subsystem>_cmd_seq_inst.v` with the parameters, the Debug Bridge shows the
+registers under the subsystem's name and opens the **Command sequencer** interface
+(`interfaces/cmd_seq`: editor, assembler with the project's address names, load with IMEM_CNT /
+IMEM_SUM check, run / step / stop / run to line, registers, D-mem). The register map is also in
+`examples/cmd_seq/cmd_seq.axlib.json`; `hdl/cmd_seq_pk.v` is the HDL Designer wrapper.
+
 ## Files
 | Path | Content |
 |---|---|
@@ -169,6 +179,7 @@ python3 sw/seqasm.py prog.s -f axi --base 0x0300 --run -o prog.axi
 python3 sw/seqasm.py -d prog.hex                     # disassemble
 ```
 Syntax: `;` / `#` comments, `label:`, `.equ NAME value`, `.entry label`, `.word64 value`,
+`.include "file"` (`.equ` lines, e.g. the Address Map Editor's *Assembler include*),
 numbers in decimal / `0x` / `0b` with `_` separators, `+` / `-` expressions, `@n` for DLY.
 The `axi` list has `W addr data` and `W2 addr lo hi` lines and starts with the expected
 IMEM_CNT / IMEM_SUM.

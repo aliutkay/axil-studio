@@ -12,6 +12,7 @@ Usage:
 Syntax:
   ; or # comment        label:              .equ NAME value     .entry label
   .word64 value         raw 64-bit instruction word
+  .include "file"       .equ lines from another file (e.g. the AXIL Studio address map, *.inc)
   WR   [Rb+imm], Ra     WR [imm], Ra        RD Ra, [Rb+imm]     RD D[n], [Rb+imm]
   LDI  Ra, imm          MOV Ra, Rb|imm      LDD Ra, D[n]        STD D[n], Ra
   ADD/SUB/AND/OR/XOR/SHL/SHR/CMP Ra, Rb|imm
@@ -24,6 +25,7 @@ Syntax:
 The hex file has one 64-bit instruction per line ($readmemh compatible).
 """
 import argparse
+import os
 import re
 import sys
 
@@ -84,11 +86,13 @@ def imem_sum(prog):
 
 
 class Assembler:
-    def __init__(self, imem_aw=9, dmem_aw=8, symbols=None):
+    def __init__(self, imem_aw=9, dmem_aw=8, symbols=None, base_dir="."):
+        self.base_dir = base_dir
         self.imem_size = 1 << imem_aw
         self.dmem_size = 1 << dmem_aw
         self.syms = dict(symbols or {})
         self.entry = None
+        self.pc_line = {}           # PC -> source line number (after parse)
 
     # ---- numbers and expressions ------------------------------------------------
     def value(self, tok, line):
@@ -185,6 +189,39 @@ class Assembler:
             out.append(cur.strip())
         return out
 
+    def include(self, name, loc, depth=0):
+        """Read the .equ lines (and comments) of an include file."""
+        name = name.strip().strip('"').strip("'")
+        path = name if os.path.isabs(name) else os.path.join(self.base_dir, name)
+        if depth > 8:
+            raise AsmError(f"{loc}: .include nested too deep")
+        try:
+            with open(path, encoding="utf-8") as fh:
+                text = fh.read()
+        except OSError as exc:
+            raise AsmError(f"{loc}: cannot read {name}: {exc.strerror}") from None
+        for no, raw in enumerate(text.splitlines(), 1):
+            line = re.split(r"[;#]", raw, maxsplit=1)[0].strip()
+            if not line:
+                continue
+            iloc = f"{os.path.basename(path)} line {no}"
+            low = line.lower()
+            if low.startswith(".include"):
+                self.include(line.split(None, 1)[1] if len(line.split(None, 1)) > 1 else "", iloc, depth + 1)
+            elif low.startswith(".equ"):
+                self.equ(line, iloc)
+            else:
+                raise AsmError(f"{iloc}: an include file may only hold .equ and .include lines")
+
+    def equ(self, line, loc):
+        parts = line.split(None, 2)
+        if len(parts) < 3:
+            raise AsmError(f"{loc}: .equ NAME value")
+        name = parts[1].rstrip(",")
+        if name in self.syms:
+            raise AsmError(f"{loc}: '{name}' defined twice")
+        self.syms[name] = self.value(parts[2].lstrip(", "), loc)
+
     def parse(self, src):
         """Pass 1: labels and .equ; pass 2: encoding. Returns ([(pc, word, src)], entry)."""
         stmts, pc = [], 0
@@ -202,19 +239,20 @@ class Assembler:
             if not line:
                 continue
             low = line.lower()
+            if low.startswith(".include"):
+                arg = line.split(None, 1)
+                if len(arg) < 2:
+                    raise AsmError(f'{loc}: .include "file"')
+                self.include(arg[1], loc)
+                continue
             if low.startswith(".equ"):
-                parts = line.split(None, 2)
-                if len(parts) < 3:
-                    raise AsmError(f"{loc}: .equ NAME value")
-                name = parts[1].rstrip(",")
-                if name in self.syms:
-                    raise AsmError(f"{loc}: '{name}' defined twice")
-                self.syms[name] = self.value(parts[2].lstrip(", "), loc)
+                self.equ(line, loc)
                 continue
             if low.startswith(".entry"):
                 self.entry = (line.split(None, 1)[1].strip(), loc)
                 continue
             stmts.append((pc, line, loc, raw.strip()))
+            self.pc_line[pc] = no
             pc += 1
         if pc > self.imem_size:
             raise AsmError(f"program has {pc} instructions, I-mem holds {self.imem_size}")
@@ -309,9 +347,9 @@ class Assembler:
         raise AsmError(f"{loc}: cannot encode '{mn}'")
 
 
-def assemble(src, imem_aw=9, dmem_aw=8, symbols=None):
-    """Assemble source text. Returns ([(pc, word, src_line)], entry)."""
-    return Assembler(imem_aw, dmem_aw, symbols).parse(src)
+def assemble(src, imem_aw=9, dmem_aw=8, symbols=None, base_dir="."):
+    """Assemble source text (.include paths relative to base_dir). Returns ([(pc, word, src_line)], entry)."""
+    return Assembler(imem_aw, dmem_aw, symbols, base_dir).parse(src)
 
 
 def disasm(w):
@@ -392,7 +430,8 @@ def main(argv=None):
 
     try:
         with open(a.src, encoding="utf-8") as fh:
-            prog, entry = assemble(fh.read(), a.imem_aw, a.dmem_aw)
+            prog, entry = assemble(fh.read(), a.imem_aw, a.dmem_aw,
+                                   base_dir=os.path.dirname(os.path.abspath(a.src)))
     except AsmError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1

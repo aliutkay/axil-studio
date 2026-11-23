@@ -783,14 +783,18 @@ class SystemDiagram(BlockDiagram):
         rng = f"{hex32(s.base)} – {hex32(s.base + s.window - 1)}"
         cv.text(QRectF(inner.left(), inner.top() + 19, inner.width(), 15), rng,
                 t["danger"] if bad else t["muted"], small)
-        if is_bridge:
+        if is_bridge and inst.sequencer:
+            kind = tr("Command sequencer · cmd_seq")
+        elif is_bridge:
             kind = A.BRIDGE_LABEL + (tr(" · own {0}").format(size_text(inst.self_window)) if inst.self_window else "")
         else:
             kind = tr("external") if inst.external else inst.ip
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width() - 60, 15), kind, t["muted"], small)
         cv.text(QRectF(inner.left(), inner.top() + 34, inner.width(), 15), size_text(s.window), t["muted"], small,
                 Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-        if is_bridge and A.has_xbar(self.project, inst):
+        if is_bridge and inst.sequencer:
+            tip = (tr("{0} · command sequencer (cmd_seq)\n{1}\nSLAVE{2} on the upper bus; cmd_seq registers in the first 64 KB, the rest forwarded; its master drives {3}\nDouble-click: select the subsystem").format(inst.name, rng, j, tr("MASTER0 of its own crossbar") if A.has_xbar(self.project, inst) else tr("its single slave")))
+        elif is_bridge and A.has_xbar(self.project, inst):
             tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, MASTER0 of its own crossbar\nDouble-click: select the subsystem").format(inst.name, A.BRIDGE_LABEL, rng, j))
         elif is_bridge:
             tip = (tr("{0} · {1}\n{2}\nSLAVE{3} on the upper bus, connected straight to its single slave\nDouble-click: select the subsystem").format(inst.name, A.BRIDGE_LABEL, rng, j))

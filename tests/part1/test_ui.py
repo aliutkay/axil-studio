@@ -106,7 +106,7 @@ def test_address_map_edits_reach_the_crossbar_specs(ctx, monkeypatch):
     ctx.mark_modified()
     # a typed bridge address (inside SUB_0): SUB_1 and its locked child move together
     new_base = b1.base + 2 * A.window_of(p, b1)
-    queue(monkeypatch, AM.BridgeDialog, [("SUB_1", new_base, 0, 0, True)])
+    queue(monkeypatch, AM.BridgeDialog, [("SUB_1", new_base, 0, 0, True, "", None)])
     old_off = k.base - b1.base
     page.edit_slave(b1)
     b1, k = p.get_instance("SUB_1"), p.get_instance("ip_3")
@@ -117,7 +117,7 @@ def test_address_map_edits_reach_the_crossbar_specs(ctx, monkeypatch):
     # a refused edit leaves everything unchanged (the name too)
     before = H.project_hdlspecs(p)
     names = [i.name for i in p.all_instances()]
-    queue(monkeypatch, AM.BridgeDialog, [("OTHER", b1.base, 0, 0x100, False)])   # window too small
+    queue(monkeypatch, AM.BridgeDialog, [("OTHER", b1.base, 0, 0x100, False, "", None)])   # window too small
     page.edit_slave(b1)
     assert H.project_hdlspecs(p) == before and [i.name for i in p.all_instances()] == names
     # moving an entry to another bus: SUB_1's interconnect gets a third slave

@@ -428,6 +428,27 @@ class InterfaceService(QObject):
             out.append(d)
         self._reply(sock, rid, out)
 
+    def _op_address_map(self, s, sock, rid, req):
+        """Every entry of the address map (project IPs) with its base, window and register map:
+        what an interface needs to resolve names (e.g. the cmd_seq assembler)."""
+        out = []
+        if s.group == "project":
+            from axil_studio.core import addrmap
+            proj = self.host.ctx.project
+            for inst, parent in proj.walk():
+                d = proj.definition_of(inst)
+                kind = ("cmd_seq" if inst.sequencer else "subsystem" if inst.bridge
+                        else "external" if inst.external else "ip")
+                out.append({"name": inst.name, "kind": kind, "ip": d.name if d else "",
+                            "base": inst.base, "window": addrmap.window_of(proj, inst),
+                            "parent": parent.name if parent is not None else "",
+                            "registers": [r.to_dict() for r in d.registers] if d else []})
+        else:
+            for ip in [self._ip(s)] + self._peer_ips(s):
+                out.append({"name": ip.name, "kind": "ip", "ip": ip.ref or ip.name, "base": ip.base,
+                            "window": ip.span, "parent": "", "registers": [r.to_dict() for r in ip.registers]})
+        self._reply(sock, rid, out)
+
     def _op_settings_get(self, s, sock, rid, req):
         self._reply(sock, rid, self._settings(s, self._target(s, req)))
 

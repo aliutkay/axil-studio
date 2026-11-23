@@ -10,6 +10,7 @@ AXIL Studio olmadan çalışmaz.
 |---|---|
 | `sdk/axil_client.py` | Python istemcisi (tek dosya, yalnızca standart kütüphane) |
 | `axiluart_phy/` | axiluart_phy'nin UART arayüzü (AXIL Studio ile birlikte gelen örnek arayüz) |
+| `cmd_seq/` | Komut sıralayıcı alt sistemlerin arayüzü: program editörü ve assembler, yükleme, çalıştırma, D-mem |
 
 ## Bir IP'yi arayüzüne bağlamak
 
@@ -98,6 +99,7 @@ yanıtlar ve olayları her an gönderebilir:
 | `ip` | — | Güncel IP bilgisi |
 | `settings_get` / `settings_set` | `values` (JSON nesnesi; `null` anahtarı siler), isteğe bağlı `ip` | Bu IP örneği (ya da `ip` ile aynı arayüzü kullanan bir eşi) için projede saklanan değerler (ör. ACLK, 4 telli çift) |
 | `peers` | — | Projede aynı arayüzü kullanan diğer IP örnekleri: ad, `base`, register haritası, kayıtlı ayarları. Register'larına mutlak adresle (`addr`) erişilir |
+| `address_map` | — | Adres haritasının tüm girişleri: ad, tür (`ip`, `external`, `subsystem`, `cmd_seq`), `base`, pencere, üst alt sistem, register haritası (ör. assembler'da sembolik adresler). AXIL Studio 0.1.28 ve sonrası |
 | `show_register` | `register` | Debug Bridge'de register'ı seçer ve öne getirir |
 | `add_config` | `rows`: `[{"register", "value"}]` | Debug Bridge config listesine satır ekler |
 | `status` / `log` | `text` | Durum çubuğuna / trafik günlüğüne yazar |

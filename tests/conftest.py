@@ -79,3 +79,25 @@ def no_dialogs(monkeypatch):
         monkeypatch.setattr(QMessageBox, name, staticmethod(lambda *a, _n=name, **k: shown.append((_n, a[2]))))
     monkeypatch.setattr(ui, "confirm", lambda *a, **k: True)
     return shown
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """Delete the Qt widgets the tests left behind while the QApplication still exists: destroyed
+    at interpreter exit (after it), they crash the process now and then."""
+    import gc
+    try:
+        from PySide6.QtCore import QEvent
+        from PySide6.QtWidgets import QApplication
+    except ImportError:
+        return
+    app = QApplication.instance()
+    if app is None:
+        return
+    for w in app.topLevelWidgets():
+        w.close()
+        w.deleteLater()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()
+    gc.collect()
+    app.sendPostedEvents(None, QEvent.Type.DeferredDelete)
+    app.processEvents()

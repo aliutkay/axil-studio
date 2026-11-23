@@ -247,6 +247,12 @@ class AxilClient:
         register map and stored settings. Their registers are reached by absolute address."""
         return self.request("peers")
 
+    def address_map(self):
+        """Every entry of the address map: name, kind ("ip", "external", "subsystem", "cmd_seq"),
+        base, window, parent subsystem and register map. Needs AXIL Studio 0.1.28 or later
+        (older versions answer AxilError "unknown_op")."""
+        return self.request("address_map")
+
     def refresh_ip(self):
         self.ip = self.request("ip")
         return self.ip

@@ -586,18 +586,46 @@ class SlaveDialog(FormDialog):
 
 
 class BridgeDialog(FormDialog):
-    """A subsystem (Address Map Editor): name, its own window at the start, the window size
-    (grows with the contents unless chosen) and the address (automatic or fixed)."""
+    """A subsystem (Address Map Editor): name, type (group of slaves or command sequencer),
+    its own window at the start, the window size (grows with the contents unless chosen), the
+    address (automatic or fixed) and, for a command sequencer, the cmd_seq parameters."""
 
-    def __init__(self, parent, title, name, base, self_window, window, fixed, need):
+    def __init__(self, parent, title, name, base, self_window, window, fixed, need, kind="", seq=None):
         self.v = (name, base, self_window, window, fixed)
         self.need = need
-        super().__init__(parent, title, 480)
+        self.kind0, self.seq0 = kind, dict(seq or {})
+        super().__init__(parent, title, 520)
 
     def build(self):
+        from axil_studio.core import cmdseq
         name, base, self_window, window, fixed = self.v
         self.name = QLineEdit(name)
         self.form.addRow(tr("Name"), self.name)
+        self.kind = QComboBox()
+        self.kind.addItem(tr("Group of slaves"), "")
+        self.kind.addItem(tr("Command sequencer (cmd_seq)"), cmdseq.TYPE)
+        self.kind.setCurrentIndex(max(0, self.kind.findData(self.kind0)))
+        self.kind.setToolTip(tr("Group of slaves: the subsystem only groups the slaves behind it. Command sequencer: a cmd_seq block runs programs on the slaves behind it; its registers are the first 64 KB of the window and everything else is forwarded unchanged."))
+        self.form.addRow(tr("Type"), self.kind)
+        self.seq_box = QWidget()
+        sf = QFormLayout(self.seq_box)
+        sf.setContentsMargins(0, 0, 0, 0)
+        st = dict(cmdseq.DEFAULTS, **{k: int(v) for k, v in self.seq0.items() if k in cmdseq.DEFAULTS})
+        self.seq_spin = {}
+        texts = {"IMEM_AW": tr("I-mem address bits"), "DMEM_AW": tr("D-mem address bits"),
+                 "PT_TIMEOUT": tr("Pass-through timeout (cycles)"), "BUS_TIMEOUT": tr("Sequencer bus timeout (cycles, 0 = none)")}
+        for k, (lo, hi) in cmdseq.LIMITS.items():
+            sp = QSpinBox()
+            sp.setRange(lo, hi)
+            sp.setValue(st[k])
+            self.seq_spin[k] = sp
+            sf.addRow(texts[k], sp)
+        self.seq_info = ui.label("", "muted")
+        self.seq_info.setWordWrap(True)
+        sf.addRow(self.seq_info)
+        self.form.addRow(self.seq_box)
+        for sp in self.seq_spin.values():
+            sp.valueChanged.connect(self._seq_text)
         self.own = QComboBox()
         self.own.addItem(tr("none"), 0)
         for w in window_choices(0x100):
@@ -616,8 +644,27 @@ class BridgeDialog(FormDialog):
         self.extra.addWidget(ui.note(tr("The rest of the window is forwarded to the subsystem's slaves."),
                                      tr("Addresses in the window (outside its own part) are forwarded unchanged to the slaves of the subsystem: through a crossbar of its own when it has more than one slave or extra masters, straight to the slave when it has one. An automatic window grows with its contents; a slave that does not fit in a fixed window cannot be added.")))
         self.own.currentIndexChanged.connect(self._fill)
+        self.kind.currentIndexChanged.connect(self._kind_changed)
+        self._kind_changed()
         self._fill()
         self.name.setFocus()
+
+    def _is_seq(self):
+        return bool(self.kind.currentData())
+
+    def _kind_changed(self, *_):
+        from axil_studio.core import cmdseq
+        seq = self._is_seq()
+        self.seq_box.setVisible(seq)
+        if seq:
+            self.own.setCurrentIndex(max(0, self.own.findData(cmdseq.OWN_WINDOW)))
+        self.own.setEnabled(not seq)
+        self._seq_text()
+        self.adjustSize()
+
+    def _seq_text(self, *_):
+        i, d = self.seq_spin["IMEM_AW"].value(), self.seq_spin["DMEM_AW"].value()
+        self.seq_info.setText(tr("{0} instructions · D-mem {1} words × 2 banks · own window 64 KB (registers, R0–R15, D-mem)").format(1 << i, 1 << d))
 
     def _fill(self, *_):
         cur = self.window.currentData() if self.window.count() else self.v[3]
@@ -652,7 +699,9 @@ class BridgeDialog(FormDialog):
                 align_w <<= 1
         if self.fixed.isChecked() and base & (align_w - 1):
             raise ValueError(tr("Base address must be aligned to the window ({0:#x})").format(align_w))
-        return name, base, self.own.currentData(), w, self.fixed.isChecked()
+        kind = self.kind.currentData() or ""
+        seq = {k: sp.value() for k, sp in self.seq_spin.items()} if kind else None
+        return name, base, self.own.currentData(), w, self.fixed.isChecked(), kind, seq
 
 
 # ============================================================================ debug: custom value / map edits

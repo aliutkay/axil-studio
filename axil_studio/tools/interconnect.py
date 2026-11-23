@@ -21,6 +21,7 @@ from PySide6.QtWidgets import (QAbstractItemView, QComboBox, QFileDialog, QFormL
                                QPlainTextEdit, QScrollArea, QSplitter, QStackedWidget, QTableWidget,
                                QTableWidgetItem, QTreeWidget, QTreeWidgetItem, QVBoxLayout, QWidget)
 
+from axil_studio.core import cmdseq
 from axil_studio.core import addrmap as A
 from axil_studio.core import hdlspec as H
 from axil_studio.core import xbargen as X
@@ -560,6 +561,9 @@ class InterconnectPage(ToolPage):
             out.append(((b.name if b else "", "main"), tr("{0}.v  —  wrapper with separate AXI ports").format(sp.module)))
             if sp.packed:
                 out.append(((b.name if b else "", "pk"), tr("{0}_pk.v  —  HDL Designer wrapper (REQ/RSP)").format(sp.module)))
+        for b in self.proj.bridges():
+            if b.sequencer:
+                out.append(((b.name, "seq"), tr("{0}  —  cmd_seq instance of {1} (template)").format(cmdseq.template_name(b), b.name)))
         out.append((("", "core"), tr("axilxbar.v  —  ZipCPU, used through its parameters only (not changed)")))
         return out
 
@@ -614,7 +618,9 @@ class InterconnectPage(ToolPage):
         bridge = self.proj.get_instance(lvl) if lvl else None
         spec = self.spec(bridge)
         errs = spec.validate() if spec.slaves else [tr("This interconnect has no slaves")]
-        if which == "core":
+        if which == "seq":
+            text = cmdseq.instance_template(bridge, self.proj)
+        elif which == "core":
             try:
                 with open(os.path.join(ROOT, "hdl", "axilxbar.v"), encoding="utf-8") as fh:
                     text = fh.read()
@@ -742,9 +748,12 @@ class InterconnectPage(ToolPage):
         try:
             for b in A.xbar_levels(self.proj):
                 paths += X.write_xbar(self.spec(b), outdir)
+            paths += cmdseq.write_templates(self.proj, outdir)
         except Exception as exc:  # noqa: BLE001
             return self.error(tr("Generation failed"), exc)
         hint = (tr("<module>.v: the MASTER<i>_AXI_* and SLAVE<j>_AXI_* ports connect to the masters' M_AXI_* and the slaves' S_AXI_* ports. A subsystem's SLAVE port on the upper crossbar connects to MASTER0 of its own crossbar, or straight to its slave when it has a single one."))
+        if any(b.sequencer for b in self.proj.bridges()):
+            hint += tr("\n<subsystem>_cmd_seq_inst.v: a command sequencer subsystem has cmd_seq between its upper SLAVE port and its MASTER0 (hdl/cmd_seq).")
         if self.style == "packed":
             hint += tr("\n<module>_pk.v (HDL Designer) wraps <module>.v: MASTER<i>/SLAVE<j>_AXI_REQ/RSP per port.")
         QMessageBox.information(self, tr("Generation complete"),

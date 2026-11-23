@@ -1,0 +1,12 @@
+{
+  "format": "axil-interface",
+  "protocol": 1,
+  "id": "cmd_seq",
+  "version": "1.0.0",
+  "title": {"en": "Command sequencer", "tr": "Komut sıralayıcı"},
+  "desc": {
+    "en": "cmd_seq: write and assemble programs, load them, run / step / stop, registers, D-mem",
+    "tr": "cmd_seq: program yazma ve derleme, yükleme, çalıştırma / adım / durdurma, registerlar, D-mem"
+  },
+  "command": ["{python}", "seq_ui.py"]
+}
