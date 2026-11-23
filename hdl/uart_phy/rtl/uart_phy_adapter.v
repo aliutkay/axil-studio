@@ -77,13 +77,21 @@ module uart_phy_adapter #(
                          && (HAS_RX || !new_ctrl[7])
                          && (!new_ctrl[3] || new_ctrl[2]);
 
+    // DEF_CTRL limited to what the hardware has, so the value read back after reset is always one
+    // that may be written again (DE_MODE low without HAS_DE, no TX_EN / RX_EN without the
+    // transmitter / receiver, ECHO only with HALF, DE_MODE 3 never)
+    localparam [1:0]  DEF_DE   = (DEF_CTRL[1:0] == 2'd3 || !HAS_DE) ? DE_LOW : DEF_CTRL[1:0];
+    localparam [31:0] RST_CTRL = (DEF_CTRL & CTRL_MASK & ~32'h0000_00CB)
+                               | {24'd0, HAS_RX & DEF_CTRL[7], HAS_TX & DEF_CTRL[6], 2'b00,
+                                  DEF_CTRL[3] & DEF_CTRL[2], 1'b0, DEF_DE};
+
     wire        tx_idle   = (state == S_IDLE) && (!i_uart_tx_active || !act_ctrl[6]);
     wire        apply_now = i_ctrl_wr && i_wdata[31] && new_valid;
 
     initial begin
-        act_ctrl    = DEF_CTRL & CTRL_MASK;
+        act_ctrl    = RST_CTRL;
         act_timing  = DEF_TIMING;
-        pend_ctrl   = DEF_CTRL & CTRL_MASK;
+        pend_ctrl   = RST_CTRL;
         pend_timing = DEF_TIMING;
         pending     = 1'b0;
         cfg_err     = 1'b0;
@@ -91,9 +99,9 @@ module uart_phy_adapter #(
 
     always @(posedge i_clk)
         if (i_reset) begin
-            act_ctrl    <= DEF_CTRL & CTRL_MASK;
+            act_ctrl    <= RST_CTRL;
             act_timing  <= DEF_TIMING;
-            pend_ctrl   <= DEF_CTRL & CTRL_MASK;
+            pend_ctrl   <= RST_CTRL;
             pend_timing <= DEF_TIMING;
             pending     <= 1'b0;
             cfg_err     <= 1'b0;

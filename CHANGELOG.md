@@ -11,6 +11,16 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.25 — axiluart_phy RTL düzeltmeleri
+
+- `patches/axiluart_v2.patch` artık verici örneğini de değiştiriyor (`txuart` → `txuart_v2`); önceden bu satır
+  bağlam olarak kaldığı için patch orijinal `axiluart.v`'ye uygulandığında parity düzeltmesi gelmiyordu. Patch,
+  `axiluart_v2.v`'ye geri alınıp yeniden uygulanınca dosyanın aynısını veriyor (testli).
+- `uart_phy_adapter.v`: PHY_CTRL'nin reset değeri donanıma göre sınırlanıyor (HAS_DE yoksa DE düşük, HAS_TX / HAS_RX
+  yoksa TX_EN / RX_EN kapalı, ECHO yalnızca HALF ile, DE_MODE 3 hiç). Önceden HAS_DE=0 ve varsayılan DEF_CTRL=0xC2
+  ile okunan değer DE_MODE=2 gösteriyor, geri yazılınca CFG_ERR kalkıyordu. Tam donanımlı varsayılan davranış aynı.
+- Yeni testbench `tb/tb_adapter_defaults.v` (yalnızca adapter, ZipCPU dosyası gerekmez) ve test paketinde iki RTL testi.
+
 ## early-alpha 0.1.24 — C header adres haritasından, UART 4 telli çift
 
 - **C header Address Map Editor'a taşındı.** Register haritasının adresi olmadığı için C header artık adres

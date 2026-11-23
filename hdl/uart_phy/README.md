@@ -18,6 +18,7 @@ validation.
 | `tb/tb_axiluart_phy.v` | Self-checking testbench (Icarus Verilog) |
 | `tb/tb_formats_loopback.v` | Gapless 100-byte TX→RX bursts in 5E1, 6O2, 7N1, 8N2, 8E1, 7O1 |
 | `tb/tb_tx_parity.v` | Decodes the TX waveform and checks the parity bit against the standard |
+| `tb/tb_adapter_defaults.v` | PHY_CTRL after reset follows the HAS_* generics and can be written back (adapter only) |
 | `../axiluart_phy_pk.v` | HDL Designer wrapper with packed `S_AXI_REQ/RSP` ports |
 | `../../examples/uart_phy/*.axcfg.json` | Line presets (RS-232, RS-422, RS-485 2/4-wire) for the Debug Bridge config list |
 
@@ -41,6 +42,11 @@ interface pairs two instances, swaps the directions and validates both direction
 - RXREG bit 9 (parity), bit 10 (frame) and bit 12 (FIFO overflow) are sticky and captured whenever
   rxuart reports them (the original misses parity and frame errors with one stop bit)
 - SETUP is reset to INITIAL_SETUP on S_AXI_ARESETN (original relies on `initial` only)
+
+## uart_phy_adapter reset value
+`DEF_CTRL` is limited to the hardware before it is used as the reset value of PHY_CTRL: DE_MODE low
+without `HAS_DE` (and DE_MODE 3 never), no TX_EN without `HAS_TX`, no RX_EN without `HAS_RX`, ECHO
+only with HALF. The value read after reset can therefore always be written back without CFG_ERR.
 
 ## Register map
 | Offset | Name | Notes |

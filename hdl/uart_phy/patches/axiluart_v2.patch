@@ -177,7 +177,8 @@
 @@ -594,7 +644,7 @@
  	// time (tx_empty_n) and (!tx_busy) are both true---the condition for
  	// starting to transmit a new byte.)
- 	txuart	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
+-	txuart	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
++	txuart_v2	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
 -			r_tx_break, (tx_empty_n), tx_data,
 +			r_tx_break, (tx_empty_n)&&(i_tx_go), tx_data,
  			cts_n, o_uart_tx, tx_busy);
