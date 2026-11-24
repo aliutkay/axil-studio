@@ -1108,5 +1108,7 @@
  "Unknown parameter(s): {0}": "Bilinmeyen parametre(ler): {0}",
  "{0}_pk parameter values": "{0}_pk parametre değerleri",
  "The HDL Designer block has no generics (a VHDL top would turn 32-bit values into overflowing integers). These values are fixed in it; change them here if needed.": "HDL Designer bloğunda generic yok (VHDL üst blok 32 bitlik değerleri taşan integer'lara çevirir). Bu değerler bloğun içine sabit yazılır; gerekirse burada değiştirin.",
- "Parameter values": "Parametre değerleri"
+ "Parameter values": "Parametre değerleri",
+ "{0}.v  —  HDL Designer block of {1} (cmd_seq, SELF_ID built in)": "{0}.v  —  {1} için HDL Designer bloğu (cmd_seq, SELF_ID içinde)",
+ "\n<subsystem>_cmd_seq_pk.v: the HDL Designer block of each sequencer, its SELF_ID built in (one module per sequencer). The _inst.v files are templates: do not compile them.": "\n<alt sistem>_cmd_seq_pk.v: her komut sıralayıcının HDL Designer bloğu, SELF_ID içinde (sıralayıcı başına bir modül). _inst.v dosyaları şablondur: derlemeye eklemeyin."
 }

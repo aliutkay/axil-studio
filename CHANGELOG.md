@@ -11,6 +11,16 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.44 — Çok PCS'li örnek, sıralayıcı başına HDL Designer bloğu
+- Interconnect Configurator her komut sıralayıcı alt sistem için `<alt sistem>_cmd_seq_pk.v`
+  üretiyor: parametresiz, SELF_ID ve ayarları içinde, sıralayıcı başına ayrı modül (tek
+  `cmd_seq_pk` farklı SELF_ID'li birden fazla sıralayıcıya yetmiyordu). Önizleme listesinde de var;
+  `_inst.v` şablonlarının derlenmeyeceği not edildi. `cmdseq.pk_name` / `pk_wrapper`.
+- `examples/cmd_seq_rs485/`: SEQ_MAIN → SEQ_GPIO (GPIO) + SEQ_UART (iki UART PHY); RS-485'ten gelen
+  bayta `OK: <bayt>` cevabı ve LED blink; alıcı / verici UART PC'den çalışırken seçiliyor. Proje,
+  üç program, üretilmiş HDL, sistem simülasyonu (Studio'nun ürettiği paketli bloklarla; rol
+  değiştirme dahil) ve testler.
+
 ## early-alpha 0.1.43 — Örnek: PCS ile 8 LED şovu
 - `examples/cmd_seq_led_fade/led_show.s`: 8 LED'de 16 kademe parlaklık (bit-plane modülasyonu,
   `WAITT`), D-mem'de kare tamponu ve dalga tablosu (indeksli adresleme), alt program olarak dört

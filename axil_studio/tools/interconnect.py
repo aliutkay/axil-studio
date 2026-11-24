@@ -563,6 +563,7 @@ class InterconnectPage(ToolPage):
                 out.append(((b.name if b else "", "pk"), tr("{0}_pk.v  —  HDL Designer wrapper (REQ/RSP)").format(sp.module)))
         for b in self.proj.bridges():
             if b.sequencer:
+                out.append(((b.name, "seqpk"), tr("{0}.v  —  HDL Designer block of {1} (cmd_seq, SELF_ID built in)").format(cmdseq.pk_name(b), b.name)))
                 out.append(((b.name, "seq"), tr("{0}  —  cmd_seq instance of {1} (template)").format(cmdseq.template_name(b), b.name)))
         out.append((("", "core"), tr("axilxbar.v  —  ZipCPU, used through its parameters only (not changed)")))
         return out
@@ -620,6 +621,8 @@ class InterconnectPage(ToolPage):
         errs = spec.validate() if spec.slaves else [tr("This interconnect has no slaves")]
         if which == "seq":
             text = cmdseq.instance_template(bridge, self.proj)
+        elif which == "seqpk":
+            text = cmdseq.pk_wrapper(bridge)
         elif which == "core":
             try:
                 with open(os.path.join(ROOT, "hdl", "v2005", "interconnect", "axilxbar.v"), encoding="utf-8") as fh:
@@ -754,6 +757,7 @@ class InterconnectPage(ToolPage):
         hint = (tr("<module>.v: the MASTER<i>_AXI_* and SLAVE<j>_AXI_* ports connect to the masters' M_AXI_* and the slaves' S_AXI_* ports. A subsystem's SLAVE port on the upper crossbar connects to MASTER0 of its own crossbar, or straight to its slave when it has a single one."))
         if any(b.sequencer for b in self.proj.bridges()):
             hint += tr("\n<subsystem>_cmd_seq_inst.v: a command sequencer subsystem has cmd_seq between its upper SLAVE port and its MASTER0 (hdl/cmd_seq).")
+            hint += tr("\n<subsystem>_cmd_seq_pk.v: the HDL Designer block of each sequencer, its SELF_ID built in (one module per sequencer). The _inst.v files are templates: do not compile them.")
         if self.style == "packed":
             hint += tr("\n<module>_pk.v (HDL Designer) wraps <module>.v: MASTER<i>/SLAVE<j>_AXI_REQ/RSP per port.")
         QMessageBox.information(self, tr("Generation complete"),

@@ -136,7 +136,8 @@ def instance_template(inst, project=None):
         f"{hex32(inst.base + OWN_WINDOW - 1)}",
         f"// S_AXI_*: the {n} port of the upper interconnect; M_AXI_*: "
         + (f"MASTER0 of {xb}." if _has_xbar(project, inst) else "the subsystem's only slave (no interconnect)."),
-        "// Files: hdl/cmd_seq/rtl/cmd_seq.v, cmd_seq_core.v (HDL Designer: hdl/cmd_seq_pk.v).",
+        f"// Files: hdl/cmd_seq/rtl/cmd_seq.v, cmd_seq_core.v (HDL Designer: {pk_name(inst)}.v, its",
+        "// settings built in). This is a template to paste into a module, not a file to compile.",
         "cmd_seq #(",
         f"    .SELF_ID     (8'h{self_id(inst):02X}),",
         f"    .IMEM_AW     ({s['IMEM_AW']}),",
@@ -170,14 +171,40 @@ def template_name(inst):
     return f"{inst.name.lower()}_cmd_seq_inst.v"
 
 
+def pk_name(inst):
+    """Module (and file) name of the subsystem's HDL Designer block."""
+    return f"{inst.name.lower()}_cmd_seq_pk"
+
+
+def pk_wrapper(inst):
+    """<subsystem>_cmd_seq_pk.v: cmd_seq with packed AXI ports and no parameters (no generics for a
+    VHDL top), SELF_ID and the subsystem's settings built in. One module per sequencer, so several
+    sequencers with different SELF_IDs can sit in one design."""
+    import os
+    from . import axilpack
+    src = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+                       "hdl", "cmd_seq", "rtl", "cmd_seq.v")
+    with open(src, encoding="utf-8") as fh:
+        info = axilpack.parse_module(fh.read(), "cmd_seq")
+    s = settings(inst)
+    values = {"SELF_ID": f"8'h{self_id(inst):02X}"}
+    values.update({k: s[k] for k in ("IMEM_AW", "DMEM_AW", "PT_TIMEOUT", "BUS_TIMEOUT")})
+    text = axilpack.gen_pack_wrapper(info, pk_name(inst), values)
+    return text.replace("// HDL Designer block: cmd_seq with packed AXI4-Lite ports",
+                        f"// HDL Designer block of the command sequencer subsystem {inst.name} "
+                        f"(base {hex32(inst.base)}):\n// cmd_seq with packed AXI4-Lite ports", 1)
+
+
 def write_templates(project, outdir):
-    """<subsystem>_cmd_seq_inst.v for every command sequencer subsystem; returns the paths."""
+    """For every command sequencer subsystem: <subsystem>_cmd_seq_pk.v (HDL Designer block, settings
+    built in) and <subsystem>_cmd_seq_inst.v (Verilog instance template); returns the paths."""
     import os
     paths = []
     for b in project.bridges():
         if b.sequencer:
-            path = os.path.join(outdir, template_name(b))
-            with open(path, "w", encoding="utf-8", newline="\n") as fh:
-                fh.write(instance_template(b, project))
-            paths.append(path)
+            for name, text in ((f"{pk_name(b)}.v", pk_wrapper(b)), (template_name(b), instance_template(b, project))):
+                path = os.path.join(outdir, name)
+                with open(path, "w", encoding="utf-8", newline="\n") as fh:
+                    fh.write(text)
+                paths.append(path)
     return paths
