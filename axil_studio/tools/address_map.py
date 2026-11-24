@@ -672,6 +672,9 @@ class AddressMapPage(ToolPage):
             m.addAction(tr("Edit…"), lambda: self.edit_slave(inst))
             if not inst.external and not inst.bridge:
                 m.addAction(tr("Edit register map"), self.edit_regs)
+                d = self.proj.definition_of(inst)
+                if d is not None and getattr(d, "hdl_gen", ""):
+                    m.addAction(tr("Configure HDL block (HDL Generator)…"), lambda: self.configure_hdl(inst.name))
             m.addAction(tr("Make the address automatic") if inst.fixed else tr("Lock the address"), lambda: self._toggle_lock(inst))
             mv = m.addMenu(tr("Move to"))
             here = self.proj.parent_of(inst)
@@ -690,6 +693,13 @@ class AddressMapPage(ToolPage):
         m.addAction(tr("Add external slave…{0}").format(where), self.add_external)
         m.addAction(tr("Add {0}…{1}").format(BRIDGE, where), self.add_bridge)
         m.exec(self.tree.viewport().mapToGlobal(pos))
+
+    def configure_hdl(self, name):
+        """Open the HDL Generator on this instance and start its generator application."""
+        w = self.open_tool("hdlgen")
+        if w is not None and w.page.select(name):
+            w.page.configure(name)
+        return w
 
     # ================================================================ edits
     def _start_changed(self):

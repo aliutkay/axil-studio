@@ -459,7 +459,8 @@
       ],
       "source": "UART PHY",
       "version": "2.0.0",
-      "panel": "axiluart_phy"
+      "panel": "axiluart_phy",
+      "hdl_gen": "axiluart_phy"
     }
   ],
   "instances": [

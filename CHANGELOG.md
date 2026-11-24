@@ -11,6 +11,21 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.46 — HDL Generator
+- Yeni araç **HDL Generator** (Ctrl+7): üreticisi olan her IP örneği ve elle eklenen bloklar (ör.
+  hexbus) tek listede. Her blok IP'nin kendi **üretici uygulamasında** anlamlı değerlerle ayarlanır
+  (saat, baud, hat tipi, pinler …; hesaplanan değerler, hata ve uyarılar canlı); Studio örnek başına
+  parametresiz `<örnek>_pk.v` yazar. Ayarlar projede (`hdl_gen`) saklanır; *Hepsini üret* penceresiz
+  yeniden üretir. Address Map Editor sağ tık kısayolu.
+- `axil_studio/core/generators.py`: manifest (`axil-generator.json`), bulma, protokol (`--in/--out/--batch`),
+  blok yazma. `IPBlock.hdl_gen`, `Project.hdl_gen`.
+- `generators/`: SDK (`sdk/axil_gen.py`: alan tanımlarından pencere, canlı hesap, batch) ve üreticiler
+  `axiluart_phy` (INITIAL_SETUP, DEF_CTRL, DEF_TIMING, LGFLEN, HAS_*; gerçek baud ve hata), `hexbus_axil_top`
+  (CLK_FREQ_HZ, BAUD_RATE), `axilgpio` (NOUT, NIN, DEFAULT_OUTPUT). UART ve GPIO kütüphaneleri ile örnek
+  projeler üreticilerini belirtiyor.
+- Testler: değerler, hatalı ayarların reddi, blokların Verilog-2005 derlenmesi, UART bloğunun hazır
+  `axiluart_phy_pk` ile Yosys eşdeğerliği, araç sayfası ve SDK penceresi.
+
 ## early-alpha 0.1.44 — Çok PCS'li örnek, sıralayıcı başına HDL Designer bloğu
 - Interconnect Configurator her komut sıralayıcı alt sistem için `<alt sistem>_cmd_seq_pk.v`
   üretiyor: parametresiz, SELF_ID ve ayarları içinde, sıralayıcı başına ayrı modül (tek

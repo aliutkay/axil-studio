@@ -187,6 +187,7 @@ class IPBlock:
     regspec: Optional[dict] = None   # full register spec (axilgen.ModuleSpec.to_dict()) when known
     ref: str = ""           # address-map view only: name of the IP definition (not saved)
     panel: str = ""         # IP interface id (axil_studio.interfaces), started from the Debug Bridge; "" = none
+    hdl_gen: str = ""       # HDL generator id (core/generators.py): makes <instance>_pk.v from settings; "" = none
 
     def get_register(self, name) -> Optional[Register]:
         return next((r for r in self.registers if r.name == name), None)
@@ -212,6 +213,8 @@ class IPBlock:
             d["regspec"] = self.regspec
         if self.panel:
             d["panel"] = self.panel
+        if self.hdl_gen:
+            d["hdl_gen"] = self.hdl_gen
         return d
 
     @staticmethod
@@ -219,7 +222,8 @@ class IPBlock:
         return IPBlock(d["name"], parse_int(d.get("base", 0)), d.get("desc", ""),
                        [Register.from_dict(r) for r in d.get("registers", [])], d.get("source", ""),
                        str(d.get("version", "")), d.get("regspec"),
-                       panel=d.get("panel") or (d.get("regspec") or {}).get("panel", ""))
+                       panel=d.get("panel") or (d.get("regspec") or {}).get("panel", ""),
+                       hdl_gen=d.get("hdl_gen", ""))
 
 
 @dataclass
@@ -307,6 +311,8 @@ class Project:
     generator: str = ""                   # program and version that wrote the file
     instances: List[IPInstance] = field(default_factory=list)   # address map, in slave port order
     address_map: Optional[dict] = None    # Address Map Editor settings ({"start": "0x00000000"})
+    hdl_gen: Optional[dict] = None        # HDL Generator: {"outdir": "...", "blocks": {name: {"generator": id,
+                                          #   "settings": {...}, "params": {...}, "summary": "", "free": bool}}}
 
     def get_ip(self, name) -> Optional[IPBlock]:
         """IP definition by name."""
@@ -371,7 +377,7 @@ class Project:
             d = self.definition_of(inst)
             if d is not None:
                 out.append(IPBlock(inst.name, inst.base, d.desc, d.registers, d.source, d.version, ref=d.name,
-                                   panel=d.panel))
+                                   panel=d.panel, hdl_gen=d.hdl_gen))
         return out
 
     def to_data(self):
@@ -389,6 +395,8 @@ class Project:
             data["debug"] = self.debug
         if self.libraries:
             data["libraries"] = list(self.libraries)
+        if self.hdl_gen:
+            data["hdl_gen"] = self.hdl_gen
         return data
 
     def save(self, path=None):
@@ -405,7 +413,7 @@ class Project:
                        interconnect=data.get("interconnect"), debug=data.get("debug"),
                        libraries=list(data.get("libraries", [])), generator=data.get("generator", ""),
                        instances=[IPInstance.from_dict(i) for i in data.get("instances", [])],
-                       address_map=data.get("address_map"))
+                       address_map=data.get("address_map"), hdl_gen=data.get("hdl_gen"))
         if "instances" not in data:
             _upgrade_v1(proj, data)
         for ip in proj.ips:

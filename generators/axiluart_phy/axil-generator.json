@@ -1,0 +1,14 @@
+{
+  "format": "axil-generator",
+  "protocol": 1,
+  "id": "axiluart_phy",
+  "version": "1.0.0",
+  "title": {"en": "UART PHY generator", "tr": "UART PHY üreteci"},
+  "desc": {
+    "en": "axiluart_phy: clock, baud rate, frame, line type (RS-232 / RS-422 / RS-485), DE timing, FIFO and pins -> INITIAL_SETUP, DEF_CTRL, DEF_TIMING, LGFLEN, HAS_*",
+    "tr": "axiluart_phy: saat, baud, çerçeve, hat tipi (RS-232 / RS-422 / RS-485), DE zamanlaması, FIFO ve pinler -> INITIAL_SETUP, DEF_CTRL, DEF_TIMING, LGFLEN, HAS_*"
+  },
+  "module": "axiluart_phy",
+  "source": "../../hdl/v2005/uart_phy/axiluart_phy.v",
+  "command": ["{python}", "gen.py"]
+}

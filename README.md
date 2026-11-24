@@ -422,6 +422,30 @@ Komut sıralayıcı alt sistemlerin arayüzü (`interfaces/cmd_seq/`). Başlıkt
   günlüğüne yazılmaz).
 - **D-mem:** tüm D-mem penceresi (SNAP_EN açıksa yayınlanan bank); değere çift tıklayıp yazılır.
 
+## HDL Generator
+Bazı IP'lerin kendi **üretici uygulaması** var: anlamlı değerleri sorar (saat, baud, hat tipi, pin
+sayısı …), IP'nin parametre değerlerini hesaplar. Studio da **`<örnek>_pk.v`** yazar: paketli AXI
+portları, **parametre yok**, değerler port genişliklerinde ve IP'nin örneklenmesinde gömülü, örnek
+başına ayrı modül (UART1 → `uart1_pk`, UART2 → `uart2_pk`; ikisi farklı baud'da olabilir). VHDL üst
+blok generic görmez, 32 bitlik değerler taşmaz.
+
+- **Liste:** HDL Generator aracı (Araçlar menüsü, Ctrl+7) üreticisi olan her adres haritası örneğini
+  ve elle eklenen blokları (adres haritasında olmayan bir bus master, ör. hexbus) gösterir.
+- **Yapılandır…:** IP'nin üretici penceresini açar. Hesaplanan değerler yazarken güncellenir (baud
+  böleni, gerçek baud ve hata %, DE çevrimleri …); hata varsa Tamam kapalıdır.
+- **Hepsini üret:** her üreticiyi projede saklanan ayarlarla penceresiz yeniden çalıştırır ve
+  blokları çıktı klasörüne yazar. Saat değişince tek tuş.
+- Address Map Editor'da örneğe sağ tık → *HDL bloğunu yapılandır*.
+
+| Üretici | Ayarlar | Parametreler |
+|---|---|---|
+| `axiluart_phy` | saat, baud, veri / parite / stop, hat (TTL/RS-232, RS-422, RS-485 4 / 2 telli, yankılı), DE lead / tail µs, FIFO, pinler, RTS/CTS | `INITIAL_SETUP`, `DEF_CTRL`, `DEF_TIMING`, `LGFLEN`, `HAS_*` |
+| `hexbus_axil_top` | saat, baud, adres genişliği | `CLK_FREQ_HZ`, `BAUD_RATE`, `C_AXI_ADDR_WIDTH` |
+| `axilgpio` | çıkış / giriş sayısı, reset sonrası çıkışlar | `NOUT`, `NIN`, `DEFAULT_OUTPUT` |
+
+IP, üreticisini kütüphane kaydında belirtir (`"hdl_gen": "axiluart_phy"`). Yeni üretici yazmak
+(manifest, `generators/sdk/axil_gen.py`, protokol): `generators/README.md`.
+
 ## IP Library
 
 - **Bu projedeki IP'ler**: projedeki tüm IP tanımları; altlarında adres haritasındaki örnekleri ve adresleri.
@@ -553,6 +577,7 @@ commit'in yanında görünür.
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
 | `scripts/` | Komut satırı araçları: `i18n_check.py` (çeviri denetimi), `bump_version.py` |
 | `hdl/` | `v2005/`: sentez için tüm RTL, `localparam`'sız Verilog-2005 (hexbus, wbuart32, UART PHY, axilxbar, axilgpio, skidbuffer, örnek sistem; bkz. `hdl/v2005/README.md`); slave şablonu `easyaxil.v`; `uart_phy/`: axiluart_phy testbench'leri, ZipCPU yamaları ve belgesi (bkz. `hdl/uart_phy/README.md`); `cmd_seq/`: programlanabilir komut sıralayıcı, assembler'ı ve doğrulama ortamı (formal, referans model, rastgele ve yönlendirilmiş testler; bkz. `hdl/cmd_seq/README.md`) |
+| `generators/` | HDL üreticileri (`axiluart_phy`, `hexbus_axil_top`, `axilgpio`) ve SDK'ları (`sdk/axil_gen.py`); bkz. `generators/README.md` |
 | `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları; `cmd_seq/`: cmd_seq register haritası kütüphanesi ve komut sıralayıcılı örnek proje |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 | `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |

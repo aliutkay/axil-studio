@@ -2,10 +2,12 @@
 
 from axil_studio.tools.address_map import AddressMapPage
 from axil_studio.tools.debug_bridge import DebugBridgePage
+from axil_studio.tools.hdl_generator import HdlGeneratorPage
 from axil_studio.tools.interconnect import InterconnectPage
 from axil_studio.tools.ip_library import IPLibraryPage
 from axil_studio.tools.regmap import RegMapEditorPage
 from axil_studio.tools.wrapper import WrapperPage
 
-TOOLS = [RegMapEditorPage, WrapperPage, AddressMapPage, InterconnectPage, DebugBridgePage, IPLibraryPage]
+TOOLS = [RegMapEditorPage, WrapperPage, AddressMapPage, InterconnectPage, DebugBridgePage, IPLibraryPage,
+         HdlGeneratorPage]
 TOOLS_BY_ID = {t.tool_id: t for t in TOOLS}

@@ -1,0 +1,14 @@
+{
+  "format": "axil-generator",
+  "protocol": 1,
+  "id": "axilgpio",
+  "version": "1.0.0",
+  "title": {"en": "GPIO generator", "tr": "GPIO üreteci"},
+  "desc": {
+    "en": "axilgpio: number of outputs and inputs, outputs after reset -> NOUT, NIN, DEFAULT_OUTPUT",
+    "tr": "axilgpio: çıkış ve giriş sayısı, reset sonrası çıkışlar -> NOUT, NIN, DEFAULT_OUTPUT"
+  },
+  "module": "axilgpio",
+  "source": "../../hdl/v2005/gpio/axilgpio.v",
+  "command": ["{python}", "gen.py"]
+}

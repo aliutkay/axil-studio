@@ -1,0 +1,14 @@
+{
+  "format": "axil-generator",
+  "protocol": 1,
+  "id": "hexbus_axil_top",
+  "version": "1.0.0",
+  "title": {"en": "hexbus debug bridge generator", "tr": "hexbus debug köprüsü üreteci"},
+  "desc": {
+    "en": "hexbus_axil_top (UART -> AXI4-Lite master of the Debug Bridge): clock and baud rate -> CLK_FREQ_HZ, BAUD_RATE",
+    "tr": "hexbus_axil_top (Debug Bridge'in UART -> AXI4-Lite master'ı): saat ve baud -> CLK_FREQ_HZ, BAUD_RATE"
+  },
+  "module": "hexbus_axil_top",
+  "source": "../../hdl/v2005/hexbus/hexbus_axil_top.v",
+  "command": ["{python}", "gen.py"]
+}

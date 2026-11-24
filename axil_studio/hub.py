@@ -334,6 +334,7 @@ class HomePage(QWidget):
             ("3", "Address Map Editor", tr("Place IP instances, external slaves and subsystems on the system bus.")),
             ("4", "Interconnect Configurator", tr("Configure the masters and generate the crossbar HDL.")),
             ("5", "UART-to-AXI Debug Bridge", tr("Access the registers on hardware through the same address map.")),
+            ("·", "HDL Generator", tr("Set up IP blocks with meaningful values (clock, baud rate …) and write their parameterless HDL Designer blocks.")),
             ("·", tr("Manage IPs (IP Library)"), tr("Reuse IPs across projects through versioned IP libraries.")),
         ]
         for num, name, text in steps:
