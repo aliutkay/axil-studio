@@ -27,9 +27,9 @@ LED A, `o_gpio[1]` → LED B.
 - Bus interface: AXI4-Lite, rol **Slave**, `S_AXI_*` portları; `S_AXI_ACLK` / `S_AXI_ARESETN`
   dışarıda kalır. cmd_seq'te `S_AXI_*` = Slave (yukarı, PC tarafı), `M_AXI_*` = Master (aşağı,
   axilgpio tarafı).
-- `axilgpio.v` (ZipCPU'nun dosyası) parametre listesinde `localparam` kullanır: Libero'da
-  Verilog dili **SystemVerilog** seçilmeli (proje ayarları → HDL). cmd_seq, `skidbuffer.v` ve
-  `axilgpio_a32.v` Verilog-2001 ile de derlenir.
+- Tüm dosyalar Verilog-2001 ile derlenir. ZipCPU'nun `axilgpio.v`'sinde parametre listesindeki
+  `localparam C_AXI_DATA_WIDTH` (yalnızca SystemVerilog'da geçerli) `parameter` yapıldı; değeri 32
+  kalmalı.
 
 ## Nasıl çalışıyor
 axilgpio'da donanım PWM'i yok; PWM'i program üretiyor. Her PWM periyodu (`PERIOD` = 8000 çevrim

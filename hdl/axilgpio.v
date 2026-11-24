@@ -1,6 +1,9 @@
 ////////////////////////////////////////////////////////////////////////////////
 //
 // Filename:	rtl/axilgpio.v
+//
+// Modified for AXIL Studio: C_AXI_DATA_WIDTH is a parameter instead of a localparam in the
+// parameter port list, so the file is plain Verilog-2001 (Libero / Synplify in Verilog mode).
 // {{{
 // Project:	WB2AXIPSP: bus bridges and other odds and ends
 //
@@ -92,7 +95,7 @@ module	axilgpio #(
 		// is fixed at a width of 32-bits by Xilinx def'n, and 2) since
 		// we only ever have 4 configuration words.
 		parameter	C_AXI_ADDR_WIDTH = 5,
-		localparam	C_AXI_DATA_WIDTH = 32,
+		parameter	C_AXI_DATA_WIDTH = 32,	// AXIL Studio: was a localparam (SystemVerilog only); fixed at 32, do not override
 		// OPT_SKIDBUFFER will increase throughput to 100% from 50%
 		parameter [0:0]	OPT_SKIDBUFFER = 1'b1,
 		// OPT_LOWPOWER will force RDATA to zero if ever !RVALID

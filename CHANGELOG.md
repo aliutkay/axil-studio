@@ -11,6 +11,11 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.34 — axilgpio.v Verilog-2001
+- `hdl/axilgpio.v`: parametre listesindeki `localparam C_AXI_DATA_WIDTH` `parameter` yapıldı
+  (SystemVerilog'a özgüydü); dosya artık Libero / Synplify'da Verilog-2001 modunda derlenir.
+  Değişiklik dosyanın başında not edildi.
+
 ## early-alpha 0.1.33 — axilgpio 32 bit adresli sarmalayıcı
 - `hdl/axilgpio_a32.v`: axilgpio'nun adres portları 32 bit (çekirdeğe `[4:0]` gider). Libero
   SmartDesign bus interface'i gibi eşit port genişliği isteyen araçlarda doğrudan bağlanır.
