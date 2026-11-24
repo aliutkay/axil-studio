@@ -1098,5 +1098,8 @@
  "{0}: a command sequencer's own window is 64 KB": "{0}: komut sıralayıcının kendi penceresi 64 KB'dır",
  "{0}: a command sequencer's window is at most 16 MB": "{0}: komut sıralayıcının penceresi en fazla 16 MB olabilir",
  "{0}: cmd_seq is a subsystem type (Add subsystem, type Command sequencer), not a slave": "{0}: cmd_seq bir alt sistem türüdür (Alt sistem ekle, tür Komut sıralayıcı), slave olarak eklenmez",
- "{0}: {1} must be {2}..{3}": "{0}: {1} {2}..{3} aralığında olmalı"
+ "{0}: {1} must be {2}..{3}": "{0}: {1} {2}..{3} aralığında olmalı",
+ "AXI bus error (SLVERR / DECERR) on {0}": "AXI bus hatası (SLVERR / DECERR): {0}",
+ "read of 0x{0:08X}": "0x{0:08X} okuması",
+ "write of 0x{0:08X}": "0x{0:08X} yazması"
 }

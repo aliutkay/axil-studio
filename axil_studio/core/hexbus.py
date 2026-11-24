@@ -172,7 +172,7 @@ class HexbusLink:
         self._rx.put((tok, value))
 
     # ------------------------------------------------------------ transactions
-    def _transact(self, text, count):
+    def _transact(self, text, count, what=None):
         with self._lock:
             if self.ser is None:
                 raise HexbusError(tr("Not connected"))
@@ -199,6 +199,8 @@ class HexbusLink:
                     continue
                 tokens.append(tok)
                 if tok[0] == "E":
+                    if what:
+                        raise HexbusError(tr("AXI bus error (SLVERR / DECERR) on {0}").format(what))
                     raise HexbusError(tr("AXI bus error on '{0}'").format(text.strip()))
             return tokens
 
@@ -216,7 +218,8 @@ class HexbusLink:
         with self._lock:
             prefix = "" if self._cur_addr == target else f"A{target:x}"
             try:
-                tokens = self._transact(prefix + cmd + "\n", 2 if prefix else 1)
+                what = (tr("read of 0x{0:08X}") if cmd == "R" else tr("write of 0x{0:08X}")).format(addr & 0xFFFFFFFC)
+                tokens = self._transact(prefix + cmd + "\n", 2 if prefix else 1, what)
             except HexbusError:
                 self._cur_addr = None
                 raise

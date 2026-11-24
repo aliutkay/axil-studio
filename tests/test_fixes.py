@@ -1246,3 +1246,46 @@ def test_uart_validate_tx_only_snapshot_order_and_uart_phy_cycles(qapp, no_dialo
     finally:
         w.bus.shutdown()
         w.close()
+
+
+def test_hexbus_bus_error_names_the_address():
+    """A bus error says which address and access failed, not the raw hexbus command
+    ('A41R' was read as 'address 41': it is a read of 0x00000040)."""
+    import threading
+    from axil_studio.core import hexbus as H
+
+    class ErrPort:                       # answers every command with an address ack, then E
+        def __init__(self):
+            self.buf, self.ev = b"", threading.Event()
+
+        def write(self, data):
+            txt = data.decode()
+            self.buf += (b"A00000041\n" if txt.startswith("A") else b"") + b"E\n"
+            self.ev.set()
+            return len(data)
+
+        def read(self, n=1):
+            if not self.buf:
+                self.ev.wait(0.05)
+                self.ev.clear()
+            out, self.buf = self.buf[:n], self.buf[n:]
+            return out
+
+        @property
+        def in_waiting(self):
+            return len(self.buf)
+
+        def close(self):
+            pass
+
+    link = H.HexbusLink(timeout=1.0)
+    link.attach(ErrPort())
+    try:
+        link.read(0x40)
+    except H.HexbusError as exc:
+        msg = str(exc)
+    else:
+        msg = ""
+    finally:
+        link.close()
+    assert "0x00000040" in msg and ("read" in msg or "okuma" in msg), msg
