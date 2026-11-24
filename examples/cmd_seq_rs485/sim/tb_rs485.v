@@ -1,6 +1,6 @@
 // System testbench of the RS-485 terminal example, built like the HDL Designer design: the packed
 // blocks AXIL Studio generates for this project (seq_*_cmd_seq_pk, axil_xbar_SEQ_*_pk) and the
-// packed IPs of hdl/v2005 (axilgpio_pk, axiluart_phy_pk; run_sim.py can make the UART faster).
+// packed IPs of hdl/v2005 (axilgpio_pk, axiluart_phy_pk; run_rs485.py can make the UART faster).
 //
 //   TB master -> seq_main -> xbar SEQ_MAIN -+-> seq_gpio -> GPIO
 //                                           +-> seq_uart -> xbar SEQ_UART -+-> UART1
@@ -9,7 +9,7 @@
 // bytes on the RS-485 lines and prints what comes back:
 //   "TX1 xx" / "TX2 xx"  a byte sent by UART1 / UART2      "LED n"  rising edge n of o_gpio[0]
 //   "DE1 n" / "DE2 n"    driver enable pulses              "R addr data"  register reads
-// run_sim.py checks the output.
+// run_rs485.py checks the output.
 `timescale 1ns/1ps
 `default_nettype none
 module tb_rs485;

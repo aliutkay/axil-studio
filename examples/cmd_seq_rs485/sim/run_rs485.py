@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """System simulation of the RS-485 terminal example (three sequencers, GPIO, two UART PHYs).
 
-    python3 examples/cmd_seq_rs485/sim/run_sim.py               # UARTs at 16 clocks per bit (~5 s)
-    python3 examples/cmd_seq_rs485/sim/run_sim.py --real-baud   # hdl/v2005 axiluart_phy_pk: 434 (~1 min)
+    python3 examples/cmd_seq_rs485/sim/run_rs485.py               # UARTs at 16 clocks per bit (~5 s)
+    python3 examples/cmd_seq_rs485/sim/run_rs485.py --real-baud   # hdl/v2005 axiluart_phy_pk: 434 (~1 min)
 
 Builds the design from what AXIL Studio generates for rs485_terminal.axproj.json (the packed
 interconnects and the per-sequencer HDL Designer blocks) and hdl/v2005, loads the three programs,

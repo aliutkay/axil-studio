@@ -81,7 +81,7 @@ Bağlantı: `seq_main` `MASTER_AXI` → `axil_xbar_SEQ_MAIN_pk` `MASTER0`; `SLAV
 uart_phy, wbuart32, common).
 
 ## Simülasyon
-`sim/run_sim.py` (testlerde de çalışır) bu tasarımı yukarıdaki bloklarla kurar ve gerçek RS-485
+`sim/run_rs485.py` (testlerde de çalışır) bu tasarımı yukarıdaki bloklarla kurar ve gerçek RS-485
 baytlarıyla dener:
 - UART1'e `3` → UART2'den `OK: 3` CR LF, LED 3 kez; `A` → 1 kez; CR → cevap yok. UART1 DE sürmez.
 - PC çalışırken rolleri değiştirir (SEQ_MAIN'in içinden) → UART2'ye `2` → UART1'den `OK: 2`, LED
@@ -89,8 +89,8 @@ baytlarıyla dener:
 - Sayaçlar, bus hatası yok, üç sıralayıcı hâlâ çalışıyor.
 
 ```
-python3 examples/cmd_seq_rs485/sim/run_sim.py              # UART bit başına 16 çevrim, ~5 s
-python3 examples/cmd_seq_rs485/sim/run_sim.py --real-baud  # 434 (115200 @ 50 MHz), ~1 dk
+python3 examples/cmd_seq_rs485/sim/run_rs485.py              # UART bit başına 16 çevrim, ~5 s
+python3 examples/cmd_seq_rs485/sim/run_rs485.py --real-baud  # 434 (115200 @ 50 MHz), ~1 dk
 ```
 
 Not: ZipCPU'nun alıcısı resetten sonra hattı ~16 bit süresi boşta görene kadar bayt almaz.

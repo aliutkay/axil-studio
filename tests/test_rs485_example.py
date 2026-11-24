@@ -78,7 +78,7 @@ def test_write_templates_writes_the_blocks(tmp_path):
 
 @pytest.mark.skipif(not (shutil.which("iverilog") and shutil.which("vvp")), reason="needs Icarus Verilog")
 def test_system_simulation():
-    """Terminal answers, LED blinks, RX / TX swapped from the PC while running (see sim/run_sim.py)."""
-    import run_sim
+    """Terminal answers, LED blinks, RX / TX swapped from the PC while running (see sim/run_rs485.py)."""
+    import run_rs485 as run_sim
     out = run_sim.run(16)
     assert run_sim.check(out) == []
