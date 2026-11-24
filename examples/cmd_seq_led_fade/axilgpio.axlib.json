@@ -1,0 +1,186 @@
+{
+  "format": "axil-ip-library",
+  "version": 1,
+  "name": "axilgpio",
+  "desc": "ZipCPU axilgpio register map (hdl/axilgpio.v)",
+  "entries": [
+    {
+      "ip": {
+        "name": "axilgpio",
+        "desc": "ZipCPU axilgpio (wb2axip, Apache-2.0): 30 outputs with load / set / clear / toggle, 5 inputs with change detection and interrupt. RTL: hdl/axilgpio.v, packed wrapper hdl/axilgpio_pk.v. Defaults C_AXI_ADDR_WIDTH = 5, NOUT = 30, NIN = 5.",
+        "registers": [
+          {
+            "name": "LOAD",
+            "offset": "0x00000000",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "Output data: a write replaces all outputs; a read returns them",
+            "fields": [
+              {
+                "name": "LED0",
+                "lsb": 0,
+                "width": 1,
+                "desc": "o_gpio[0] (LED A in led_fade.s)"
+              },
+              {
+                "name": "LED1",
+                "lsb": 1,
+                "width": 1,
+                "desc": "o_gpio[1] (LED B in led_fade.s)"
+              },
+              {
+                "name": "OUT",
+                "lsb": 2,
+                "width": 28,
+                "desc": "o_gpio[29:2] (NOUT = 30)"
+              }
+            ]
+          },
+          {
+            "name": "SET",
+            "offset": "0x00000004",
+            "access": "WO",
+            "reset": "0x00000000",
+            "desc": "Outputs where a 1 is written are set (a read returns the outputs)",
+            "fields": [
+              {
+                "name": "LED0",
+                "lsb": 0,
+                "width": 1,
+                "desc": "o_gpio[0] (LED A in led_fade.s)"
+              },
+              {
+                "name": "LED1",
+                "lsb": 1,
+                "width": 1,
+                "desc": "o_gpio[1] (LED B in led_fade.s)"
+              },
+              {
+                "name": "OUT",
+                "lsb": 2,
+                "width": 28,
+                "desc": "o_gpio[29:2] (NOUT = 30)"
+              }
+            ]
+          },
+          {
+            "name": "CLEAR",
+            "offset": "0x00000008",
+            "access": "WO",
+            "reset": "0x00000000",
+            "desc": "Outputs where a 1 is written are cleared (a read returns the outputs)",
+            "fields": [
+              {
+                "name": "LED0",
+                "lsb": 0,
+                "width": 1,
+                "desc": "o_gpio[0] (LED A in led_fade.s)"
+              },
+              {
+                "name": "LED1",
+                "lsb": 1,
+                "width": 1,
+                "desc": "o_gpio[1] (LED B in led_fade.s)"
+              },
+              {
+                "name": "OUT",
+                "lsb": 2,
+                "width": 28,
+                "desc": "o_gpio[29:2] (NOUT = 30)"
+              }
+            ]
+          },
+          {
+            "name": "TOGGLE",
+            "offset": "0x0000000C",
+            "access": "WO",
+            "reset": "0x00000000",
+            "desc": "Outputs where a 1 is written are inverted (a read returns the outputs)",
+            "fields": [
+              {
+                "name": "LED0",
+                "lsb": 0,
+                "width": 1,
+                "desc": "o_gpio[0] (LED A in led_fade.s)"
+              },
+              {
+                "name": "LED1",
+                "lsb": 1,
+                "width": 1,
+                "desc": "o_gpio[1] (LED B in led_fade.s)"
+              },
+              {
+                "name": "OUT",
+                "lsb": 2,
+                "width": 28,
+                "desc": "o_gpio[29:2] (NOUT = 30)"
+              }
+            ]
+          },
+          {
+            "name": "IN_DATA",
+            "offset": "0x00000010",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "Inputs after a 2-flip-flop synchroniser",
+            "fields": [
+              {
+                "name": "IN",
+                "lsb": 0,
+                "width": 5,
+                "desc": "i_gpio[4:0] (NIN = 5)"
+              }
+            ]
+          },
+          {
+            "name": "CHANGED",
+            "offset": "0x00000014",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "An input changed since it was cleared; write 1 to clear (W1C)",
+            "fields": [
+              {
+                "name": "IN",
+                "lsb": 0,
+                "width": 5,
+                "desc": "i_gpio[4:0] (NIN = 5)"
+              }
+            ]
+          },
+          {
+            "name": "INT_MASK",
+            "offset": "0x00000018",
+            "access": "RW",
+            "reset": "0x00000000",
+            "desc": "1 = a change of this input raises o_int. The RTL is o_int = |(MASK & CHANGED); its header comment says the opposite",
+            "fields": [
+              {
+                "name": "IN",
+                "lsb": 0,
+                "width": 5,
+                "desc": "i_gpio[4:0] (NIN = 5)"
+              }
+            ]
+          },
+          {
+            "name": "INT_ACTIVE",
+            "offset": "0x0000001C",
+            "access": "RO",
+            "reset": "0x00000000",
+            "desc": "CHANGED & INT_MASK: the inputs that raise o_int",
+            "fields": [
+              {
+                "name": "IN",
+                "lsb": 0,
+                "width": 5,
+                "desc": "i_gpio[4:0] (NIN = 5)"
+              }
+            ]
+          }
+        ],
+        "version": "1.0.0"
+      },
+      "updated": "2026-11-24"
+    }
+  ]
+}

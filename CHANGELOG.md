@@ -11,6 +11,14 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.32 — Örnek: PCS ile iki LED'in yumuşak geçişi
+- `examples/cmd_seq_led_fade/`: `led_fade.s`, cmd_seq'in axilgpio'daki iki LED'i yazılım PWM'i ile
+  sürdüğü program (biri tam parlakken öteki kapalı, sonra yer değiştirerek yumuşak geçiş, döngü).
+  Geçişler TOGGLE'a tek yazma, kenarlar `WAITT` ile; `axilgpio.axlib.json` (8 register),
+  `led_fade.axproj.json` (SEQ0 + GPIO), `sim/run_sim.py` (gerçek RTL ile dalga şekli kontrolü).
+- `hdl/axilgpio.v`: ZipCPU axilgpio çekirdeği (Apache-2.0); `axilgpio_pk.v` artık repo içinde derlenir.
+- `tests/test_led_fade_example.py`: proje, kütüphane, Studio penceresiyle derleme, RTL simülasyonu.
+
 ## early-alpha 0.1.31 — Debug Bridge: komut sıralayıcı satırı
 - Debug Bridge ağacında komut sıralayıcı subsystem'i tıklanamayan bir grup başlığı olarak
   çiziliyordu; kendi registerları ve arayüz düğmesi yoktu. Artık seçilebilir bir IP satırı:
