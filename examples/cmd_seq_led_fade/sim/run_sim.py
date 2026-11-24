@@ -71,14 +71,14 @@ def run(overrides, cycles, axi4=False):
             fh.write(seqasm.hex_text(prog))
         exe = os.path.join(work, "tb")
         rtl = os.path.join(ROOT, "hdl", "cmd_seq", "rtl")
-        extra = ["-DAXI4", os.path.join(rtl, "cmd_seq_axi4.v"), os.path.join(ROOT, "hdl", "axilgpio_axi4.v")] if axi4 else []
+        extra = ["-DAXI4", os.path.join(rtl, "cmd_seq_axi4.v"), os.path.join(ROOT, "hdl", "v2005", "gpio", "axilgpio_axi4.v")] if axi4 else []
         subprocess.run(["iverilog", "-g2012", "-o", exe] + extra + [
                         f"-Ptb_led_fade.CYCLES={cycles}", f'-Ptb_led_fade.PROG="{hexf}"',
                         f"-Ptb_led_fade.NPROG={len(words)}", f"-Ptb_led_fade.SUM=32'h{total:08X}",
                         os.path.join(HERE, "tb_led_fade.v"), os.path.join(rtl, "cmd_seq.v"),
-                        os.path.join(rtl, "cmd_seq_core.v"), os.path.join(ROOT, "hdl", "axilgpio_a32.v"),
-                        os.path.join(ROOT, "hdl", "axilgpio.v"),
-                        os.path.join(ROOT, "hdl", "skidbuffer.v")], check=True)
+                        os.path.join(rtl, "cmd_seq_core.v"), os.path.join(ROOT, "hdl", "v2005", "gpio", "axilgpio_a32.v"),
+                        os.path.join(ROOT, "hdl", "v2005", "gpio", "axilgpio.v"),
+                        os.path.join(ROOT, "hdl", "v2005", "common", "skidbuffer.v")], check=True)
         out = subprocess.run(["vvp", "-n", exe], check=True, capture_output=True, text=True).stdout
     finally:
         shutil.rmtree(work, ignore_errors=True)

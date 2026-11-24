@@ -2,12 +2,12 @@
   "format": "axil-ip-library",
   "version": 1,
   "name": "axilgpio",
-  "desc": "ZipCPU axilgpio register map (hdl/axilgpio.v)",
+  "desc": "ZipCPU axilgpio register map (hdl/v2005/gpio/axilgpio.v)",
   "entries": [
     {
       "ip": {
         "name": "axilgpio",
-        "desc": "ZipCPU axilgpio (wb2axip, Apache-2.0): 30 outputs with load / set / clear / toggle, 5 inputs with change detection and interrupt. RTL: hdl/axilgpio.v, packed wrapper hdl/axilgpio_pk.v. Defaults C_AXI_ADDR_WIDTH = 5, NOUT = 30, NIN = 5.",
+        "desc": "ZipCPU axilgpio (wb2axip, Apache-2.0): 30 outputs with load / set / clear / toggle, 5 inputs with change detection and interrupt. RTL: hdl/v2005/gpio/axilgpio.v, packed wrapper hdl/v2005/gpio/axilgpio_pk.v. Defaults C_AXI_ADDR_WIDTH = 5, NOUT = 30, NIN = 5.",
         "registers": [
           {
             "name": "LOAD",

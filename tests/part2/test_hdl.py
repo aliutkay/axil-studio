@@ -16,7 +16,8 @@ from tests.helpers import hier_project, tiny_spec
 HDLSPECS = sorted(os.listdir(os.path.join(DATA, "hdl")))
 IPS = [n for n in HDLSPECS if H.load(os.path.join(DATA, "hdl", n))["format"] == H.IP_FORMAT]
 XBARS = [n for n in HDLSPECS if n not in IPS]
-CORE = [os.path.join(HDL, f) for f in ("axilxbar.v", "addrdecode.v", "skidbuffer.v")]
+SKID = os.path.join(HDL, "v2005", "common", "skidbuffer.v")
+CORE = [os.path.join(HDL, "v2005", "interconnect", f) for f in ("axilxbar.v", "addrdecode.v")] + [SKID]
 
 
 def load(name):
@@ -97,7 +98,7 @@ def test_ip_testbench_passes_in_simulation(name, tmp_path):
     H.generate(d, str(tmp_path))
     m = d["module"]
     hdl = [f"{m}_pk.v", f"{m}.v"] if d["hdl_designer_wrapper"] else [f"{m}.v"]
-    srcs = [str(tmp_path / f) for f in [f"{m}_tb.v"] + hdl] + [os.path.join(HDL, "skidbuffer.v")]
+    srcs = [str(tmp_path / f) for f in [f"{m}_tb.v"] + hdl] + [SKID]
     subprocess.run(["iverilog", "-g2012", "-o", str(tmp_path / "tb"), *srcs], check=True, capture_output=True)
     out = subprocess.run(["vvp", "-n", str(tmp_path / "tb")], capture_output=True, text=True, timeout=120).stdout
     assert "PASSED" in out and "FAIL" not in out, out[-2000:]
@@ -111,7 +112,7 @@ def test_verilog_compiles(name, tmp_path):
     m = d["module"]
     tops = [m] + ([f"{m}_pk"] if d["hdl_designer_wrapper"] else [])
     srcs = [str(tmp_path / f) for f in (f"{m}.v", f"{m}_pk.v") if (tmp_path / f).exists()]
-    srcs += CORE if d["format"] == H.XBAR_FORMAT else [os.path.join(HDL, "skidbuffer.v")]
+    srcs += CORE if d["format"] == H.XBAR_FORMAT else [SKID]
     for top in tops:
         subprocess.run(["iverilog", "-g2012", "-s", top, "-o", str(tmp_path / "x"), *srcs], check=True,
                        capture_output=True)

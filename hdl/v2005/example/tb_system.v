@@ -4,8 +4,8 @@
 `timescale 1ns/1ps
 `default_nettype none
 module tb_system;
-    localparam CPB  = 10;          // debug UART: CLK_FREQ_HZ / BAUD_RATE below
-    localparam UCPB = 16;          // UART PHY: UART_SETUP below
+    parameter  CPB  = 10;          // debug UART: CLK_FREQ_HZ / BAUD_RATE below
+    parameter  UCPB = 16;          // UART PHY: UART_SETUP below
     reg clk = 0, rst_n = 0, dbg_rx = 1;
     always #5 clk = !clk;
     wire dbg_tx, txd, de, re_n;

@@ -3,7 +3,7 @@
 // Checks that PHY_CTRL after reset is limited to the hardware (HAS_* generics)
 // and that writing the value read back is accepted (no CFG_ERR), for several
 // generic combinations.
-//   iverilog -g2012 -o sim tb/tb_adapter_defaults.v rtl/uart_phy_adapter.v && vvp sim
+//   iverilog -g2012 -o sim tb/tb_adapter_defaults.v ../v2005/uart_phy/uart_phy_adapter.v && vvp sim
 ////////////////////////////////////////////////////////////////////////////////
 `timescale 1ns/1ps
 `default_nettype none

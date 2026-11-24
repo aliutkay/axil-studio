@@ -14,10 +14,10 @@ Süreler 100 MHz saat içindir.
 | `led_fade.s` | PCS programı (47 komut) |
 | `axilgpio.axlib.json` | axilgpio IP kütüphanesi: 8 register (LOAD, SET, CLEAR, TOGGLE, IN_DATA, CHANGED, INT_MASK, INT_ACTIVE) |
 | `led_fade.axproj.json` | Proje: `SEQ0` komut sıralayıcı (0x0300_0000), altında `GPIO` (0x0301_0000) |
-| `sim/tb_led_fade.v`, `sim/run_sim.py` | cmd_seq + gerçek `hdl/axilgpio.v` ile simülasyon ve dalga şekli kontrolü |
+| `sim/tb_led_fade.v`, `sim/run_sim.py` | cmd_seq + gerçek `hdl/v2005/gpio/axilgpio.v` ile simülasyon ve dalga şekli kontrolü |
 
-RTL: `hdl/axilgpio.v` (ZipCPU wb2axip, Apache-2.0), `hdl/skidbuffer.v`; 32 bit adresli
-sarmalayıcı `hdl/axilgpio_a32.v`; HDL Designer için `hdl/axilgpio_pk.v`. Bağlantı: `o_gpio[0]` →
+RTL (`hdl/v2005`): `gpio/axilgpio.v` (ZipCPU wb2axip, Apache-2.0), `common/skidbuffer.v`; 32 bit
+adresli sarmalayıcı `gpio/axilgpio_a32.v`; HDL Designer için `gpio/axilgpio_pk.v`. Bağlantı: `o_gpio[0]` →
 LED A, `o_gpio[1]` → LED B.
 
 ## Libero'da
@@ -27,7 +27,7 @@ sinyallerini istiyor. Bunun için iki tam AXI4 sarmalayıcı var; ikisi de tek-b
 | Modül | Bus interface (AXI4) | Not |
 |---|---|---|
 | `hdl/cmd_seq/rtl/cmd_seq_axi4.v` | `S_AXI_*` = **slave**, `M_AXI_*` = **master** | Master: LEN = 0, SIZE = 4 bayt, INCR, WLAST = 1, ID = 0. Slave: isteğin ID'si BID / RID ile geri döner, RLAST = 1; yukarıdaki master burst göndermemeli |
-| `hdl/axilgpio_axi4.v` | `S_AXI_*` = **slave** | 32 bit adres, çekirdeğe `[4:0]`; her yönde bir işlem bitmeden yenisini almaz, ID'ler doğru döner |
+| `hdl/v2005/gpio/axilgpio_axi4.v` | `S_AXI_*` = **slave** | 32 bit adres, çekirdeğe `[4:0]`; her yönde bir işlem bitmeden yenisini almaz, ID'ler doğru döner |
 
 - Bağlantı: cmd_seq_axi4 `M_AXI` (master) → axilgpio_axi4 `S_AXI` (slave) doğrudan, ya da
   CoreAXI4Interconnect'in giriş portuna (mirrored master). Mirrored roller interconnect içindir,

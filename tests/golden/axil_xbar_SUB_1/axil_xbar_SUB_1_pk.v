@@ -18,7 +18,8 @@
 //   SLAVE0   0x0000A000  0xFFFFF000     0x1000
 //   SLAVE1   0x0000B000  0xFFFFF000     0x1000
 //
-// Requires axil_xbar_SUB_1.v, axilxbar.v, addrdecode.v, skidbuffer.v.
+// Requires axil_xbar_SUB_1.v, hdl/v2005/interconnect/axilxbar.v, addrdecode.v and
+// hdl/v2005/common/skidbuffer.v. Verilog-2005, no localparam.
 ////////////////////////////////////////////////////////////////////////////////
 
 `default_nettype none

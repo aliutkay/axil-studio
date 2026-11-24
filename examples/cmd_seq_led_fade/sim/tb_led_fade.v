@@ -1,5 +1,5 @@
-// Testbench of led_fade.s: cmd_seq drives the real ZipCPU axilgpio (hdl/axilgpio.v) through
-// its 32-bit address wrapper hdl/axilgpio_a32.v; with +define+AXI4 (-DAXI4) the full AXI4
+// Testbench of led_fade.s: cmd_seq drives the real ZipCPU axilgpio (hdl/v2005/gpio/axilgpio.v) through
+// its 32-bit address wrapper axilgpio_a32.v; with +define+AXI4 (-DAXI4) the full AXI4
 // wrappers cmd_seq_axi4 -> axilgpio_axi4 are used instead.
 // The program is loaded through the upstream port like the Debug Bridge does it (IMEM_PTR,
 // IMEM_DATA, then IMEM_CNT / IMEM_SUM are checked), then started with CTRL.RUN. Every change of

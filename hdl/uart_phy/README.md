@@ -9,21 +9,25 @@ select the IP in the UART-to-AXI Debug Bridge and open it for line settings, a t
 validation.
 
 ## Files
+The RTL is in `hdl/v2005/uart_phy` (Verilog-2005, no `localparam`); this folder has the testbenches,
+the patches and this description.
+
 | Path | Content |
 |---|---|
-| `rtl/axiluart_phy.v` | Top level: AXI4-Lite split (UART 0x00–0x0C, PHY 0x10–0x18) |
-| `rtl/uart_phy_adapter.v` | DE / RE sequencing, duplex, echo, polarity, TX/RX enable |
-| `rtl/axiluart_v2.v` | Module `axiluart_v2`: ZipCPU axiluart with `patches/axiluart_v2.patch` applied |
-| `rtl/txuart_v2.v` | Module `txuart_v2`: ZipCPU txuart with corrected parity polarity (`patches/txuart_v2.patch`) |
+| `../v2005/uart_phy/axiluart_phy.v` | Top level: AXI4-Lite split (UART 0x00–0x0C, PHY 0x10–0x18) |
+| `../v2005/uart_phy/uart_phy_adapter.v` | DE / RE sequencing, duplex, echo, polarity, TX/RX enable |
+| `../v2005/uart_phy/axiluart_v2.v` | Module `axiluart_v2`: ZipCPU axiluart with `patches/axiluart_v2.patch` applied |
+| `../v2005/uart_phy/txuart_v2.v` | Module `txuart_v2`: ZipCPU txuart with corrected parity polarity (`patches/txuart_v2.patch`) |
+| `../v2005/uart_phy/axiluart_phy_pk.v` | HDL Designer wrapper with packed `SLAVE_AXI_REQ/RSP` ports |
 | `tb/tb_axiluart_phy.v` | Self-checking testbench (Icarus Verilog) |
 | `tb/tb_formats_loopback.v` | Gapless 100-byte TX→RX bursts in 5E1, 6O2, 7N1, 8N2, 8E1, 7O1 |
 | `tb/tb_tx_parity.v` | Decodes the TX waveform and checks the parity bit against the standard |
 | `tb/tb_adapter_defaults.v` | PHY_CTRL after reset follows the HAS_* generics and can be written back (adapter only) |
-| `../axiluart_phy_pk.v` | HDL Designer wrapper with packed `S_AXI_REQ/RSP` ports |
 | `../../examples/uart_phy/*.axcfg.json` | Line presets (RS-232, RS-422, RS-485 2/4-wire) for the Debug Bridge config list |
 
-Also required from ZipCPU/wbuart32 `rtl/`: `rxuart.v`, `rxuartlite.v`, `txuartlite.v`, `ufifo.v`
-and `skidbuffer.v` (`txuart.v` is replaced by `txuart_v2.v`).
+Also required, from ZipCPU/wbuart32 (in the repository, no `localparam`): `../v2005/wbuart32/rxuart.v`,
+`../v2005/wbuart32/ufifo.v` and `../v2005/common/skidbuffer.v` (`txuart.v` is replaced by `txuart_v2.v`).
+The patches give the `hdl/v2005` files from wbuart32 commit `f43a6b8` (`patch -p1`-style `a/` `b/` names).
 
 ## 4-wire link from two IPs
 Two axiluart_phy instances, each with its own 2-wire RS-485 transceiver, make one 4-wire link: one
@@ -71,7 +75,8 @@ only with HALF. The value read after reset can therefore always be written back 
 
 ## Simulation
 ```
-iverilog -g2012 -o sim tb/tb_axiluart_phy.v rtl/*.v <wbuart32>/rtl/{rxuart,rxuartlite,txuartlite,ufifo,skidbuffer}.v
+iverilog -g2012 -o sim tb/tb_axiluart_phy.v ../v2005/uart_phy/{axiluart_phy,axiluart_v2,txuart_v2,uart_phy_adapter}.v \
+    ../v2005/wbuart32/{rxuart,ufifo}.v ../v2005/common/skidbuffer.v
 vvp sim
 ```
 
@@ -86,5 +91,5 @@ lead / tail sweep) through the Debug Bridge connection, with an optional PC adap
 - Add a pull-up on the transceiver RO pin (RO is tri-stated while /RE is high).
 
 ## License
-`rtl/axiluart_v2.v`, `rtl/txuart_v2.v`, the patches and the wbuart32 files are GPLv3
+`axiluart_v2.v`, `txuart_v2.v`, the patches and the wbuart32 files are GPLv3
 (Gisselquist Technology, ZipCPU). A design that includes them is subject to the GPLv3.

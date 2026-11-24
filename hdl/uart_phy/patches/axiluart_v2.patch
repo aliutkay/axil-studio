@@ -1,10 +1,13 @@
 --- a/axiluart.v
 +++ b/axiluart_v2.v
-@@ -1,6 +1,12 @@
+@@ -1,6 +1,15 @@
  ////////////////////////////////////////////////////////////////////////////////
  //
 -// Filename: 	axiluart
 +// Filename: 	axiluart_v2.v
++//
++// AXIL Studio (hdl/v2005): `localparam` written as `parameter` (same values) for Verilog-2001 /
++// 2005 tools. Do not override the former localparams.
 +//
 +// Modified:	axiluart v2 for axiluart_phy: i_tx_go / o_tx_active ports and
 +//		per-byte parity/frame-error bits stored in the RX FIFO,
@@ -14,7 +17,7 @@
  // {{{
  // Project:	wbuart32, a full featured UART with simulator
  //
-@@ -39,7 +45,7 @@
+@@ -39,7 +48,7 @@
  //
  `default_nettype none
  //
@@ -23,7 +26,28 @@
  		// {{{
  		// 4MB 8N1, when using 100MHz clock
  		parameter [30:0] INITIAL_SETUP = 31'd25,
-@@ -123,7 +129,10 @@
+@@ -55,17 +64,17 @@
+ 		// Perform a simple/quick bounds check on the log FIFO length,
+ 		// to make sure its within the bounds we can support with our
+ 		// current interface.
+-		localparam [3:0]	LCLLGFLEN = (LGFLEN > 4'ha)? 4'ha
++		parameter [3:0]	LCLLGFLEN = (LGFLEN > 4'ha)? 4'ha
+ 					: ((LGFLEN < 4'h2) ? 4'h2 : LGFLEN),
+ 		//
+ 		// Size of the AXI-lite bus.  These are fixed, since 1) AXI-lite
+ 		// is fixed at a width of 32-bits by Xilinx def'n, and 2) since
+ 		// we only ever have 4 configuration words.
+ 		parameter	C_AXI_ADDR_WIDTH = 4,
+-		localparam	C_AXI_DATA_WIDTH = 32,
++		parameter	C_AXI_DATA_WIDTH = 32,
+ 		parameter [0:0]	OPT_SKIDBUFFER = 1'b0,
+ 		parameter [0:0]	OPT_LOWPOWER = 0,
+-		localparam	ADDRLSB = $clog2(C_AXI_DATA_WIDTH)-3
++		parameter	ADDRLSB = $clog2(C_AXI_DATA_WIDTH)-3
+ 		// }}}
+ 	) (
+ 		// AXI-lite signaling
+@@ -123,7 +132,10 @@
  		output	wire	o_uart_rx_int,
  		output	wire	o_uart_tx_int,
  		output	wire	o_uart_rxfifo_int,
@@ -35,7 +59,7 @@
  		// }}}
  	);
  
-@@ -158,7 +167,7 @@
+@@ -158,7 +170,7 @@
  	reg		rx_uart_reset;
  	//
  	wire		rx_empty_n, rx_fifo_err;
@@ -44,7 +68,16 @@
  	wire	[15:0]	rxf_status;
  	reg		rxf_axil_read;
  	reg		r_rx_perr, r_rx_ferr;
-@@ -340,7 +349,12 @@
+@@ -325,7 +337,7 @@
+ 	//
+ 	// {{{
+ 
+-	localparam	[1:0]	UART_SETUP = 2'b00,
++	parameter	[1:0]	UART_SETUP = 2'b00,
+ 				UART_FIFO  = 2'b01,
+ 				UART_RXREG = 2'b10,
+ 				UART_TXREG = 2'b11;
+@@ -340,7 +352,12 @@
  	initial	uart_setup = INITIAL_SETUP
  		| ((HARDWARE_FLOW_CONTROL_PRESENT==1'b0)? 31'h40000000 : 0);
  	always @(posedge S_AXI_ACLK)
@@ -58,7 +91,7 @@
  	begin
  		uart_setup <= new_setup[30:0];
  
-@@ -399,9 +413,30 @@
+@@ -399,9 +416,30 @@
  	// outputs four status-type values: 1) is it non-empty, 2) is the FIFO
  	// over half full, 3) a 16-bit status register, containing info
  	// regarding how full the FIFO truly is, and 4) an error indicator.
@@ -91,7 +124,7 @@
  			rx_empty_n,
  			rxf_axil_read, rxf_axil_data,
  			rxf_status, rx_fifo_err);
-@@ -452,18 +487,28 @@
+@@ -452,18 +490,28 @@
  		//
  		r_rx_perr <= (r_rx_perr)&&(!wskd_data[9]);
  		r_rx_ferr <= (r_rx_ferr)&&(!wskd_data[10]);
@@ -130,7 +163,7 @@
  	initial	rx_uart_reset = 1'b1;
  	always @(posedge S_AXI_ACLK)
  	if ((!S_AXI_ARESETN)||((axil_write_ready)&&(awskd_addr[1:0]== UART_SETUP) && (&wskd_strb)))
-@@ -482,10 +527,14 @@
+@@ -482,10 +530,14 @@
  	// that would be read from the FIFO, an error indicator set upon
  	// reading from an empty FIFO, a break indicator, and the frame and
  	// parity error signals.
@@ -148,7 +181,7 @@
  
  	// }}}
  	/////////////////////////////////////////
-@@ -523,7 +572,7 @@
+@@ -523,7 +575,7 @@
  		txfifo(S_AXI_ACLK, (tx_break)||(tx_uart_reset),
  			txf_axil_write, txf_axil_data,
  			tx_empty_n,
@@ -157,7 +190,7 @@
  			txf_status, txf_err);
  	// Let's create two transmit based interrupts from the FIFO for the CPU.
  	//	The first will be true any time the FIFO has at least one open
-@@ -533,6 +582,7 @@
+@@ -533,6 +585,7 @@
  	//	full, allowing us a change to always keep it (near) fully 
  	//	charged.
  	assign	o_uart_txfifo_int = txf_status[1];
@@ -165,7 +198,7 @@
  
  `ifndef	USE_LITE_UART
  	// Break logic
-@@ -578,7 +628,7 @@
+@@ -578,7 +631,7 @@
  	assign	o_uart_tx = w_uart_tx;
  `else
  `ifdef	USE_LITE_UART
@@ -174,13 +207,23 @@
  			o_uart_tx, tx_busy);
  `else
  	wire	cts_n;
-@@ -594,7 +644,7 @@
+@@ -593,8 +646,8 @@
+ 	// we read it here.  (You might notice above, we register a read any
  	// time (tx_empty_n) and (!tx_busy) are both true---the condition for
  	// starting to transmit a new byte.)
 -	txuart	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
-+	txuart_v2	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
 -			r_tx_break, (tx_empty_n), tx_data,
++	txuart_v2	#(.INITIAL_SETUP(INITIAL_SETUP)) tx(S_AXI_ACLK, 1'b0, uart_setup,
 +			r_tx_break, (tx_empty_n)&&(i_tx_go), tx_data,
  			cts_n, o_uart_tx, tx_busy);
  `endif
  `endif	// FORMAL
+@@ -717,7 +770,7 @@
+ 	////////////////////////////////////////////////////////////////////////
+ 	//
+ 	// {{{
+-	localparam	F_AXIL_LGDEPTH = 4;
++	parameter	F_AXIL_LGDEPTH = 4;
+ 	wire	[F_AXIL_LGDEPTH-1:0]	faxil_rd_outstanding,
+ 					faxil_wr_outstanding,
+ 					faxil_awr_outstanding;

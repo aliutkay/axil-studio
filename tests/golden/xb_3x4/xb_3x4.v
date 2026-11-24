@@ -17,8 +17,9 @@
 //   SLAVE2   0x80000000  0xFFFF0000    0x10000
 //   SLAVE3   0x40100000  0xFFF00000   0x100000
 //
-// Requires axilxbar.v, addrdecode.v, skidbuffer.v (wb2axip, Apache 2.0,
-// Gisselquist Technology LLC).
+// Requires hdl/v2005/interconnect/axilxbar.v, addrdecode.v and
+// hdl/v2005/common/skidbuffer.v (wb2axip, Apache 2.0, Gisselquist Technology LLC).
+// Verilog-2005, no localparam.
 ////////////////////////////////////////////////////////////////////////////////
 
 `default_nettype none
@@ -182,9 +183,10 @@ module xb_3x4 #(
     output wire                           SLAVE3_AXI_RREADY
 );
 
-    localparam integer AW = C_AXI_ADDR_WIDTH;
-    localparam integer DW = C_AXI_DATA_WIDTH;
-    localparam integer SW = C_AXI_DATA_WIDTH/8;
+    // fixed shorthands (body parameters are local: the module has a parameter list)
+    parameter integer AW = C_AXI_ADDR_WIDTH;
+    parameter integer DW = C_AXI_DATA_WIDTH;
+    parameter integer SW = C_AXI_DATA_WIDTH/8;
 
     // axilxbar's flattened ports: port k in bits [k*width +: width]
     wire [3*AW-1:0] s_awaddr;

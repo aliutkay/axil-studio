@@ -117,7 +117,7 @@ kendisidir; yalnızca easyaxil'in kullanıcıya bıraktığı yerler değişir:
 - formal bölümünde yalnızca easyaxil'in r0..r3'e özel register kontrolleri çıkar (`faxil_slave` kontrolleri kalır).
 
 AXI el sıkışması (skidbuffer'lı ve skidbuffer'sız iki dal, `OPT_SKIDBUFFER`, `OPT_LOWPOWER`) olduğu gibi kalır;
-`OPT_SKIDBUFFER=1` için `hdl/skidbuffer.v` gerekir. Üretilen dosyayı `hdl/easyaxil.v` ile karşılaştırarak farklar
+`OPT_SKIDBUFFER=1` için `hdl/v2005/common/skidbuffer.v` gerekir. Üretilen dosyayı `hdl/easyaxil.v` ile karşılaştırarak farklar
 görülebilir. `FORMAL` bölümü yalnızca formal doğrulama araçlarında (SymbiYosys) derlenir; sentez ve simülasyon
 onu görmez. **IP seç** (IP Library) ya da
 **Dosyadan aç** (`.regspec.json`) ile kaynak seçilir; sağda register haritası özeti ile Verilog ve
@@ -281,13 +281,13 @@ RW/W1C için ikisi de. HDL ve C yorumlarına açıklamanın yalnızca ilk satır
 
 ## axilxbar wrapper
 
-ZipCPU `axilxbar.v` (`hdl/axilxbar.v`) yapısına dokunulmadan kullanılır; yalnızca parametreleriyle
+ZipCPU `axilxbar.v` (`hdl/v2005/interconnect/axilxbar.v`) yapısına dokunulmadan kullanılır; yalnızca parametreleriyle
 yapılandırılır: `NM`, `NS`, `SLAVE_ADDR`, `SLAVE_MASK`, `OPT_LOWPOWER`, `OPT_LINGER`, `LGMAXBURST`,
-`C_AXI_DATA_WIDTH`, `C_AXI_ADDR_WIDTH`. wb2axip dosyalarında yalnızca iki tek satırlık, satırında
-`AXIL Studio:` notuyla işaretli uyumluluk yaması vardır; mantık değişmez:
+`C_AXI_DATA_WIDTH`, `C_AXI_ADDR_WIDTH`. wb2axip dosyalarında yalnızca uyumluluk değişiklikleri vardır; mantık
+değişmez (Yosys eşdeğerlik kontrolüyle ispatlı, bkz. `hdl/v2005/README.md`):
 
-- `axilxbar.v`: parametre listesindeki `localparam AW` (yalnızca SystemVerilog'da geçerli) Verilog-2005 araçları
-  için `parameter AW` yazılmıştır; `AW` dışarıdan verilmez.
+- `axilxbar.v`, `addrdecode.v`: tüm `localparam`'lar `parameter` yazılmıştır (değerler aynı), HDL Designer gibi
+  Verilog-2005 araçları kabul eder; bunlar dışarıdan verilmez.
 - `addrdecode.v` (165. satır): `|prerequest[NS-1:1]` yerine eşdeğeri `|(prerequest >> 1)`. Tek slave'de (`NS=1`)
   çalışmayan bir dalda bile ters sıralı `[0:1]` dilimi oluşuyor ve iverilog elaborasyonda hata veriyordu.
 
@@ -320,8 +320,9 @@ python -m axil_studio.core.axilgen --xbar bench.axproj.json --xbar-style signals
 Modül adları tüm tasarımda tek olmalı: interconnect'ler, IP'ler ve `_pk` wrapper'ları aynı adı alamaz, ZipCPU
 modüllerinin adları (`axilxbar`, `addrdecode`, `skidbuffer`, `easyaxil`) kullanılamaz.
 
-HDL projesine `<ad>.v` (ve kullanılıyorsa `<ad>_pk.v`) ile `hdl/axilxbar.v`, `hdl/addrdecode.v`,
-`hdl/skidbuffer.v` eklenir (wb2axip, Apache 2.0).
+HDL projesine `<ad>.v` (ve kullanılıyorsa `<ad>_pk.v`) ile `hdl/v2005/interconnect/axilxbar.v`,
+`hdl/v2005/interconnect/addrdecode.v`, `hdl/v2005/common/skidbuffer.v` eklenir (wb2axip, Apache 2.0). Üretilen
+sarmalayıcılarda `localparam` yoktur (`AW`, `DW`, `SW` gövde parametresi); hepsi Verilog-2005.
 
 
 ## Paketli AXI portu (REQ/RSP)
@@ -339,7 +340,7 @@ Paketli bus her zaman 32 bit adres ve veri taşır; daha dar adresli çekirdekle
 - Paketli IP'lerin üst modülü `SLAVE_AXI_REQ/RSP` portludur.
 - Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python -m axil_studio.core.axilgen --pack axilgpio.v -o out`.
   ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar ve parametreler aynen geçer.
-- `hdl/` içinde `axilgpio_pk.v`, `axiluart_phy_pk.v`, `hexbus_axil_top_pk.v` hazır; `axilgpio.v` çekirdeğin kendisi (ZipCPU, Apache-2.0), `axilgpio_a32.v` onun 32 bit adresli sarmalayıcısı (Libero bus interface gibi port genişliklerinin eşit olmasını isteyen araçlar için).
+- Hazır paketli sarmalayıcılar `hdl/v2005/` içinde: `gpio/axilgpio_pk.v`, `uart_phy/axiluart_phy_pk.v`, `hexbus/hexbus_axil_top_pk.v`; `gpio/axilgpio.v` çekirdeğin kendisi (ZipCPU, Apache-2.0), `gpio/axilgpio_a32.v` onun 32 bit adresli sarmalayıcısı (Libero bus interface gibi port genişliklerinin eşit olmasını isteyen araçlar için).
 - `hdl/v2005/`: hexbus (UART'lı) + interconnect + UART PHY + axilgpio için `localparam`'sız Verilog-2005 dosya seti (HDL Designer, Libero Verilog modu); orijinallerle eşdeğerliği Yosys ile ispatlı, örnek sistem ve `no_localparam.py` çeviricisi içinde.
 - `examples/cmd_seq_led_fade/`: komut sıralayıcının axilgpio'daki iki LED'i PWM ile yumuşak geçişle sürdüğü örnek (program, axilgpio kütüphanesi, proje, RTL simülasyonu).
 
@@ -544,7 +545,7 @@ commit'in yanında görünür.
 | `interfaces/` | IP arayüzü uygulamaları (Studio'nun dışında çalışır): Python istemcisi `sdk/axil_client.py`, UART arayüzü `axiluart_phy/`, komut sıralayıcı arayüzü `cmd_seq/`; protokol `interfaces/README.md` |
 | `axil_studio/core/` | Arayüzden bağımsız çekirdek (Qt yok), aşağıda |
 | `scripts/` | Komut satırı araçları: `i18n_check.py` (çeviri denetimi), `bump_version.py` |
-| `hdl/` | wb2axip dosyaları (`axilxbar.v`, `addrdecode.v`, `skidbuffer.v`, slave şablonu `easyaxil.v`) ve paketli `_pk` örnekleri; `uart_phy/`: axiluart_phy RTL'i, testbench'leri ve ZipCPU yamaları (bkz. `hdl/uart_phy/README.md`); `cmd_seq/`: programlanabilir komut sıralayıcı, assembler'ı ve doğrulama ortamı (formal, referans model, rastgele ve yönlendirilmiş testler; bkz. `hdl/cmd_seq/README.md`) |
+| `hdl/` | `v2005/`: sentez için tüm RTL, `localparam`'sız Verilog-2005 (hexbus, wbuart32, UART PHY, axilxbar, axilgpio, skidbuffer, örnek sistem; bkz. `hdl/v2005/README.md`); slave şablonu `easyaxil.v`; `uart_phy/`: axiluart_phy testbench'leri, ZipCPU yamaları ve belgesi (bkz. `hdl/uart_phy/README.md`); `cmd_seq/`: programlanabilir komut sıralayıcı, assembler'ı ve doğrulama ortamı (formal, referans model, rastgele ve yönlendirilmiş testler; bkz. `hdl/cmd_seq/README.md`) |
 | `examples/` | Örnek GPIO projesi ve config dosyaları; `uart_phy/`: axiluart_phy kütüphanesi, örnek proje, hat ön ayarları ve doğrulama ayarları; `cmd_seq/`: cmd_seq register haritası kütüphanesi ve komut sıralayıcılı örnek proje |
 | `.githooks/` | Commit başına sürüm artıran git hook'u (bkz. Sürümler) |
 | `axil_studio/i18n/` | Çeviri altyapısı ve dil katalogları (`tr.json`) |

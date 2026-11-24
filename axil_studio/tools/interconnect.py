@@ -622,10 +622,10 @@ class InterconnectPage(ToolPage):
             text = cmdseq.instance_template(bridge, self.proj)
         elif which == "core":
             try:
-                with open(os.path.join(ROOT, "hdl", "axilxbar.v"), encoding="utf-8") as fh:
+                with open(os.path.join(ROOT, "hdl", "v2005", "interconnect", "axilxbar.v"), encoding="utf-8") as fh:
                     text = fh.read()
             except OSError as exc:
-                text = tr("// cannot read hdl/axilxbar.v: {0}").format(exc)
+                text = tr("// cannot read hdl/v2005/interconnect/axilxbar.v: {0}").format(exc)
         elif errs:
             text = tr("// The settings have errors, no Verilog can be generated:\n//") + "\n// ".join(errs)
         else:                             # made from the HDL spec alone, as when generating
@@ -758,4 +758,4 @@ class InterconnectPage(ToolPage):
             hint += tr("\n<module>_pk.v (HDL Designer) wraps <module>.v: MASTER<i>/SLAVE<j>_AXI_REQ/RSP per port.")
         QMessageBox.information(self, tr("Generation complete"),
                                 f"{outdir}\n\n" + "\n".join(os.path.basename(p) for p in paths)
-                                + tr("\n\n{0}\n\naxilxbar is configured through its parameters only. Also add axilxbar.v, addrdecode.v and skidbuffer.v from the hdl/ folder to the HDL project.").format(hint))
+                                + tr("\n\n{0}\n\naxilxbar is configured through its parameters only. Also add hdl/v2005/interconnect/axilxbar.v, hdl/v2005/interconnect/addrdecode.v and hdl/v2005/common/skidbuffer.v to the HDL project (Verilog-2005, no localparam).").format(hint))

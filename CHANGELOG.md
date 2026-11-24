@@ -11,6 +11,20 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.41 — Interconnect localparam'sız, RTL tek yerde (hdl/v2005)
+- Interconnect Configurator: üretilen sarmalayıcıda `localparam` yok (`AW`, `DW`, `SW` gövde
+  parametresi; parametre listesi olan modülde yerel). Başlık ve "Generation complete" mesajı
+  çekirdek dosyalar için `hdl/v2005/interconnect/` ve `hdl/v2005/common/` yollarını gösteriyor;
+  önizlemedeki axilxbar.v oradan okunuyor. Golden dosyalar güncellendi.
+- `hdl/v2005/` artık bu RTL'in tek kopyası. Kaldırılan eski kopyalar: `hdl/axilxbar.v`,
+  `addrdecode.v`, `skidbuffer.v`, `axilgpio*.v` (4), `axiluart_phy_pk.v`, `hexbus_axil_top_pk.v`,
+  `hdl/uart_phy/rtl/` (4), `hdl/hexbus/`. hexbus'ın ZipCPU üst modülleri (`hbaxil`, `hbbus`,
+  `hbconsole`, `hbexec`, `console`) `hdl/v2005/hexbus/`'e taşındı. `hdl/uart_phy/` altında
+  testbench'ler, yamalar (artık wbuart32'den `hdl/v2005` dosyalarını veriyor) ve belge kaldı.
+- UART PHY'nin üç testbench'i (`tb_axiluart_phy`, `tb_formats_loopback`, `tb_tx_parity`) artık
+  repodaki wbuart32 dosyalarıyla testlerde çalışıyor. Yeni test: üretilen interconnect'te
+  `localparam` yok ve `-g2005` derleniyor.
+
 ## early-alpha 0.1.40 — hdl/v2005: localparam'sız dosya seti
 - `hdl/v2005/`: UART'lı hexbus (`hexbus_axil_top`), wbuart32 (`rxuartlite`, `txuartlite`, `rxuart`,
   `ufifo`), UART PHY (güncel), axilxbar + addrdecode, axilgpio (+ a32 / axi4 / pk) ve skidbuffer;

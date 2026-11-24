@@ -1,7 +1,7 @@
 """
 axilxbar wrapper generator.
 
-ZipCPU's axilxbar (hdl/axilxbar.v) is used as it is: it is only configured through its
+ZipCPU's axilxbar (hdl/v2005/interconnect/axilxbar.v) is used as it is: it is only configured through its
 parameters (NM, NS, SLAVE_ADDR, SLAVE_MASK, OPT_LOWPOWER, OPT_LINGER, LGMAXBURST, data and
 address width). axilxbar exposes every master/slave port as one flattened vector, which is
 awkward in block-diagram tools, so two wrappers are generated around it:
@@ -16,9 +16,11 @@ awkward in block-diagram tools, so two wrappers are generated around it:
 The wrappers only rename and slice signals; they add no logic. Addresses that no slave
 decodes are answered with DECERR by axilxbar itself.
 
-Required RTL from wb2axip: axilxbar.v, addrdecode.v, skidbuffer.v. Only one line of
-axilxbar.v differs from wb2axip: `localparam AW` in its parameter list (SystemVerilog only)
-is written as `parameter`, so plain Verilog-2005 tools accept it. AW must not be overridden.
+Required RTL from wb2axip, in hdl/v2005: interconnect/axilxbar.v, interconnect/addrdecode.v,
+common/skidbuffer.v. They differ from wb2axip only in `localparam` written as `parameter` (same
+values) and the addrdecode NS = 1 fix, so plain Verilog-2005 tools (HDL Designer) accept them.
+The generated wrappers have no `localparam` either (AW / DW / SW are body parameters, local to
+the module because it has a parameter list).
 """
 
 import json
@@ -265,8 +267,9 @@ def gen_xbar(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
         "Slave j is selected when (address & SLAVE<j>_MASK) == SLAVE<j>_ADDR; any other",
         "address is answered with DECERR by axilxbar."])
     L += ["//",
-          "// Requires axilxbar.v, addrdecode.v, skidbuffer.v (wb2axip, Apache 2.0,",
-          "// Gisselquist Technology LLC).",
+          "// Requires hdl/v2005/interconnect/axilxbar.v, addrdecode.v and",
+          "// hdl/v2005/common/skidbuffer.v (wb2axip, Apache 2.0, Gisselquist Technology LLC).",
+          "// Verilog-2005, no localparam.",
           "////////////////////////////////////////////////////////////////////////////////",
           "",
           "`default_nettype none",
@@ -294,9 +297,10 @@ def gen_xbar(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
     L += ports
     L += [");",
           "",
-          "    localparam integer AW = C_AXI_ADDR_WIDTH;",
-          "    localparam integer DW = C_AXI_DATA_WIDTH;",
-          "    localparam integer SW = C_AXI_DATA_WIDTH/8;",
+          "    // fixed shorthands (body parameters are local: the module has a parameter list)",
+          "    parameter integer AW = C_AXI_ADDR_WIDTH;",
+          "    parameter integer DW = C_AXI_DATA_WIDTH;",
+          "    parameter integer SW = C_AXI_DATA_WIDTH/8;",
           "",
           "    // axilxbar's flattened ports: port k in bits [k*width +: width]"]
     for sig, _, wk in AXIL_SIGNALS:
@@ -364,7 +368,8 @@ def gen_xbar_pk(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
         "  SLAVE<j>_AXI_REQ/RSP   connect to a slave's  SLAVE_AXI_REQ/RSP",
         "Packed bus: 32-bit address and data."] + [x[3:] for x in PK.layout_lines()])
     L += ["//",
-          f"// Requires {mod}.v, axilxbar.v, addrdecode.v, skidbuffer.v.",
+          f"// Requires {mod}.v, hdl/v2005/interconnect/axilxbar.v, addrdecode.v and",
+          "// hdl/v2005/common/skidbuffer.v. Verilog-2005, no localparam.",
           "////////////////////////////////////////////////////////////////////////////////",
           "",
           "`default_nettype none",
