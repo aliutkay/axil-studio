@@ -16,8 +16,20 @@ Süreler 100 MHz saat içindir.
 | `led_fade.axproj.json` | Proje: `SEQ0` komut sıralayıcı (0x0300_0000), altında `GPIO` (0x0301_0000) |
 | `sim/tb_led_fade.v`, `sim/run_sim.py` | cmd_seq + gerçek `hdl/axilgpio.v` ile simülasyon ve dalga şekli kontrolü |
 
-RTL: `hdl/axilgpio.v` (ZipCPU wb2axip, Apache-2.0), `hdl/skidbuffer.v`, HDL Designer için
-`hdl/axilgpio_pk.v`. Bağlantı: `o_gpio[0]` → LED A, `o_gpio[1]` → LED B.
+RTL: `hdl/axilgpio.v` (ZipCPU wb2axip, Apache-2.0), `hdl/skidbuffer.v`; 32 bit adresli
+sarmalayıcı `hdl/axilgpio_a32.v`; HDL Designer için `hdl/axilgpio_pk.v`. Bağlantı: `o_gpio[0]` →
+LED A, `o_gpio[1]` → LED B.
+
+## Libero'da
+- `axilgpio_a32` modülünü kullanın: adres portları 32 bit, cmd_seq'in `M_AXI_*`'si ya da
+  interconnect'in 32 bitlik slave çıkışı doğrudan bağlanır. Çekirdeğe yalnızca adresin `[4:0]`
+  bitleri gider (8 register); üst bitler IP'yi interconnect'te seçer.
+- Bus interface: AXI4-Lite, rol **Slave**, `S_AXI_*` portları; `S_AXI_ACLK` / `S_AXI_ARESETN`
+  dışarıda kalır. cmd_seq'te `S_AXI_*` = Slave (yukarı, PC tarafı), `M_AXI_*` = Master (aşağı,
+  axilgpio tarafı).
+- `axilgpio.v` (ZipCPU'nun dosyası) parametre listesinde `localparam` kullanır: Libero'da
+  Verilog dili **SystemVerilog** seçilmeli (proje ayarları → HDL). cmd_seq, `skidbuffer.v` ve
+  `axilgpio_a32.v` Verilog-2001 ile de derlenir.
 
 ## Nasıl çalışıyor
 axilgpio'da donanım PWM'i yok; PWM'i program üretiyor. Her PWM periyodu (`PERIOD` = 8000 çevrim

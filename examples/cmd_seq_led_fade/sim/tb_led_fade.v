@@ -1,4 +1,5 @@
-// Testbench of led_fade.s: cmd_seq drives the real ZipCPU axilgpio (hdl/axilgpio.v).
+// Testbench of led_fade.s: cmd_seq drives the real ZipCPU axilgpio (hdl/axilgpio.v) through
+// its 32-bit address wrapper hdl/axilgpio_a32.v.
 // The program is loaded through the upstream port like the Debug Bridge does it (IMEM_PTR,
 // IMEM_DATA, then IMEM_CNT / IMEM_SUM are checked), then started with CTRL.RUN. Every change of
 // o_gpio[1:0] is printed as "G <cycle> <b> <a>"; run_sim.py checks the waveform.
@@ -50,14 +51,14 @@ module tb_led_fade;
         .i_sys_halt(1'b0), .i_sys_run(1'b0), .i_ev(8'd0), .o_ev(ev_out), .o_irq(irq)
     );
 
-    // the GPIO sits at 0x0301_0000: it decodes only the low 5 address bits
-    axilgpio #(.NOUT(8), .NIN(1)) gpio_i (
+    // the GPIO sits at 0x0301_0000; axilgpio_a32 takes the full 32-bit address
+    axilgpio_a32 #(.NOUT(8), .NIN(1)) gpio_i (
         .S_AXI_ACLK(clk), .S_AXI_ARESETN(rst_n),
-        .S_AXI_AWVALID(m_awvalid), .S_AXI_AWREADY(m_awready), .S_AXI_AWADDR(m_awaddr[4:0]),
+        .S_AXI_AWVALID(m_awvalid), .S_AXI_AWREADY(m_awready), .S_AXI_AWADDR(m_awaddr),
         .S_AXI_AWPROT(m_awprot), .S_AXI_WVALID(m_wvalid), .S_AXI_WREADY(m_wready),
         .S_AXI_WDATA(m_wdata), .S_AXI_WSTRB(m_wstrb), .S_AXI_BVALID(m_bvalid),
         .S_AXI_BREADY(m_bready), .S_AXI_BRESP(m_bresp), .S_AXI_ARVALID(m_arvalid),
-        .S_AXI_ARREADY(m_arready), .S_AXI_ARADDR(m_araddr[4:0]), .S_AXI_ARPROT(m_arprot),
+        .S_AXI_ARREADY(m_arready), .S_AXI_ARADDR(m_araddr), .S_AXI_ARPROT(m_arprot),
         .S_AXI_RVALID(m_rvalid), .S_AXI_RREADY(m_rready), .S_AXI_RDATA(m_rdata),
         .S_AXI_RRESP(m_rresp),
         .i_gpio(1'b0), .o_gpio(gpio), .o_int(gpio_int)

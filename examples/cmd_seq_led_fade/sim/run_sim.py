@@ -73,7 +73,8 @@ def run(overrides, cycles):
                         f"-Ptb_led_fade.CYCLES={cycles}", f'-Ptb_led_fade.PROG="{hexf}"',
                         f"-Ptb_led_fade.NPROG={len(words)}", f"-Ptb_led_fade.SUM=32'h{total:08X}",
                         os.path.join(HERE, "tb_led_fade.v"), os.path.join(rtl, "cmd_seq.v"),
-                        os.path.join(rtl, "cmd_seq_core.v"), os.path.join(ROOT, "hdl", "axilgpio.v"),
+                        os.path.join(rtl, "cmd_seq_core.v"), os.path.join(ROOT, "hdl", "axilgpio_a32.v"),
+                        os.path.join(ROOT, "hdl", "axilgpio.v"),
                         os.path.join(ROOT, "hdl", "skidbuffer.v")], check=True)
         out = subprocess.run(["vvp", "-n", exe], check=True, capture_output=True, text=True).stdout
     finally:

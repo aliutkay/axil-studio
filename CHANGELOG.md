@@ -11,6 +11,11 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.33 — axilgpio 32 bit adresli sarmalayıcı
+- `hdl/axilgpio_a32.v`: axilgpio'nun adres portları 32 bit (çekirdeğe `[4:0]` gider). Libero
+  SmartDesign bus interface'i gibi eşit port genişliği isteyen araçlarda doğrudan bağlanır.
+- LED örneğinin testbench'i artık bu sarmalayıcı üzerinden, tam 32 bit adresle çalışıyor.
+
 ## early-alpha 0.1.32 — Örnek: PCS ile iki LED'in yumuşak geçişi
 - `examples/cmd_seq_led_fade/`: `led_fade.s`, cmd_seq'in axilgpio'daki iki LED'i yazılım PWM'i ile
   sürdüğü program (biri tam parlakken öteki kapalı, sonra yer değiştirerek yumuşak geçiş, döngü).
