@@ -21,15 +21,23 @@ sarmalayıcı `hdl/axilgpio_a32.v`; HDL Designer için `hdl/axilgpio_pk.v`. Bağ
 LED A, `o_gpio[1]` → LED B.
 
 ## Libero'da
-- `axilgpio_a32` modülünü kullanın: adres portları 32 bit, cmd_seq'in `M_AXI_*`'si ya da
-  interconnect'in 32 bitlik slave çıkışı doğrudan bağlanır. Çekirdeğe yalnızca adresin `[4:0]`
-  bitleri gider (8 register); üst bitler IP'yi interconnect'te seçer.
-- Bus interface: AXI4-Lite, rol **Slave**, `S_AXI_*` portları; `S_AXI_ACLK` / `S_AXI_ARESETN`
-  dışarıda kalır. cmd_seq'te `S_AXI_*` = Slave (yukarı, PC tarafı), `M_AXI_*` = Master (aşağı,
-  axilgpio tarafı).
-- Tüm dosyalar Verilog-2001 ile derlenir. ZipCPU'nun `axilgpio.v`'sinde parametre listesindeki
-  `localparam C_AXI_DATA_WIDTH` (yalnızca SystemVerilog'da geçerli) `parameter` yapıldı; değeri 32
-  kalmalı.
+Libero'nun bus definition listesinde AXI4-Lite yok; **AXI4** tanımı ID, LEN, SIZE, BURST, LAST
+sinyallerini istiyor. Bunun için iki tam AXI4 sarmalayıcı var; ikisi de tek-beat aktarım yapar:
+
+| Modül | Bus interface (AXI4) | Not |
+|---|---|---|
+| `hdl/cmd_seq/rtl/cmd_seq_axi4.v` | `S_AXI_*` = **slave**, `M_AXI_*` = **master** | Master: LEN = 0, SIZE = 4 bayt, INCR, WLAST = 1, ID = 0. Slave: isteğin ID'si BID / RID ile geri döner, RLAST = 1; yukarıdaki master burst göndermemeli |
+| `hdl/axilgpio_axi4.v` | `S_AXI_*` = **slave** | 32 bit adres, çekirdeğe `[4:0]`; her yönde bir işlem bitmeden yenisini almaz, ID'ler doğru döner |
+
+- Bağlantı: cmd_seq_axi4 `M_AXI` (master) → axilgpio_axi4 `S_AXI` (slave) doğrudan, ya da
+  CoreAXI4Interconnect'in giriş portuna (mirrored master). Mirrored roller interconnect içindir,
+  kendi çekirdeklerinde kullanma.
+- Eşlemede her sinyal aynı adlı bus sinyaline gider (`S_AXI_AWLEN` → AWLEN …); `S_AXI_ACLK` /
+  `S_AXI_ARESETN` interface'e girmez. USER sinyalleri yok.
+- AXI4-Lite tanımı olan araçlar için `cmd_seq.v` ve `axilgpio_a32.v` (yalnızca Lite sinyalleri).
+- Tüm dosyalar Verilog-2001 ile derlenir (ZipCPU'nun `axilgpio.v`'sindeki parametre listesi
+  `localparam`'ı `parameter` yapıldı; değeri 32 kalmalı).
+- `sim/run_sim.py --axi4` bu iki sarmalayıcıyla aynı dalga şekli kontrolünü yapar.
 
 ## Nasıl çalışıyor
 axilgpio'da donanım PWM'i yok; PWM'i program üretiyor. Her PWM periyodu (`PERIOD` = 8000 çevrim

@@ -11,6 +11,16 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.35 — Tam AXI4 sarmalayıcılar (Libero)
+- `hdl/cmd_seq/rtl/cmd_seq_axi4.v`: cmd_seq'in iki portu da tam AXI4 sinyal setiyle. Master tek
+  beat gönderir (LEN = 0, SIZE = 4 bayt, INCR, WLAST = 1); slave isteğin ID'sini BID / RID ile geri
+  verir, RLAST = 1. Libero'da AXI4-Lite tanımı olmadığı için master'ın hiçbir slave'e
+  bağlanamaması sorununa çözüm.
+- `hdl/axilgpio_axi4.v`: axilgpio için tam AXI4 slave, 32 bit adres; ID'ler için her yönde tek
+  işlem.
+- LED örneğinin simülasyonu `--axi4` ile bu sarmalayıcılarla da çalışıyor (tek beat ve ID
+  kontrolleri dahil); test eklendi.
+
 ## early-alpha 0.1.34 — axilgpio.v Verilog-2001
 - `hdl/axilgpio.v`: parametre listesindeki `localparam C_AXI_DATA_WIDTH` `parameter` yapıldı
   (SystemVerilog'a özgüydü); dosya artık Libero / Synplify'da Verilog-2001 modunda derlenir.

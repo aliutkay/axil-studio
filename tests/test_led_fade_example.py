@@ -46,3 +46,10 @@ def test_program_assembles_with_the_project_names():
 @pytest.mark.skipif(not (shutil.which("iverilog") and shutil.which("vvp")), reason="needs Icarus Verilog")
 def test_led_waveform_on_the_rtl():
     assert run_sim.run({"PERIOD": 200, "STEP": 50, "REP": 3, "HOLD": 4}, 2 * 32 * 200 + 3000) == []
+
+
+@pytest.mark.skipif(not (shutil.which("iverilog") and shutil.which("vvp")), reason="needs Icarus Verilog")
+def test_led_waveform_with_the_axi4_wrappers():
+    """cmd_seq_axi4 -> axilgpio_axi4 (Libero bus definition AXI4): same waveform, single beats,
+    the request IDs come back in BID / RID."""
+    assert run_sim.run({"PERIOD": 200, "STEP": 50, "REP": 3, "HOLD": 4}, 2 * 32 * 200 + 3000, axi4=True) == []

@@ -29,6 +29,7 @@ IMEM_SUM check, run / step / stop / run to line, registers, D-mem). The register
 |---|---|
 | `rtl/cmd_seq.v` | Top level: address decoder, CSR, I-mem / D-mem, two master engines with arbiters |
 | `rtl/cmd_seq_core.v` | Instruction engine (fetch / decode / execute, R0–R15, flags, call stack) |
+| `rtl/cmd_seq_axi4.v` | Wrapper with full AXI4 signal sets (ID, LEN, SIZE, BURST, LAST …) for tools whose bus definition is AXI4 (Libero): single beats on M_AXI, request IDs returned on S_AXI, no bursts accepted |
 | `sw/seqasm.py` | Assembler / disassembler (Python 3, standard library only) |
 | `sw/examples/*.s` | The four example programs below |
 | `verif/` | Reference model, directed and random testbenches, `run.py` |

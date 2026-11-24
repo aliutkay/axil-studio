@@ -4,6 +4,8 @@
     python3 examples/cmd_seq_led_fade/sim/run_sim.py            # short constants, 2 full cycles
     python3 examples/cmd_seq_led_fade/sim/run_sim.py --real     # the program's own PERIOD / STEP,
                                                                 # REP = HOLD = 1 (one cycle)
+    python3 examples/cmd_seq_led_fade/sim/run_sim.py --axi4     # full AXI4 wrappers
+                                                                # (cmd_seq_axi4 -> axilgpio_axi4)
 
 Needs Python 3.8+ and Icarus Verilog (iverilog, vvp). Exit code 0 = passed.
 
@@ -56,7 +58,7 @@ def expected(P, S, rep, hold, n):
     return out[:n]
 
 
-def run(overrides, cycles):
+def run(overrides, cycles, axi4=False):
     src = source(overrides)
     P, S, rep, hold = (equ(src, k) for k in ("PERIOD", "STEP", "REP", "HOLD"))
     prog, _ = seqasm.assemble(src)
@@ -69,7 +71,8 @@ def run(overrides, cycles):
             fh.write(seqasm.hex_text(prog))
         exe = os.path.join(work, "tb")
         rtl = os.path.join(ROOT, "hdl", "cmd_seq", "rtl")
-        subprocess.run(["iverilog", "-g2012", "-o", exe,
+        extra = ["-DAXI4", os.path.join(rtl, "cmd_seq_axi4.v"), os.path.join(ROOT, "hdl", "axilgpio_axi4.v")] if axi4 else []
+        subprocess.run(["iverilog", "-g2012", "-o", exe] + extra + [
                         f"-Ptb_led_fade.CYCLES={cycles}", f'-Ptb_led_fade.PROG="{hexf}"',
                         f"-Ptb_led_fade.NPROG={len(words)}", f"-Ptb_led_fade.SUM=32'h{total:08X}",
                         os.path.join(HERE, "tb_led_fade.v"), os.path.join(rtl, "cmd_seq.v"),
@@ -129,6 +132,7 @@ def check(out, P, S, rep, hold, cycles):
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--real", action="store_true", help="the program's PERIOD and STEP")
+    ap.add_argument("--axi4", action="store_true", help="full AXI4 wrappers (cmd_seq_axi4, axilgpio_axi4)")
     args = ap.parse_args(argv)
     if not (shutil.which("iverilog") and shutil.which("vvp")):
         print("iverilog / vvp not found")
@@ -137,9 +141,9 @@ def main(argv=None):
         src = source({})
         P, S = equ(src, "PERIOD"), equ(src, "STEP")
         cycles = (2 + 2 * P // S + 2) * P + 2000
-        errors = run({"REP": 1, "HOLD": 1}, cycles)
+        errors = run({"REP": 1, "HOLD": 1}, cycles, args.axi4)
     else:
-        errors = run({"PERIOD": 200, "STEP": 50, "REP": 3, "HOLD": 4}, 2 * 32 * 200 + 3000)
+        errors = run({"PERIOD": 200, "STEP": 50, "REP": 3, "HOLD": 4}, 2 * 32 * 200 + 3000, args.axi4)
     for e in errors[:20]:
         print("  FAIL", e)
     print("led_fade:", "PASSED" if not errors else "FAILED")

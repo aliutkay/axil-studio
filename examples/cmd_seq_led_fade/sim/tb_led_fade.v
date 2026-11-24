@@ -1,5 +1,6 @@
 // Testbench of led_fade.s: cmd_seq drives the real ZipCPU axilgpio (hdl/axilgpio.v) through
-// its 32-bit address wrapper hdl/axilgpio_a32.v.
+// its 32-bit address wrapper hdl/axilgpio_a32.v; with +define+AXI4 (-DAXI4) the full AXI4
+// wrappers cmd_seq_axi4 -> axilgpio_axi4 are used instead.
 // The program is loaded through the upstream port like the Debug Bridge does it (IMEM_PTR,
 // IMEM_DATA, then IMEM_CNT / IMEM_SUM are checked), then started with CTRL.RUN. Every change of
 // o_gpio[1:0] is printed as "G <cycle> <b> <a>"; run_sim.py checks the waveform.
@@ -32,6 +33,72 @@ module tb_led_fade;
     wire        irq, gpio_int;
     wire [7:0]  gpio;
 
+`ifdef AXI4
+    // full AXI4 wrappers (Libero bus definition AXI4): cmd_seq_axi4 -> axilgpio_axi4.
+    // The upstream requests carry ID 1; the testbench checks that it comes back in BID / RID,
+    // and that cmd_seq_axi4 sends single beats.
+    wire [7:0]  m_awlen, m_arlen;
+    wire [2:0]  m_awsize, m_arsize;
+    wire [1:0]  m_awburst, m_arburst;
+    wire        m_wlast, m_rlast, s_rlast;
+    wire        m_awid, m_arid, m_bid, m_rid, s_bid, s_rid;
+    integer     axi4_errors = 0;
+    always @(posedge clk) begin
+        if (m_awvalid && m_awready && (m_awlen != 0 || m_awsize != 3'b010 || m_awburst != 2'b01))
+            axi4_errors = axi4_errors + 1;
+        if (m_arvalid && m_arready && (m_arlen != 0 || m_arsize != 3'b010 || m_arburst != 2'b01))
+            axi4_errors = axi4_errors + 1;
+        if (m_wvalid && m_wready && !m_wlast) axi4_errors = axi4_errors + 1;
+        if (s_bvalid && s_bready && s_bid !== 1'b1) axi4_errors = axi4_errors + 1;
+        if (s_rvalid && s_rready && (s_rid !== 1'b1 || !s_rlast)) axi4_errors = axi4_errors + 1;
+    end
+
+    cmd_seq_axi4 dut (
+        .S_AXI_ACLK(clk), .S_AXI_ARESETN(rst_n),
+        .S_AXI_AWID(1'b1), .S_AXI_AWADDR(s_awaddr), .S_AXI_AWLEN(8'd0), .S_AXI_AWSIZE(3'b010),
+        .S_AXI_AWBURST(2'b01), .S_AXI_AWLOCK(1'b0), .S_AXI_AWCACHE(4'd0), .S_AXI_AWPROT(3'b000),
+        .S_AXI_AWQOS(4'd0), .S_AXI_AWREGION(4'd0), .S_AXI_AWVALID(s_awvalid), .S_AXI_AWREADY(s_awready),
+        .S_AXI_WDATA(s_wdata), .S_AXI_WSTRB(4'hF), .S_AXI_WLAST(1'b1), .S_AXI_WVALID(s_wvalid),
+        .S_AXI_WREADY(s_wready), .S_AXI_BID(s_bid), .S_AXI_BRESP(s_bresp), .S_AXI_BVALID(s_bvalid),
+        .S_AXI_BREADY(s_bready),
+        .S_AXI_ARID(1'b1), .S_AXI_ARADDR(s_araddr), .S_AXI_ARLEN(8'd0), .S_AXI_ARSIZE(3'b010),
+        .S_AXI_ARBURST(2'b01), .S_AXI_ARLOCK(1'b0), .S_AXI_ARCACHE(4'd0), .S_AXI_ARPROT(3'b000),
+        .S_AXI_ARQOS(4'd0), .S_AXI_ARREGION(4'd0), .S_AXI_ARVALID(s_arvalid), .S_AXI_ARREADY(s_arready),
+        .S_AXI_RID(s_rid), .S_AXI_RDATA(s_rdata), .S_AXI_RRESP(s_rresp), .S_AXI_RLAST(s_rlast),
+        .S_AXI_RVALID(s_rvalid), .S_AXI_RREADY(s_rready),
+        .M_AXI_AWID(m_awid), .M_AXI_AWADDR(m_awaddr), .M_AXI_AWLEN(m_awlen), .M_AXI_AWSIZE(m_awsize),
+        .M_AXI_AWBURST(m_awburst), .M_AXI_AWLOCK(), .M_AXI_AWCACHE(), .M_AXI_AWPROT(m_awprot),
+        .M_AXI_AWQOS(), .M_AXI_AWREGION(), .M_AXI_AWVALID(m_awvalid), .M_AXI_AWREADY(m_awready),
+        .M_AXI_WDATA(m_wdata), .M_AXI_WSTRB(m_wstrb), .M_AXI_WLAST(m_wlast), .M_AXI_WVALID(m_wvalid),
+        .M_AXI_WREADY(m_wready), .M_AXI_BID(m_bid), .M_AXI_BRESP(m_bresp), .M_AXI_BVALID(m_bvalid),
+        .M_AXI_BREADY(m_bready),
+        .M_AXI_ARID(m_arid), .M_AXI_ARADDR(m_araddr), .M_AXI_ARLEN(m_arlen), .M_AXI_ARSIZE(m_arsize),
+        .M_AXI_ARBURST(m_arburst), .M_AXI_ARLOCK(), .M_AXI_ARCACHE(), .M_AXI_ARPROT(m_arprot),
+        .M_AXI_ARQOS(), .M_AXI_ARREGION(), .M_AXI_ARVALID(m_arvalid), .M_AXI_ARREADY(m_arready),
+        .M_AXI_RID(m_rid), .M_AXI_RDATA(m_rdata), .M_AXI_RRESP(m_rresp), .M_AXI_RLAST(m_rlast),
+        .M_AXI_RVALID(m_rvalid), .M_AXI_RREADY(m_rready),
+        .i_sys_halt(1'b0), .i_sys_run(1'b0), .i_ev(8'd0), .o_ev(ev_out), .o_irq(irq)
+    );
+
+    axilgpio_axi4 #(.NOUT(8), .NIN(1)) gpio_i (
+        .S_AXI_ACLK(clk), .S_AXI_ARESETN(rst_n),
+        .S_AXI_AWID(m_awid), .S_AXI_AWADDR(m_awaddr), .S_AXI_AWLEN(m_awlen), .S_AXI_AWSIZE(m_awsize),
+        .S_AXI_AWBURST(m_awburst), .S_AXI_AWLOCK(1'b0), .S_AXI_AWCACHE(4'd0), .S_AXI_AWPROT(m_awprot),
+        .S_AXI_AWQOS(4'd0), .S_AXI_AWREGION(4'd0), .S_AXI_AWVALID(m_awvalid), .S_AXI_AWREADY(m_awready),
+        .S_AXI_WDATA(m_wdata), .S_AXI_WSTRB(m_wstrb), .S_AXI_WLAST(m_wlast), .S_AXI_WVALID(m_wvalid),
+        .S_AXI_WREADY(m_wready), .S_AXI_BID(m_bid), .S_AXI_BRESP(m_bresp), .S_AXI_BVALID(m_bvalid),
+        .S_AXI_BREADY(m_bready),
+        .S_AXI_ARID(m_arid), .S_AXI_ARADDR(m_araddr), .S_AXI_ARLEN(m_arlen), .S_AXI_ARSIZE(m_arsize),
+        .S_AXI_ARBURST(m_arburst), .S_AXI_ARLOCK(1'b0), .S_AXI_ARCACHE(4'd0), .S_AXI_ARPROT(m_arprot),
+        .S_AXI_ARQOS(4'd0), .S_AXI_ARREGION(4'd0), .S_AXI_ARVALID(m_arvalid), .S_AXI_ARREADY(m_arready),
+        .S_AXI_RID(m_rid), .S_AXI_RDATA(m_rdata), .S_AXI_RRESP(m_rresp), .S_AXI_RLAST(m_rlast),
+        .S_AXI_RVALID(m_rvalid), .S_AXI_RREADY(m_rready),
+        .i_gpio(1'b0), .o_gpio(gpio), .o_int(gpio_int)
+    );
+`else
+    wire        s_bid = 1'b1, s_rid = 1'b1, s_rlast = 1'b1;
+    integer     axi4_errors = 0;
+
     cmd_seq dut (
         .S_AXI_ACLK(clk), .S_AXI_ARESETN(rst_n),
         .S_AXI_AWVALID(s_awvalid), .S_AXI_AWREADY(s_awready), .S_AXI_AWADDR(s_awaddr),
@@ -63,6 +130,7 @@ module tb_led_fade;
         .S_AXI_RRESP(m_rresp),
         .i_gpio(1'b0), .o_gpio(gpio), .o_int(gpio_int)
     );
+`endif
 
     // ---- upstream AXI4-Lite master tasks (AW and W together). Signals change at the falling
     // edge; a handshake seen at the falling edge happens at the next rising edge.
@@ -137,7 +205,7 @@ module tb_led_fade;
         repeat (CYCLES) @(posedge clk);
         rd(SEQ + 16'h000C, v);                      // STATUS: still running, no error
         $display("STATUS %h", v);
-        $display("BUSERR %0d", bus_errors);
+        $display("BUSERR %0d", bus_errors + axi4_errors);
         $finish;
     end
 endmodule
