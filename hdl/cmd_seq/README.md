@@ -241,6 +241,16 @@ each one is caught.
   `pip3 install bitwuzla`. Linux: the same, or the distribution packages plus
   `pip install bitwuzla`. Windows: simulations with Icarus Verilog for Windows; formal under WSL.
 
+## Synthesis
+- I-mem (2^IMEM_AW × 64 bit, one write and one read port) and D-mem (2 × 2^DMEM_AW × 32 bit, two
+  read/write ports, synchronous reads) are written for block RAM inference.
+- Both carry `syn_ramstyle = "lsram"` (Synplify / Libero: LSRAM RAM1K20 instead of many RAM64x12
+  uSRAMs) and `ram_style = "block"`. With the defaults (IMEM_AW = 9, DMEM_AW = 8) that is about
+  2 LSRAMs for I-mem and 2 for D-mem. For very small memories `"uram"` may fit better; change the
+  attribute, or override it in the Synplify constraints:
+  `define_attribute {i:dmem} syn_ramstyle {uram}`.
+- All files are Verilog-2001 (`cmd_seq_axi4.v`, `cmd_seq.v`, `cmd_seq_core.v`).
+
 ## D-mem size
 The D field is 8 bits: `D[n]` reaches the first 256 words. With `DMEM_AW > 8` the rest is reached by
 indexed access (`D[n+Rx]`) and by the master. `DMEM_AW` is at most 13 (the window must fit in the

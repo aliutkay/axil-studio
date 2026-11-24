@@ -11,6 +11,11 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.37 — cmd_seq bellekleri LSRAM'e
+- `cmd_seq.v`: I-mem ve D-mem'e `syn_ramstyle = "lsram"` (ve `ram_style = "block"`) eklendi;
+  Libero / Synplify çok sayıda RAM64x12 (uSRAM) yerine RAM1K20 (LSRAM) kullanır. README'ye
+  "Synthesis" bölümü.
+
 ## early-alpha 0.1.36 — cmd_seq D-mem blok RAM'e sığıyor
 - `cmd_seq.v`: D-mem'in AXI tarafındaki portu yazmada ve okumada ayrı adres kullanıyordu; Libero /
   Synplify blok RAM çıkaramıyordu ("does not have addr shared with one of the write addresses").

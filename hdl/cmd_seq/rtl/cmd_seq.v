@@ -113,7 +113,11 @@ module cmd_seq #(
     wire rst = !S_AXI_ARESETN;
 
     // ------------------------------------------------------------------ memories
+    // Large block RAMs: syn_ramstyle for Synplify (Libero: LSRAM / RAM1K20 instead of many
+    // RAM64x12 uSRAMs), ram_style for other tools. Other tools ignore the names they do not know.
+    (* syn_ramstyle = "lsram", ram_style = "block" *)
     reg [63:0] imem [0:(1 << IMEM_AW) - 1];
+    (* syn_ramstyle = "lsram", ram_style = "block" *)
     reg [31:0] dmem [0:(1 << (DMEM_AW + 1)) - 1];     // two banks
     integer k;
     initial begin
