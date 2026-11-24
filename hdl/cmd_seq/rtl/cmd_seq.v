@@ -176,11 +176,14 @@ module cmd_seq #(
     reg [DMEM_AW:0]  b_waddr, b_raddr;
     reg [31:0]       b_wdata, b_rdata;
     initial begin b_we = 0; b_waddr = 0; b_raddr = 0; b_wdata = 0; b_rdata = 0; end
+    // one address per port, so that synthesis maps D-mem to a true dual-port block RAM
+    // (port B writes or reads in a cycle, never both)
+    wire [DMEM_AW:0] b_addr = b_we ? b_waddr : b_raddr;
     always @(posedge clk) begin
         if (b_we)
-            dmem[b_waddr] <= b_wdata;
+            dmem[b_addr] <= b_wdata;
         else
-            b_rdata <= dmem[b_raddr];
+            b_rdata <= dmem[b_addr];
     end
 
     // ------------------------------------------------------------------ master engines

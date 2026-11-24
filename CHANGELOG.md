@@ -11,6 +11,12 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.36 — cmd_seq D-mem blok RAM'e sığıyor
+- `cmd_seq.v`: D-mem'in AXI tarafındaki portu yazmada ve okumada ayrı adres kullanıyordu; Libero /
+  Synplify blok RAM çıkaramıyordu ("does not have addr shared with one of the write addresses").
+  Port artık tek adresli (`b_addr = b_we ? b_waddr : b_raddr`); davranış aynı (port bir çevrimde
+  ya yazar ya okur). Yönlendirilmiş, rastgele ve formal doğrulama geçiyor.
+
 ## early-alpha 0.1.35 — Tam AXI4 sarmalayıcılar (Libero)
 - `hdl/cmd_seq/rtl/cmd_seq_axi4.v`: cmd_seq'in iki portu da tam AXI4 sinyal setiyle. Master tek
   beat gönderir (LEN = 0, SIZE = 4 bayt, INCR, WLAST = 1); slave isteğin ID'sini BID / RID ile geri
