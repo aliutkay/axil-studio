@@ -340,6 +340,7 @@ Paketli bus her zaman 32 bit adres ve veri taşır; daha dar adresli çekirdekle
 - Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python -m axil_studio.core.axilgen --pack axilgpio.v -o out`.
   ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar ve parametreler aynen geçer.
 - `hdl/` içinde `axilgpio_pk.v`, `axiluart_phy_pk.v`, `hexbus_axil_top_pk.v` hazır; `axilgpio.v` çekirdeğin kendisi (ZipCPU, Apache-2.0), `axilgpio_a32.v` onun 32 bit adresli sarmalayıcısı (Libero bus interface gibi port genişliklerinin eşit olmasını isteyen araçlar için).
+- `hdl/v2005/`: hexbus (UART'lı) + interconnect + UART PHY + axilgpio için `localparam`'sız Verilog-2005 dosya seti (HDL Designer, Libero Verilog modu); orijinallerle eşdeğerliği Yosys ile ispatlı, örnek sistem ve `no_localparam.py` çeviricisi içinde.
 - `examples/cmd_seq_led_fade/`: komut sıralayıcının axilgpio'daki iki LED'i PWM ile yumuşak geçişle sürdüğü örnek (program, axilgpio kütüphanesi, proje, RTL simülasyonu).
 
 HDL Designer'da: hexbus `MASTER_AXI_REQ/RSP` ↔ xbar `_pk` `MASTER0_AXI_REQ/RSP`; xbar `SLAVE0_AXI_REQ/RSP` ↔ IP `SLAVE_AXI_REQ/RSP`.

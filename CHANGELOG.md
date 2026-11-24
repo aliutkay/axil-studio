@@ -11,6 +11,16 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.40 — hdl/v2005: localparam'sız dosya seti
+- `hdl/v2005/`: UART'lı hexbus (`hexbus_axil_top`), wbuart32 (`rxuartlite`, `txuartlite`, `rxuart`,
+  `ufifo`), UART PHY (güncel), axilxbar + addrdecode, axilgpio (+ a32 / axi4 / pk) ve skidbuffer;
+  hiçbirinde `localparam` yok, hepsi Verilog-2001 / 2005. `rxuart.v`'de `reg` + `assign` olan
+  `break_condition` `wire` yapıldı. Her modül orijinaliyle Yosys eşdeğerlik kontrolünden geçti.
+- `example/`: hexbus → Studio'nun ürettiği 1×2 interconnect → GPIO + UART PHY örnek sistemi ve
+  testbench'i; `no_localparam.py`: Studio çıktılarını ve başka dosyaları aynı şekilde çevirir.
+- `tests/test_v2005.py`: localparam kalmadığı, düz Verilog derlemesi, sistem simülasyonu.
+  Mevcut dosyalara dokunulmadı.
+
 ## early-alpha 0.1.39 — hexbus, Verilog-2001 / 2005
 - `hdl/hexbus/`: ZipCPU dbgbus `hexbus/rtl` (commit a1043274, LGPL), tüm `localparam`'lar
   `parameter` yapılmış hâlde; HDL Designer'ın "syntax error near localparam" hatası için. Her üst
