@@ -11,6 +11,13 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.43 — Örnek: PCS ile 8 LED şovu
+- `examples/cmd_seq_led_fade/led_show.s`: 8 LED'de 16 kademe parlaklık (bit-plane modülasyonu,
+  `WAITT`), D-mem'de kare tamponu ve dalga tablosu (indeksli adresleme), alt program olarak dört
+  efekt (kuyruklu yıldız, dalga, LFSR parıltı, nefes); PC'den çalışırken hız ve efekt seçimi (D[16],
+  D[17]).
+- `sim/run_show.py`: RTL'de her kare Python modeliyle karşılaştırılıyor (sırayla hepsi, MODE 2 ve 3).
+
 ## early-alpha 0.1.42 — HDL Designer `_pk` blokları parametresiz
 - VHDL üst blok Verilog parametrelerini `integer` generic'e çeviriyor; interconnect `_pk`'sindeki
   32 bitlik adres / maskeler (ör. `32'hFFFF_F000`) taşıyordu. Artık hiçbir `_pk` bloğunda parametre

@@ -53,3 +53,23 @@ def test_led_waveform_with_the_axi4_wrappers():
     """cmd_seq_axi4 -> axilgpio_axi4 (Libero bus definition AXI4): same waveform, single beats,
     the request IDs come back in BID / RID."""
     assert run_sim.run({"PERIOD": 200, "STEP": 50, "REP": 3, "HOLD": 4}, 2 * 32 * 200 + 3000, axi4=True) == []
+
+
+def test_led_show_assembles_with_the_project_names():
+    import seq_core as S
+    with open(os.path.join(EX, "led_show.s"), encoding="utf-8") as fh:
+        src = fh.read()
+    p = Project.load(os.path.join(EX, "led_fade.axproj.json"))
+    entries = [{"name": i.name, "base": i.base,
+                "registers": [r.to_dict() for r in (p.definition_of(i).registers if p.definition_of(i) else [])]}
+               for i, _ in p.walk()]
+    a, _, _ = S.assemble(src, 9, 8, S.symbols(entries))
+    b, _ = run_sim.seqasm.assemble(src)
+    assert [w for _, w, _ in a] == [w for _, w, _ in b] and len(b) < 512
+
+
+@pytest.mark.skipif(not (shutil.which("iverilog") and shutil.which("vvp")), reason="needs Icarus Verilog")
+def test_led_show_frames_on_the_rtl():
+    """Every frame of the show (playlist, and D[MODE] = 2 / 3) equals the Python model; plane lengths exact."""
+    import run_show
+    assert run_show.main() == 0

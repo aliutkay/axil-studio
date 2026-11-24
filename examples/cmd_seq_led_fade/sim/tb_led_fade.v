@@ -176,6 +176,13 @@ module tb_led_fade;
     integer i, cycle = 0, started = 0;
     reg [1:0] last = 2'bxx;
 
+`ifdef LOGW
+    // led_show.s: every write of the sequencer to the GPIO (LOAD), with its cycle
+    always @(posedge clk)
+        if (started && m_wvalid && m_wready)
+            $display("W %0d %h", cycle - started, m_wdata);
+`endif
+
     always @(posedge clk) begin
         cycle <= cycle + 1;
         if (started && gpio[1:0] !== last) begin
