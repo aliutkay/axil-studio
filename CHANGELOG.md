@@ -11,6 +11,12 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.39 — hexbus, Verilog-2001 / 2005
+- `hdl/hexbus/`: ZipCPU dbgbus `hexbus/rtl` (commit a1043274, LGPL), tüm `localparam`'lar
+  `parameter` yapılmış hâlde; HDL Designer'ın "syntax error near localparam" hatası için. Her üst
+  modül (hbaxil, hbbus, hbconsole, console) Yosys eşdeğerlik kontrolüyle orijinaliyle aynı;
+  Icarus `-g2001` / `-g2005` ile derleniyor. Mevcut dosyalara dokunulmadı.
+
 ## early-alpha 0.1.38 — Bus hatası mesajı adresi yazıyor
 - Hexbus bağlantısında AXI bus hatası artık ham komut yerine erişimi ve adresi söylüyor:
   "AXI bus error (SLVERR / DECERR) on read of 0x00000040" (önceden "AXI bus error on 'A41R'";
