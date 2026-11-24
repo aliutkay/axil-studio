@@ -370,16 +370,15 @@ def gen_xbar_pk(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
     L += ["//",
           f"// Requires {mod}.v, hdl/v2005/interconnect/axilxbar.v, addrdecode.v and",
           "// hdl/v2005/common/skidbuffer.v. Verilog-2005, no localparam.",
+          "//",
+          "// No parameters (no generics for a VHDL top, where 32-bit addresses and masks would",
+          "// overflow an integer): the address map above is fixed in this block. To move a slave,",
+          "// change the address map in AXIL Studio and generate again.",
           "////////////////////////////////////////////////////////////////////////////////",
           "",
           "`default_nettype none",
           "",
-          f"module {name} #("]
-    L += _slave_generics(spec, "32")
-    L += [f"    parameter [0:0]   OPT_LOWPOWER = 1'b{opt_lowpower},",
-          f"    parameter integer OPT_LINGER   = {opt_linger},",
-          f"    parameter integer LGMAXBURST   = {lgmaxburst}",
-          ") (",
+          f"module {name} (",
           "    input  wire ACLK,",
           "    input  wire ARESETN,"]
     ports = []
@@ -412,12 +411,12 @@ def gen_xbar_pk(spec: XbarSpec, opt_lowpower=1, opt_linger=4, lgmaxburst=5):
     L += [f"    {mod} #(",
           "        .C_AXI_ADDR_WIDTH (32),",
           "        .C_AXI_DATA_WIDTH (32),"]
-    for j in range(ns):
-        L.append(f"        .SLAVE{j}_ADDR      (SLAVE{j}_ADDR),")
-        L.append(f"        .SLAVE{j}_MASK      (SLAVE{j}_MASK),")
-    L += ["        .OPT_LOWPOWER     (OPT_LOWPOWER),",
-          "        .OPT_LINGER       (OPT_LINGER),",
-          "        .LGMAXBURST       (LGMAXBURST)",
+    for j, s in enumerate(spec.slaves):
+        L.append(f"        .SLAVE{j}_ADDR      ({_h32(s.base)}),")
+        L.append(f"        .SLAVE{j}_MASK      ({_h32(s.mask)}),")
+    L += [f"        .OPT_LOWPOWER     (1'b{opt_lowpower}),",
+          f"        .OPT_LINGER       ({opt_linger}),",
+          f"        .LGMAXBURST       ({lgmaxburst})",
           "    ) u_xbar (",
           "        .ACLK    (ACLK),",
           "        .ARESETN (ARESETN),"]
@@ -438,8 +437,9 @@ def gen_xbar_markdown(spec: XbarSpec):
                  f"{f'0x{s.span:X}' if s.span else ''} |")
     L += ["", f"`{spec.module}.v`: master i connects to `MASTER<i>_AXI_*`, slave j to `SLAVE<j>_AXI_*`."]
     if spec.packed:
-        L.append(f"`{spec.module}_pk.v` (HDL Designer): `MASTER<i>_AXI_REQ/RSP`, `SLAVE<j>_AXI_REQ/RSP`.")
-    L += ["Move a slave by changing `SLAVE<j>_ADDR` / `SLAVE<j>_MASK`; unmapped addresses return DECERR.",
+        L.append(f"`{spec.module}_pk.v` (HDL Designer): `MASTER<i>_AXI_REQ/RSP`, `SLAVE<j>_AXI_REQ/RSP`; no "
+                 "parameters, the address map is fixed in it (generate again after a change).")
+    L += [f"Move a slave by changing `SLAVE<j>_ADDR` / `SLAVE<j>_MASK` of `{spec.module}.v`; unmapped addresses return DECERR.",
           "Keep the project's address map (Address Map Editor) in sync.", ""]
     return "\n".join(L)
 

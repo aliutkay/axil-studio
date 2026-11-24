@@ -1078,12 +1078,12 @@ def generate_all(spec: ModuleSpec, outdir, base=0, xlsx=True):
     return paths
 
 
-def hdl_designer_files(info):
-    """<name>_pk.v (SLAVE/MASTER_AXI_REQ/RSP wrapper around the plain module) and its
-    instantiation template."""
+def hdl_designer_files(info, values=None):
+    """<name>_pk.v (SLAVE/MASTER_AXI_REQ/RSP wrapper around the plain module, no parameters: the
+    module's values are fixed in it, its defaults or `values`) and its instantiation template."""
     from . import axilpack
     name = f"{info['name']}_pk"
-    pk_v = axilpack.gen_pack_wrapper(info, name)
+    pk_v = axilpack.gen_pack_wrapper(info, name, values)
     pk_info = axilpack.parse_module(pk_v, name)
     return {f"{name}.v": pk_v, f"{name}_inst.v": axilpack.gen_inst(pk_info)}
 
@@ -1114,6 +1114,8 @@ def main():
                          "interconnect)")
     ap.add_argument("--pack", metavar="VFILE", help="write <module>_pk.v (packed REQ/RSP AXI ports) for a Verilog module")
     ap.add_argument("--module", help="module name for --pack when the file has several")
+    ap.add_argument("--set", action="append", default=[], metavar="NAME=VALUE",
+                    help="--pack: parameter value fixed in <module>_pk.v (default: the module's default); repeatable")
     ap.add_argument("--unpacked", action="store_true", help="--xbar: same as --xbar-style signals")
     ap.add_argument("--xbar-style", choices=("packed", "signals"), default=None,
                     help="--xbar: signals = <name>.v with separate AXI ports only; "
@@ -1142,7 +1144,13 @@ def main():
         return
     if a.pack:
         from . import axilpack
-        name, text = axilpack.pack_file(a.pack, a.module)
+        values = {}
+        for item in a.set:
+            k, sep, v = item.partition("=")
+            if not sep or not k.strip():
+                ap.error(f"--set {item}: NAME=VALUE expected")
+            values[k.strip()] = v.strip()
+        name, text = axilpack.pack_file(a.pack, a.module, values=values)
         os.makedirs(a.outdir, exist_ok=True)
         out = os.path.join(a.outdir, f"{name}_pk.v")
         with open(out, "w", encoding="utf-8") as fh:

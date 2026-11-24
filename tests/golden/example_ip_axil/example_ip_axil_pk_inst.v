@@ -1,10 +1,5 @@
 // Instantiation template for example_ip_axil_pk
-example_ip_axil_pk #(
-    .C_AXI_ADDR_WIDTH    (32),
-    .C_AXI_DATA_WIDTH    (32),
-    .OPT_SKIDBUFFER      (1'b0),
-    .OPT_LOWPOWER        (0)
-) u_example_ip_axil_pk (
+example_ip_axil_pk u_example_ip_axil_pk (
     .S_AXI_ACLK          (),  // input
     .S_AXI_ARESETN       (),  // input
     .o_ctrl_enable       (),  // output

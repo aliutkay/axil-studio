@@ -3,7 +3,16 @@
 //
 // HDL Designer block: cmd_seq with packed AXI4-Lite ports (one request and one
 // response vector per interface). The plain module is instantiated unchanged inside.
-// All other ports and parameters are passed through unchanged.
+// All other ports are passed through unchanged.
+//
+// No parameters (no generics for a VHDL top, where 32-bit values would overflow an
+// integer). The parameter values of the module are fixed here (regenerate with
+// axilgen --pack FILE --set NAME=VALUE, or the AXIL Studio dialog, to change them):
+//   SELF_ID = 8'h0
+//   IMEM_AW = 9
+//   DMEM_AW = 8
+//   PT_TIMEOUT = 1024
+//   BUS_TIMEOUT = 1024
 //
 //   SLAVE_AXI_REQ / SLAVE_AXI_RSP : slave interface (S_AXI_*), 32-bit
 //   MASTER_AXI_REQ / MASTER_AXI_RSP : master interface (M_AXI_*), 32-bit
@@ -17,13 +26,7 @@
 
 `default_nettype none
 
-module cmd_seq_pk #(
-    parameter [7:0] SELF_ID = 8'h00,
-    parameter IMEM_AW = 9,
-    parameter DMEM_AW = 8,
-    parameter PT_TIMEOUT = 1024,
-    parameter BUS_TIMEOUT = 1024
-) (
+module cmd_seq_pk (
     input  wire S_AXI_ACLK,
     input  wire S_AXI_ARESETN,
     input  wire i_sys_halt,
@@ -160,11 +163,11 @@ module cmd_seq_pk #(
     assign M_AXI_RVALID = m_rvalid;
 
     cmd_seq #(
-        .SELF_ID(SELF_ID),
-        .IMEM_AW(IMEM_AW),
-        .DMEM_AW(DMEM_AW),
-        .PT_TIMEOUT(PT_TIMEOUT),
-        .BUS_TIMEOUT(BUS_TIMEOUT)
+        .SELF_ID(8'h0),
+        .IMEM_AW(9),
+        .DMEM_AW(8),
+        .PT_TIMEOUT(1024),
+        .BUS_TIMEOUT(1024)
     ) u_core (
         .S_AXI_ACLK(S_AXI_ACLK),
         .S_AXI_ARESETN(S_AXI_ARESETN),

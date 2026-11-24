@@ -1,8 +1,16 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Module: hexbus_axil_top_pk
 //
-// hexbus_axil_top with packed AXI4-Lite ports (one request and one response vector).
-// All other ports and parameters are passed through unchanged.
+// HDL Designer block: hexbus_axil_top with packed AXI4-Lite ports (one request and one
+// response vector per interface). The plain module is instantiated unchanged inside.
+// All other ports are passed through unchanged.
+//
+// No parameters (no generics for a VHDL top, where 32-bit values would overflow an
+// integer). The parameter values of the module are fixed here (regenerate with
+// axilgen --pack FILE --set NAME=VALUE, or the AXIL Studio dialog, to change them):
+//   CLK_FREQ_HZ = 50000000
+//   BAUD_RATE = 115200
+//   C_AXI_ADDR_WIDTH = 32
 //
 //   MASTER_AXI_REQ / MASTER_AXI_RSP : master interface (M_AXI_*), 32-bit
 //
@@ -15,11 +23,7 @@
 
 `default_nettype none
 
-module hexbus_axil_top_pk #(
-    parameter integer CLK_FREQ_HZ = 50_000_000,
-    parameter integer BAUD_RATE = 115_200,
-    parameter integer C_AXI_ADDR_WIDTH = 32
-) (
+module hexbus_axil_top_pk (
     input  wire S_AXI_ACLK,
     input  wire S_AXI_ARESETN,
     input  wire i_uart_rx,
@@ -58,7 +62,7 @@ module hexbus_axil_top_pk #(
     wire m_rvalid;
     assign MASTER_AXI_REQ = {m_awaddr, m_awprot, m_awvalid, m_wdata, m_wstrb, m_wvalid, m_bready, m_araddr, m_arprot, m_arvalid, m_rready};
     assign {m_awready, m_wready, m_bresp, m_bvalid, m_arready, m_rdata, m_rresp, m_rvalid} = MASTER_AXI_RSP;
-    wire [C_AXI_ADDR_WIDTH-1:0] M_AXI_AWADDR;
+    wire [31:0] M_AXI_AWADDR;
     assign m_awaddr = M_AXI_AWADDR;
     wire [2:0] M_AXI_AWPROT;
     assign m_awprot = M_AXI_AWPROT;
@@ -72,7 +76,7 @@ module hexbus_axil_top_pk #(
     assign m_wvalid = M_AXI_WVALID;
     wire M_AXI_BREADY;
     assign m_bready = M_AXI_BREADY;
-    wire [C_AXI_ADDR_WIDTH-1:0] M_AXI_ARADDR;
+    wire [31:0] M_AXI_ARADDR;
     assign m_araddr = M_AXI_ARADDR;
     wire [2:0] M_AXI_ARPROT;
     assign m_arprot = M_AXI_ARPROT;
@@ -98,9 +102,9 @@ module hexbus_axil_top_pk #(
     assign M_AXI_RVALID = m_rvalid;
 
     hexbus_axil_top #(
-        .CLK_FREQ_HZ(CLK_FREQ_HZ),
-        .BAUD_RATE(BAUD_RATE),
-        .C_AXI_ADDR_WIDTH(C_AXI_ADDR_WIDTH)
+        .CLK_FREQ_HZ(50000000),
+        .BAUD_RATE(115200),
+        .C_AXI_ADDR_WIDTH(32)
     ) u_core (
         .S_AXI_ACLK(S_AXI_ACLK),
         .S_AXI_ARESETN(S_AXI_ARESETN),

@@ -12,8 +12,13 @@ ports are truncated / zero-extended inside the wrapper.
 
 gen_pack_wrapper() reads a Verilog-2001/2005 ANSI module header and writes
 <module>_pk, which exposes SLAVE_AXI_REQ/RSP (for the module's S_AXI_*
-slave port) and/or MASTER_AXI_REQ/RSP (for its M_AXI_* master port) and passes every other port and
-parameter through unchanged.
+slave port) and/or MASTER_AXI_REQ/RSP (for its M_AXI_* master port) and passes every other port
+through unchanged (same name, direction and width).
+
+<module>_pk has no parameters (no generics in HDL Designer): a VHDL top turns Verilog parameters into
+`integer` generics, which overflow for 32-bit values such as address masks. The parameter values are
+written as numbers in the port widths and in the instantiation of the module: its defaults, or the
+values given to gen_pack_wrapper(values=...) / `axilgen --pack FILE --set NAME=VALUE`.
 """
 
 import re
@@ -151,9 +156,169 @@ def axi_groups(info):
 
 
 # =============================================================================
+# Constant expressions (parameter defaults, port ranges)
+# =============================================================================
+_TOK = re.compile(r"\s*(?:(?P<num>(?:\d[\d_]*)?\s*'[sS]?[bBoOdDhH]\s*[0-9a-fA-F_]+|\d[\d_]*)"
+                  r"|(?P<id>\$?[A-Za-z_]\w*)|(?P<op>\*\*|<<<|>>>|<<|>>|<=|>=|==|!=|&&|\|\||[-+*/%<>!~&|^?:(),]))")
+_BIN = {"||": 1, "&&": 2, "|": 3, "^": 4, "&": 5, "==": 6, "!=": 6, "<": 7, "<=": 7, ">": 7, ">=": 7,
+        "<<": 8, ">>": 8, "<<<": 8, ">>>": 8, "+": 9, "-": 9, "*": 10, "/": 10, "%": 10, "**": 11}
+
+
+def _num(text):
+    t = text.replace("_", "").replace(" ", "")
+    if "'" not in t:
+        return int(t)
+    base = t.split("'", 1)[1].lstrip("sS")
+    radix = {"b": 2, "o": 8, "d": 10, "h": 16}[base[0].lower()]
+    return int(base[1:], radix)
+
+
+def evaluate(expr, env):
+    """Value of a Verilog constant expression; `env` gives parameter values. ParseError when it
+    uses something else (an unknown name, a function other than $clog2)."""
+    toks = []
+    pos, text = 0, expr.strip()
+    while pos < len(text):
+        m = _TOK.match(text, pos)
+        if not m or m.end() == pos:
+            raise ParseError(tr("Cannot evaluate: {0}").format(expr))
+        toks.append((m.lastgroup, m.group(m.lastgroup)))
+        pos = m.end()
+    toks.append(("end", ""))
+    k = [0]
+
+    def peek():
+        return toks[k[0]]
+
+    def take(want=None):
+        t = toks[k[0]]
+        if want is not None and t[1] != want:
+            raise ParseError(tr("Cannot evaluate: {0}").format(expr))
+        k[0] += 1
+        return t
+
+    def unary():
+        kind, v = take()
+        if kind == "num":
+            return _num(v)
+        if kind == "id":
+            if v == "$clog2":
+                take("(")
+                x = cond()
+                take(")")
+                return max(0, (x - 1).bit_length())
+            if v not in env:
+                raise ParseError(tr("Cannot evaluate {0}: unknown name {1}").format(expr, v))
+            return env[v]
+        if v == "(":
+            x = cond()
+            take(")")
+            return x
+        if v in ("-", "+", "!", "~"):
+            x = unary()
+            return {"-": -x, "+": x, "!": int(not x), "~": ~x}[v]
+        raise ParseError(tr("Cannot evaluate: {0}").format(expr))
+
+    def binary(level):
+        x = unary()
+        while True:
+            op = peek()[1]
+            prec = _BIN.get(op) if peek()[0] == "op" else None
+            if prec is None or prec < level:
+                return x
+            take()
+            y = binary(prec + (0 if op == "**" else 1))
+            x = {"||": lambda: int(bool(x) or bool(y)), "&&": lambda: int(bool(x) and bool(y)),
+                 "|": lambda: x | y, "^": lambda: x ^ y, "&": lambda: x & y, "==": lambda: int(x == y),
+                 "!=": lambda: int(x != y), "<": lambda: int(x < y), "<=": lambda: int(x <= y),
+                 ">": lambda: int(x > y), ">=": lambda: int(x >= y), "<<": lambda: x << y,
+                 ">>": lambda: x >> y, "<<<": lambda: x << y, ">>>": lambda: x >> y, "+": lambda: x + y,
+                 "-": lambda: x - y, "*": lambda: x * y, "/": lambda: int(x / y) if y else 0,
+                 "%": lambda: x % y if y else 0, "**": lambda: x ** y}[op]()
+
+    def cond():
+        c = binary(1)
+        if peek()[1] == "?":
+            take()
+            a = cond()
+            take(":")
+            b = cond()
+            return a if c else b
+        return c
+
+    v = cond()
+    if peek()[0] != "end":
+        raise ParseError(tr("Cannot evaluate: {0}").format(expr))
+    return v
+
+
+def _range(rng, env):
+    """'[NOUT-1:0]' -> '[29:0]' (ParseError when it cannot be evaluated)."""
+    if not rng:
+        return ""
+    inner = rng.strip()[1:-1]
+    depth, q, cut = 0, 0, None
+    for i, c in enumerate(inner):           # the ':' of the range, not one of a ?: inside it
+        if c in "([{":
+            depth += 1
+        elif c in ")]}":
+            depth -= 1
+        elif depth == 0 and c == "?":
+            q += 1
+        elif depth == 0 and c == ":":
+            if q:
+                q -= 1
+            else:
+                cut = i
+                break
+    if cut is None:
+        raise ParseError(tr("Cannot read range {0}").format(rng))
+    return f"[{evaluate(inner[:cut], env)}:{evaluate(inner[cut + 1:], env)}]"
+
+
+def param_values(info, values=None):
+    """[(kind, name, width_or_None, value)] of the module's parameters in order, with `values`
+    (name -> text or int) replacing the defaults of real parameters."""
+    values = values or {}
+    env, out = {}, []
+    for kind, decl, pname in info["params"]:
+        m = re.match(r"(?:parameter|localparam)\s+(?:integer\s+|signed\s+|unsigned\s+)*(\[[^\]]*\])?\s*"
+                     + re.escape(pname) + r"\s*=\s*(.+)$", decl)
+        if not m:
+            raise ParseError(tr("Cannot read parameter: {0}").format(decl[:60]))
+        rng, text = m.group(1), m.group(2)
+        if kind == "parameter" and pname in values:
+            text = values[pname]
+        val = text if isinstance(text, int) else evaluate(str(text), env)
+        width = None
+        if rng:
+            r = _range(rng, env)[1:-1].split(":")
+            width = abs(int(r[0]) - int(r[1])) + 1
+            val &= (1 << width) - 1
+        env[pname] = val
+        out.append((kind, pname, width, val))
+    unknown = set(values) - {p for k, p, _, _ in out if k == "parameter"}
+    if unknown:
+        raise ParseError(tr("Unknown parameter(s): {0}").format(", ".join(sorted(unknown))))
+    return out
+
+
+def _literal(width, val):
+    """A Verilog literal for a parameter value: sized hex for a ranged parameter or a value that
+    does not fit a 32-bit signed integer, decimal otherwise."""
+    if width:
+        return f"{width}'h{val:X}"
+    if val < 0 or val < 1 << 31:
+        return str(val)
+    return f"{max(32, val.bit_length())}'h{val:X}"
+
+
+# =============================================================================
 # Wrapper generation
 # =============================================================================
-def gen_pack_wrapper(info, wrapper=None):
+def gen_pack_wrapper(info, wrapper=None, values=None):
+    """<module>_pk: packed AXI ports, every other port unchanged, no parameters (the values are
+    numbers in the port widths and the instantiation: the defaults or `values`)."""
     mod = info["name"]
     wrapper = wrapper or f"{mod}_pk"
     groups = axi_groups(info)
@@ -167,8 +332,19 @@ def gen_pack_wrapper(info, wrapper=None):
          "//",
          f"// HDL Designer block: {mod} with packed AXI4-Lite ports (one request and one",
          "// response vector per interface). The plain module is instantiated unchanged inside.",
-         "// All other ports and parameters are passed through unchanged.",
-         "//"]
+         "// All other ports are passed through unchanged.",
+         "//",
+         "// No parameters (no generics for a VHDL top, where 32-bit values would overflow an",
+         "// integer). The parameter values of the module are fixed here (regenerate with",
+         "// axilgen --pack FILE --set NAME=VALUE, or the AXIL Studio dialog, to change them):"]
+    pv = param_values(info, values)
+    env = {p: v for _, p, _, v in pv}
+    for kind, p, w, v in pv:
+        if kind == "parameter":
+            L.append(f"//   {p} = {_literal(w, v)}" + (f"  ({v})" if w and v > 9 else ""))
+    if not any(k == "parameter" for k, _, _, _ in pv):
+        L.append("//   (the module has none)")
+    L.append("//")
     for g in groups:
         role = "slave" if g == "S" else "master"
         L.append(f"//   {PACKED_NAME[g]}_REQ / {PACKED_NAME[g]}_RSP : {role} interface ({g}_AXI_*), 32-bit")
@@ -176,24 +352,13 @@ def gen_pack_wrapper(info, wrapper=None):
         "////////////////////////////////////////////////////////////////////////////////",
         "", "`default_nettype none", ""]
 
-    head = f"module {wrapper}"
-    if info["params"]:
-        L.append(head + " #(")
-        plines = []
-        for kind, decl, pname in info["params"]:
-            d = re.sub(r"^localparam\b", "parameter", decl)
-            plines.append(f"    {d}" + ("  // fixed in the core, do not override" if kind == "localparam" else ""))
-        for k, pl in enumerate(plines):
-            code, _, cmt = pl.partition("  //")
-            L.append(code + ("," if k < len(plines) - 1 else "") + (("  //" + cmt) if cmt else ""))
-        L.append(") (")
-    else:
-        L.append(head + " (")
+    L.append(f"module {wrapper} (")
     out_ports = []
     for d, rng, pname in info["ports"]:
         if pname in axi:
             continue
-        out_ports.append(f"    {d:<6} wire {rng + ' ' if rng else ''}{pname}")
+        r = _range(rng, env)
+        out_ports.append(f"    {d:<6} wire {r + ' ' if r else ''}{pname}")
     for g in groups:
         n = PACKED_NAME[g]
         if g == "S":
@@ -226,7 +391,7 @@ def gen_pack_wrapper(info, wrapper=None):
         for n, _ in REQ_FIELDS + RSP_FIELDS:
             pname = f"{g}_AXI_{n}"
             if pname in ports:
-                rng = ports[pname][1]
+                rng = _range(ports[pname][1], env)
                 L.append(f"    wire {rng + ' ' if rng else ''}{pname};")
                 if n in core_in:
                     L.append(f"    assign {pname} = {g.lower()}_{n.lower()};")
@@ -238,10 +403,10 @@ def gen_pack_wrapper(info, wrapper=None):
                 L.append(f"    assign {g.lower()}_{n.lower()} = {default};")
         L.append("")
 
-    inst_params = [p for k, _, p in info["params"] if k == "parameter"]
+    inst_params = [(p, _literal(w, v)) for k, p, w, v in pv if k == "parameter"]
     if inst_params:
         L.append(f"    {mod} #(")
-        L.append(",\n".join(f"        .{p}({p})" for p in inst_params))
+        L.append(",\n".join(f"        .{p}({v})" for p, v in inst_params))
         L.append(f"    ) u_core (")
     else:
         L.append(f"    {mod} u_core (")
@@ -250,11 +415,11 @@ def gen_pack_wrapper(info, wrapper=None):
     return "\n".join(L)
 
 
-def pack_file(path, module=None, wrapper=None):
+def pack_file(path, module=None, wrapper=None, values=None):
     with open(path, encoding="utf-8", errors="replace") as fh:
         text = fh.read()
     info = parse_module(text, module)
-    return info["name"], gen_pack_wrapper(info, wrapper)
+    return info["name"], gen_pack_wrapper(info, wrapper, values)
 
 
 # =============================================================================

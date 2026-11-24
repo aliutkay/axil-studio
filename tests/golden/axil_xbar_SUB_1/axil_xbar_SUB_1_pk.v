@@ -20,19 +20,15 @@
 //
 // Requires axil_xbar_SUB_1.v, hdl/v2005/interconnect/axilxbar.v, addrdecode.v and
 // hdl/v2005/common/skidbuffer.v. Verilog-2005, no localparam.
+//
+// No parameters (no generics for a VHDL top, where 32-bit addresses and masks would
+// overflow an integer): the address map above is fixed in this block. To move a slave,
+// change the address map in AXIL Studio and generate again.
 ////////////////////////////////////////////////////////////////////////////////
 
 `default_nettype none
 
-module axil_xbar_SUB_1_pk #(
-    parameter [32-1:0] SLAVE0_ADDR = 32'h0000_A000,
-    parameter [32-1:0] SLAVE0_MASK = 32'hFFFF_F000,
-    parameter [32-1:0] SLAVE1_ADDR = 32'h0000_B000,
-    parameter [32-1:0] SLAVE1_MASK = 32'hFFFF_F000,
-    parameter [0:0]   OPT_LOWPOWER = 1'b1,
-    parameter integer OPT_LINGER   = 4,
-    parameter integer LGMAXBURST   = 5
-) (
+module axil_xbar_SUB_1_pk (
     input  wire ACLK,
     input  wire ARESETN,
     // Master port 0
@@ -118,13 +114,13 @@ module axil_xbar_SUB_1_pk #(
     axil_xbar_SUB_1 #(
         .C_AXI_ADDR_WIDTH (32),
         .C_AXI_DATA_WIDTH (32),
-        .SLAVE0_ADDR      (SLAVE0_ADDR),
-        .SLAVE0_MASK      (SLAVE0_MASK),
-        .SLAVE1_ADDR      (SLAVE1_ADDR),
-        .SLAVE1_MASK      (SLAVE1_MASK),
-        .OPT_LOWPOWER     (OPT_LOWPOWER),
-        .OPT_LINGER       (OPT_LINGER),
-        .LGMAXBURST       (LGMAXBURST)
+        .SLAVE0_ADDR      (32'h0000_A000),
+        .SLAVE0_MASK      (32'hFFFF_F000),
+        .SLAVE1_ADDR      (32'h0000_B000),
+        .SLAVE1_MASK      (32'hFFFF_F000),
+        .OPT_LOWPOWER     (1'b1),
+        .OPT_LINGER       (4),
+        .LGMAXBURST       (5)
     ) u_xbar (
         .ACLK    (ACLK),
         .ARESETN (ARESETN),

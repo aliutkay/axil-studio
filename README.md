@@ -336,11 +336,17 @@ Blok diyagramda bir AXI4-Lite arayüzü 19 tel yerine 2 telle bağlanır:
 
 Paketli bus her zaman 32 bit adres ve veri taşır; daha dar adresli çekirdekler wrapper içinde kesilir.
 
-- Xbar'ın `_pk` wrapper'ında portlar `MASTER<i>_AXI_REQ/RSP` ve `SLAVE<j>_AXI_REQ/RSP` olur.
+- Xbar'ın `_pk` wrapper'ında portlar `MASTER<i>_AXI_REQ/RSP` ve `SLAVE<j>_AXI_REQ/RSP` olur; parametresi yoktur.
 - Paketli IP'lerin üst modülü `SLAVE_AXI_REQ/RSP` portludur.
 - Hazır modüller için: Slave Interface Wrapper'da **Hazır IP için HDL Designer wrapper'ı…** ya da `python -m axil_studio.core.axilgen --pack axilgpio.v -o out`.
-  ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar ve parametreler aynen geçer.
-- Hazır paketli sarmalayıcılar `hdl/v2005/` içinde: `gpio/axilgpio_pk.v`, `uart_phy/axiluart_phy_pk.v`, `hexbus/hexbus_axil_top_pk.v`; `gpio/axilgpio.v` çekirdeğin kendisi (ZipCPU, Apache-2.0), `gpio/axilgpio_a32.v` onun 32 bit adresli sarmalayıcısı (Libero bus interface gibi port genişliklerinin eşit olmasını isteyen araçlar için).
+  ANSI başlıklı her modülde çalışır; `S_AXI_*` grubu `SLAVE_AXI_REQ/RSP`, `M_AXI_*` grubu `MASTER_AXI_REQ/RSP` olur, diğer portlar aynen geçer.
+- **`_pk` bloklarında parametre (generic) yoktur.** VHDL üst blok Verilog parametrelerini `integer` generic'e çevirir;
+  32 bitlik adres ve maskeler (ör. `32'hFFFF_F000`) taşar. Bu yüzden değerler bloğun içine sayı olarak yazılır: port
+  genişliklerinde (`[NOUT-1:0]` → `[29:0]`) ve içerideki modülün örneklenmesinde. Hazır IP için varsayılanlar kullanılır;
+  başka değer için pencere üretmeden önce parametreleri sorar, komut satırında `--set AD=DEĞER` (tekrarlanabilir):
+  `python -m axil_studio.core.axilgen --pack axilgpio.v --set NOUT=8 --set NIN=2 -o out`. Interconnect `_pk`'sinde adres
+  haritası Studio'daki haritadan sabit yazılır; adres değişince yeniden üret. Dosya ve modül adları değişmedi.
+- Hazır paketli sarmalayıcılar (varsayılan değerlerle, parametresiz) `hdl/v2005/` içinde: `gpio/axilgpio_pk.v`, `uart_phy/axiluart_phy_pk.v`, `hexbus/hexbus_axil_top_pk.v` (`CLK_FREQ_HZ` = 50 MHz, `BAUD_RATE` = 115200; farklı saat için `--set` ile yeniden üret), ayrıca `hdl/cmd_seq_pk.v` (`SELF_ID` = 0); `gpio/axilgpio.v` çekirdeğin kendisi (ZipCPU, Apache-2.0), `gpio/axilgpio_a32.v` onun 32 bit adresli sarmalayıcısı (Libero bus interface gibi port genişliklerinin eşit olmasını isteyen araçlar için).
 - `hdl/v2005/`: hexbus (UART'lı) + interconnect + UART PHY + axilgpio için `localparam`'sız Verilog-2005 dosya seti (HDL Designer, Libero Verilog modu); orijinallerle eşdeğerliği Yosys ile ispatlı, örnek sistem ve `no_localparam.py` çeviricisi içinde.
 - `examples/cmd_seq_led_fade/`: komut sıralayıcının axilgpio'daki iki LED'i PWM ile yumuşak geçişle sürdüğü örnek (program, axilgpio kütüphanesi, proje, RTL simülasyonu).
 

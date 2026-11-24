@@ -1,8 +1,22 @@
 ////////////////////////////////////////////////////////////////////////////////
 // Module: axiluart_phy_pk
 //
-// axiluart_phy with packed AXI4-Lite ports (one request and one response vector).
-// All other ports and parameters are passed through unchanged.
+// HDL Designer block: axiluart_phy with packed AXI4-Lite ports (one request and one
+// response vector per interface). The plain module is instantiated unchanged inside.
+// All other ports are passed through unchanged.
+//
+// No parameters (no generics for a VHDL top, where 32-bit values would overflow an
+// integer). The parameter values of the module are fixed here (regenerate with
+// axilgen --pack FILE --set NAME=VALUE, or the AXIL Studio dialog, to change them):
+//   INITIAL_SETUP = 31'h1B2  (434)
+//   LGFLEN = 4'h4
+//   HAS_TX = 1'h1
+//   HAS_RX = 1'h1
+//   HAS_DE = 1'h1
+//   HAS_RE = 1'h1
+//   HAS_FLOW = 1'h0
+//   DEF_CTRL = 32'hC2  (194)
+//   DEF_TIMING = 32'hFA0032  (16384050)
 //
 //   SLAVE_AXI_REQ / SLAVE_AXI_RSP : slave interface (S_AXI_*), 32-bit
 //
@@ -15,17 +29,7 @@
 
 `default_nettype none
 
-module axiluart_phy_pk #(
-    parameter [30:0] INITIAL_SETUP = 31'd434,
-    parameter [3:0] LGFLEN = 4'd4,
-    parameter [0:0] HAS_TX = 1'b1,
-    parameter [0:0] HAS_RX = 1'b1,
-    parameter [0:0] HAS_DE = 1'b1,
-    parameter [0:0] HAS_RE = 1'b1,
-    parameter [0:0] HAS_FLOW = 1'b0,
-    parameter [31:0] DEF_CTRL = 32'h0000_00C2,
-    parameter [31:0] DEF_TIMING = 32'h00FA_0032
-) (
+module axiluart_phy_pk (
     input  wire S_AXI_ACLK,
     input  wire S_AXI_ARESETN,
     output wire o_txd,
@@ -104,15 +108,15 @@ module axiluart_phy_pk #(
     assign s_rvalid = S_AXI_RVALID;
 
     axiluart_phy #(
-        .INITIAL_SETUP(INITIAL_SETUP),
-        .LGFLEN(LGFLEN),
-        .HAS_TX(HAS_TX),
-        .HAS_RX(HAS_RX),
-        .HAS_DE(HAS_DE),
-        .HAS_RE(HAS_RE),
-        .HAS_FLOW(HAS_FLOW),
-        .DEF_CTRL(DEF_CTRL),
-        .DEF_TIMING(DEF_TIMING)
+        .INITIAL_SETUP(31'h1B2),
+        .LGFLEN(4'h4),
+        .HAS_TX(1'h1),
+        .HAS_RX(1'h1),
+        .HAS_DE(1'h1),
+        .HAS_RE(1'h1),
+        .HAS_FLOW(1'h0),
+        .DEF_CTRL(32'hC2),
+        .DEF_TIMING(32'hFA0032)
     ) u_core (
         .S_AXI_ACLK(S_AXI_ACLK),
         .S_AXI_ARESETN(S_AXI_ARESETN),

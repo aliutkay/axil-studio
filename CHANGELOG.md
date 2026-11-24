@@ -11,6 +11,20 @@ Geliştirme aşamaları: **early-alpha → alpha → beta → release**. AXIL St
 - Her sürüm için bu dosyaya bir bölüm eklenir ve `early-alpha-<hub sürümü>` etiketi atılır.
 - early-alpha boyunca eski dosya biçimleriyle geriye dönük uyumluluk yoktur; alpha'dan itibaren sağlanır.
 
+## early-alpha 0.1.42 — HDL Designer `_pk` blokları parametresiz
+- VHDL üst blok Verilog parametrelerini `integer` generic'e çeviriyor; interconnect `_pk`'sindeki
+  32 bitlik adres / maskeler (ör. `32'hFFFF_F000`) taşıyordu. Artık hiçbir `_pk` bloğunda parametre
+  yok; dosya ve modül adları aynı.
+- Interconnect `_pk`: adres haritası ve OPT değerleri içerideki `<ad>` örneğine sayı olarak yazılır
+  (`<ad>.v` Verilog kullanımı için generic'li kalır).
+- IP `_pk` (Studio'nun ürettiği ve "Hazır IP için HDL Designer wrapper'ı"): parametre değerleri port
+  genişliklerine (`[NOUT-1:0]` → `[29:0]`) ve çekirdeğin örneklenmesine sayı olarak yazılır; varsayılanlar
+  ya da pencerede / `axilgen --pack ... --set AD=DEĞER` ile verilenler. `axilpack.evaluate`: Verilog
+  sabit ifadeleri (`?:`, `$clog2`, boyutlu literaller).
+- Hazır `_pk`'ler yeniden üretildi: `hdl/v2005/gpio/axilgpio_pk.v`, `uart_phy/axiluart_phy_pk.v`,
+  `hexbus/hexbus_axil_top_pk.v`, `hdl/cmd_seq_pk.v`; eski hallerine (varsayılanlarla) Yosys
+  eşdeğerlik kontrolüyle eşit. Golden dosyalar güncellendi, testler eklendi.
+
 ## early-alpha 0.1.41 — Interconnect localparam'sız, RTL tek yerde (hdl/v2005)
 - Interconnect Configurator: üretilen sarmalayıcıda `localparam` yok (`AW`, `DW`, `SW` gövde
   parametresi; parametre listesi olan modülde yerel). Başlık ve "Generation complete" mesajı

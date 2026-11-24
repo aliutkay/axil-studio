@@ -1101,5 +1101,12 @@
  "{0}: {1} must be {2}..{3}": "{0}: {1} {2}..{3} aralığında olmalı",
  "AXI bus error (SLVERR / DECERR) on {0}": "AXI bus hatası (SLVERR / DECERR): {0}",
  "read of 0x{0:08X}": "0x{0:08X} okuması",
- "write of 0x{0:08X}": "0x{0:08X} yazması"
+ "write of 0x{0:08X}": "0x{0:08X} yazması",
+ "Cannot evaluate: {0}": "Hesaplanamıyor: {0}",
+ "Cannot evaluate {0}: unknown name {1}": "{0} hesaplanamıyor: bilinmeyen ad {1}",
+ "Cannot read range {0}": "Aralık okunamıyor: {0}",
+ "Unknown parameter(s): {0}": "Bilinmeyen parametre(ler): {0}",
+ "{0}_pk parameter values": "{0}_pk parametre değerleri",
+ "The HDL Designer block has no generics (a VHDL top would turn 32-bit values into overflowing integers). These values are fixed in it; change them here if needed.": "HDL Designer bloğunda generic yok (VHDL üst blok 32 bitlik değerleri taşan integer'lara çevirir). Bu değerler bloğun içine sabit yazılır; gerekirse burada değiştirin.",
+ "Parameter values": "Parametre değerleri"
 }

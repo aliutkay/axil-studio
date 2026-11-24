@@ -14,7 +14,8 @@ import subprocess
 
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QKeySequence
-from PySide6.QtWidgets import (QCheckBox, QComboBox, QFileDialog, QHBoxLayout, QListWidget, QListWidgetItem,
+from PySide6.QtWidgets import (QCheckBox, QComboBox, QDialog, QDialogButtonBox, QFileDialog, QFormLayout,
+                               QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem,
                                QMessageBox, QPlainTextEdit, QSplitter, QVBoxLayout, QWidget)
 
 from axil_studio.core import axilgen as G
@@ -452,8 +453,11 @@ class WrapperPage(ToolPage):
             return
         out = []
         for info in infos:
+            values = self.ask_pack_values(info)
+            if values is None:
+                return
             try:
-                for name, text in G.hdl_designer_files(info).items():
+                for name, text in G.hdl_designer_files(info, values).items():
                     with open(os.path.join(d, name), "w", encoding="utf-8", newline="\n") as fh:
                         fh.write(text)
             except (OSError, axilpack.ParseError) as exc:
@@ -462,6 +466,41 @@ class WrapperPage(ToolPage):
             out.append(f"{info['name']}_pk.v (+ _pk_inst.v)  →  {groups}")
         QMessageBox.information(self, tr("HDL Designer wrapper generated"),
                                 "\n".join(out) + tr("\n\n{0}\n\nUse the _pk block in HDL Designer. The original module file must be in the project too.").format(d))
+
+    def ask_pack_values(self, info):
+        """Parameter values fixed in <module>_pk.v (it has no generics): {name: text} of the changed
+        ones, {} for the defaults, None when cancelled."""
+        params = [(p, d.split("=", 1)[1].strip()) for k, d, p in info["params"] if k == "parameter"]
+        if not params:
+            return {}
+        dlg = QDialog(self)
+        dlg.setWindowTitle(tr("{0}_pk parameter values").format(info["name"]))
+        lay = QVBoxLayout(dlg)
+        note = QLabel(tr("The HDL Designer block has no generics (a VHDL top would turn 32-bit values into "
+                         "overflowing integers). These values are fixed in it; change them here if needed."))
+        note.setWordWrap(True)
+        lay.addWidget(note)
+        form = QFormLayout()
+        edits = {}
+        for p, default in params:
+            e = QLineEdit(default)
+            e.setPlaceholderText(default)
+            edits[p] = (e, default)
+            form.addRow(p, e)
+        lay.addLayout(form)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        lay.addWidget(bb)
+        while True:
+            if dlg.exec() != QDialog.DialogCode.Accepted:
+                return None
+            values = {p: e.text().strip() for p, (e, d) in edits.items() if e.text().strip() and e.text().strip() != d}
+            try:
+                axilpack.param_values(info, values)
+                return values
+            except axilpack.ParseError as exc:
+                QMessageBox.warning(self, tr("Parameter values"), str(exc))
 
     def shutdown(self):
         self._jobs.shutdown()

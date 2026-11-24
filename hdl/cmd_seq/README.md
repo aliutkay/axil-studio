@@ -22,7 +22,10 @@ Configurator writes `<subsystem>_cmd_seq_inst.v` with the parameters, the Debug 
 registers under the subsystem's name and opens the **Command sequencer** interface
 (`interfaces/cmd_seq`: editor, assembler with the project's address names, load with IMEM_CNT /
 IMEM_SUM check, run / step / stop / run to line, registers, D-mem). The register map is also in
-`examples/cmd_seq/cmd_seq.axlib.json`; `hdl/cmd_seq_pk.v` is the HDL Designer wrapper.
+`examples/cmd_seq/cmd_seq.axlib.json`; `hdl/cmd_seq_pk.v` is the HDL Designer wrapper. It has no
+parameters (a VHDL top would turn them into integer generics): it uses the defaults (`SELF_ID` = 0,
+IMEM_AW 9, DMEM_AW 8, timeouts 1024). For another subsystem base or size generate it again, e.g.
+`python -m axil_studio.core.axilgen --pack hdl/cmd_seq/rtl/cmd_seq.v --set SELF_ID=8'h10 -o out`.
 
 ## Files
 | Path | Content |

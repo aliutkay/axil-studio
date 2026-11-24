@@ -11,6 +11,18 @@ yok, klasörün tamamı birlikte derlenir.
 kullanıyor. `hdl/uart_phy/` altında yalnızca testbench'ler, ZipCPU yamaları ve belge kaldı. Studio'nun
 ürettiği interconnect sarmalayıcıları da artık `localparam` içermiyor.
 
+**`_pk` blokları (HDL Designer) parametresiz.** VHDL üst blok Verilog parametrelerini `integer`
+generic'e çevirdiği için 32 bitlik değerler taşıyordu; artık `_pk` bloklarında generic yok, değerler
+içeride sayı olarak sabit. Hazır `_pk`'ler varsayılan değerlerle: `hexbus_axil_top_pk` 50 MHz /
+115200 baud, `axilgpio_pk` NOUT = 30 / NIN = 5, `axiluart_phy_pk` INITIAL_SETUP = 434. Başka değer
+için yeniden üret:
+
+```
+python -m axil_studio.core.axilgen --pack hdl/v2005/hexbus/hexbus_axil_top.v --set CLK_FREQ_HZ=100_000_000 -o out
+```
+
+(ya da Slave Interface Wrapper → *Hazır IP için HDL Designer wrapper'ı…*: parametreleri sorar).
+
 Orijinallerden tek fark: `localparam` → `parameter` (değerler aynı). Mantığın değişmediği her
 modül için Yosys eşdeğerlik kontrolüyle ispatlandı (aşağıda).
 
