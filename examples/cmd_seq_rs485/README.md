@@ -95,3 +95,7 @@ python3 examples/cmd_seq_rs485/sim/run_rs485.py --real-baud  # 434 (115200 @ 50 
 
 Not: ZipCPU'nun alıcısı resetten sonra hattı ~16 bit süresi boşta görene kadar bayt almaz.
 Kart açılır açılmaz gelen ilk bayt kaybolabilir; terminalden yazarken fark edilmez.
+
+## Aynı donanımla başka program
+`examples/cmd_seq_loopback`: UART'lar dışarıdan loopback'e bağlanır. İki yön de test edilir; geçen
+turda LED 0, kalan turda LED 1 yanar. FPGA aynı kalır, yalnızca üç programı yüklemek yeterli.
