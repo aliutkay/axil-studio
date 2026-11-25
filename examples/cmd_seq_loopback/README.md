@@ -124,5 +124,5 @@ bulursun. Ayrıntısı `0x0004_044C..045C`'te.
 
 ```
 python3 examples/cmd_seq_loopback/sim/run_loopback.py              # UART bit başına 16 çevrim, ~25 s
-python3 examples/cmd_seq_loopback/sim/run_loopback.py --real-baud  # 434 (115200 @ 50 MHz)
+python3 examples/cmd_seq_loopback/sim/run_loopback.py --real-baud  # 434 (115200 @ 50 MHz), ~7 dk
 ```
