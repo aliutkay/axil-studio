@@ -7,6 +7,8 @@ crossed cable modelled in the testbench).
 
 The hardware is that of examples/cmd_seq_rs485 (same project, same generated blocks); only the
 programs are this folder's. Checks:
+  - SEQ_UART's D-mem holds what another program left (no mark): it is cleared at the start;
+    SEQ_MAIN and SEQ_GPIO are preset (mark first) and keep their settings;
   - lamp test at the start (both LEDs on);
   - cable fine: rounds pass, OK LED (o_gpio[0]) on, FAIL LED (o_gpio[1]) off, every byte good;
   - UART1 -> UART2 wire cut: RESULT "bytes missing", FAIL LED, first failure on path A, nothing came;
@@ -112,6 +114,9 @@ def check(out):
     for a in (0x0002000C, 0x0004000C):
         if not r0.get(a, 0) & 1:
             errors.append(f"sequencer at 0x{a - 0xC:08X} not started by SEQ_MAIN")
+    if (r0.get(0x40410), r0.get(0x4041C), r0.get(0x407FC)) != (0, 0, 0x4C0B0003):
+        errors.append("SEQ_UART did not clear the D-mem left by another program "
+                      f"(PATHS {r0.get(0x40410)}, PHYC {r0.get(0x4041C)}, mark {r0.get(0x407FC)})")
     if "LAMP 1 1" not in parts[0]:
         errors.append("no lamp test (both LEDs on at the start)")
 

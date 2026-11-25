@@ -162,12 +162,22 @@ module tb_loopback;
         $readmemh(PGPIO, pm, 0, NGPIO - 1); load(32'h0002_0000, NGPIO);
         $readmemh(PUART, pm, 0, NUART - 1); load(32'h0004_0000, NUART);
         $readmemh(PMAIN, pm, 0, NMAIN - 1); load(32'h0000_0000, NMAIN);
+        // what the RS-485 terminal programs leave in SEQ_UART's D-mem (other meanings here:
+        // PATHS, LEN, TMO = 2, PHYC = 3 = UARTs off); no mark at D[255]: the program clears it
+        for (i = 0; i < 25; i = i + 1) wr(32'h0004_0400 + 4 * i, 32'h3 + i);
+        wr(32'h0004_07FC, 32'h1234_5678);
+        // SEQ_MAIN and SEQ_GPIO preset before the first start: the mark first, then the settings
+        wr(32'h0002_07FC, 32'h4C0B_0002);
+        for (i = 0; i < 8; i = i + 1) wr(32'h0002_0400 + 4 * i, 0);
         wr(32'h0002_0418, 32'd300);                   // SEQ_GPIO BLINK: short
-        wr(32'h0004_0418, 40 * BIT + 1000);           // SEQ_UART TMO: about 4 byte times
+        wr(32'h0000_07FC, 32'h4C0B_0001);
+        for (i = 0; i < 10; i = i + 1) wr(32'h0000_0400 + 4 * i, 0);
         wr(32'h0000_0410, 64 * BIT + 4000);           // SEQ_MAIN GAP (> 16 bit times idle line at the start)
         wr(32'h0000_0420, 400 * BIT * 2 * LEN / 10 + 100000);   // WDOG
         wr(32'h0000_0008, 32'h61);                    // SEQ_MAIN: RUN + PT_WR_RUN + ERR_HALT
         repeat (1000) @(posedge clk);
+        show(32'h0004_0410); show(32'h0004_041C); show(32'h0004_07FC);  // SEQ_UART cleared, marked
+        wr(32'h0004_0418, 40 * BIT + 1000);           // SEQ_UART TMO (read every round): ~4 byte times
         show(32'h0002_000C); show(32'h0004_000C);     // children started (STATUS BUSY)
         $display("LAMP %0d %0d", gpio[0], gpio[1]);   // lamp test: both on
         rounds_done(3);

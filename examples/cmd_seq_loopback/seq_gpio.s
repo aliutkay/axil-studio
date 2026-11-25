@@ -31,10 +31,28 @@
 .equ DEF_OK     1
 .equ DEF_ERR    2
 .equ DEF_BLINK  2_500_000       ; 50 ms at 50 MHz
+.equ SIGN       255             ; D[255]: mark of this program
+.equ SIGNATURE  0x4C0B_0002
 
 ; R8 GPIO base, R6 last request, R12 shown, R2 OK mask, R3 FAIL mask, R4 lit, R5 dark,
 ; R9 time, R1 scratch
 
+; D-mem still holds what the previously loaded program left there (another program, other
+; meanings). On the first start after loading, D[0..7] are cleared (all settings = default) and
+; D[255] gets this program's mark; later starts keep the settings. To preset settings before the
+; first start, write D[255] = 0x4C0B_0002 (offset 0x7FC) first.
+        LDD   R1, D[SIGN]
+        CMP   R1, SIGNATURE
+        BR    Z, init_ok
+        LDI   R1, 0
+        LDI   R2, 8
+init_lp: SUB  R2, 1
+        STD   D[R2], R1
+        CMP   R2, 0
+        BR    NZ, init_lp
+        LDI   R1, SIGNATURE
+        STD   D[SIGN], R1
+init_ok:
         LDI   R8, G_BASE
         LDD   R6, D[L_REQ]      ; requests from before the start are not shown
         LDI   R12, 0

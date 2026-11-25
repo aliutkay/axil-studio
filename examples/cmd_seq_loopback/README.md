@@ -22,9 +22,9 @@ ayarlarını `TX_A = RX_A = 0x0005_0000` ve `TX_B = RX_B = 0x0005_1000` yap (aş
 ## Ne yapar
 | Sıralayıcı | Program | Görevi |
 |---|---|---|
-| SEQ_UART | `seq_uart.s` (177 komut) | Test motoru. Bir turda her yol için `LEN` bayt üretip gönderir; aynı diziyi kendisi de üretip alınanla karşılaştırır. Yanlış bayt, kayıp bayt (zaman aşımı), parite / çerçeve hatası, turdan önce gelen beklenmedik baytı sayar ve ilk hatanın yerini kaydeder. |
-| SEQ_MAIN | `seq_main.s` (83 komut) | Diğer ikisini başlatır. Turları zamanlar (`GO` yazar, `DONE`'ı bekçi süresiyle bekler), sonucu SEQ_GPIO'ya taşır, toplamları tutar. |
-| SEQ_GPIO | `seq_gpio.s` (63 komut) | LED'ler. Başarılı turda **LED 0** yanar, başarısızda **LED 1** yanar. Yanan LED her turda bir an söner; test çalışıyor mu, takıldı mı buradan anlaşılır. Açılışta ikisi birlikte kısa bir süre yanar (lamba testi). |
+| SEQ_UART | `seq_uart.s` (188 komut) | Test motoru. Bir turda her yol için `LEN` bayt üretip gönderir; aynı diziyi kendisi de üretip alınanla karşılaştırır. Yanlış bayt, kayıp bayt (zaman aşımı), parite / çerçeve hatası, turdan önce gelen beklenmedik baytı sayar ve ilk hatanın yerini kaydeder. |
+| SEQ_MAIN | `seq_main.s` (94 komut) | Diğer ikisini başlatır. Turları zamanlar (`GO` yazar, `DONE`'ı bekçi süresiyle bekler), sonucu SEQ_GPIO'ya taşır, toplamları tutar. |
+| SEQ_GPIO | `seq_gpio.s` (74 komut) | LED'ler. Başarılı turda **LED 0** yanar, başarısızda **LED 1** yanar. Yanan LED her turda bir an söner; test çalışıyor mu, takıldı mı buradan anlaşılır. Açılışta ikisi birlikte kısa bir süre yanar (lamba testi). |
 
 Veri: varsayılan olarak sözde rastgele (xorshift32). Dizi turdan tura devam eder, her tur başka
 baytlar gider. İstenirse 00 01 02 … sayacı seçilebilir.
@@ -37,6 +37,35 @@ baytlar gider. İstenirse 00 01 02 … sayacı seçilebilir.
 
 Yarım saniyede bir tur koşar. Kablo sağlamsa LED 0 yanar ve her turda bir an söner. Kabloyu
 çıkarınca LED 1 yanar; takınca LED 0'a döner.
+
+### D-mem'de kalan eski değerler
+Program yüklemek D-mem'i silmez. Daha önce başka bir program (örneğin RS-485 terminali) çalıştıysa,
+onun bıraktığı sayılar bu programlarda başka anlamlara gelir. Örneğin terminalin `ON` süresi,
+burada FAIL LED'inin maskesi olur ve LED'ler hiç yanmaz. Bu yüzden her program yüklendikten
+sonraki ilk başlangıçta kendi ayar alanını sıfırlar, yani her şey varsayılana döner. Ardından
+`D[255]`'e (`+0x7FC`) kendi işaretini yazar:
+
+| Sıralayıcı | Sıfırlanan alan | İşaret (`+0x7FC`) |
+|---|---|---|
+| SEQ_MAIN | `D[0..9]` | `0x4C0B_0001` |
+| SEQ_GPIO | `D[0..7]` | `0x4C0B_0002` |
+| SEQ_UART | `D[0..24]` | `0x4C0B_0003` |
+
+Sonraki başlangıçlarda ayarlar korunur. İlk başlangıçtan önce ayar yazmak istersen önce işareti,
+sonra ayarları yaz.
+
+## LED hiç yanmıyorsa
+Doğru çalışırsa başlangıçta iki LED 0,3 s birlikte yanar, yaklaşık 0,5 s sonra da biri sürekli
+yanar. Hiçbiri yanmıyorsa Debug Bridge'den sırayla şunlara bak:
+1. **Programlar çalışıyor mu:** `0x0000_000C`, `0x0002_000C`, `0x0004_000C` (STATUS). Bit 0 = 1
+   (çalışıyor) olmalı, bit 2 (hata) 0 olmalı. Hata varsa o sıralayıcının `+0x14` ERR_CODE ve
+   `+0x18` ERR_PC değerlerine bak. SEQ_GPIO / SEQ_UART çalışmıyorsa, SEQ_MAIN başladığında
+   programları yüklü değildi (`+0x28` IMEM_CNT = 0): önce onları yükle, SEQ_MAIN'i en son başlat.
+2. **Turlar dönüyor mu:** `0x0000_0400` (tur sayısı) artıyor mu? `0x0002_041C` (SEQ_GPIO'nun
+   gösterdiği sonuç sayısı) da artıyor mu?
+3. **LED'ler bu GPIO'nun 0. ve 1. bitinde mi:** `0x0003_0004` (GPIO SET) ← `3` yaz; iki LED
+   yanmalı. `0x0003_0008` (CLEAR) ← `3` söndürür. Yanmıyorsa LED'ler başka bitte ya da başka
+   pinde: maskeleri `0x0002_0408` / `0x0002_040C`'ye yaz.
 
 ## Sonucu okumak (Debug Bridge)
 **SEQ_MAIN:**
@@ -115,6 +144,8 @@ bulursun. Ayrıntısı `0x0004_044C..045C`'te.
 ## Simülasyon
 `sim/run_loopback.py` (testlerde de çalışır) tasarımı RS-485 örneğiyle aynı bloklarla kurar.
 Çapraz kabloyu testbench içinde modeller ve şunları dener:
+- SEQ_UART'ın D-mem'inde başka bir programdan kalma değerler var: başlangıçta sıfırlanır;
+  SEQ_MAIN ve SEQ_GPIO'ya önceden ayar yazılmış (önce işaret): korunur;
 - kablo sağlam: turlar geçer, LED 0 yanar, LED 1 söner, her bayt doğru;
 - UART1 → UART2 teli kesik: RESULT = 0x02, LED 1 yanar, ilk hata "yol A, bayt 0, hiç gelmedi";
 - tel geri takılınca: LED 0;

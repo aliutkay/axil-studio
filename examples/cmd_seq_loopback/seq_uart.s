@@ -81,12 +81,30 @@
 .equ R_LINE     0x04
 .equ R_TXSTUCK  0x08
 .equ R_JUNK     0x20
+.equ SIGN       255             ; D[255]: mark of this program
+.equ SIGNATURE  0x4C0B_0003
 
 ; R4 / R5 sending / receiving UART, R6 / R7 pattern state of the sent / expected bytes,
 ; R8 bytes still to send, R9 bytes still to receive, R10 deadline, R11 RESULT of the round,
 ; R12 index of the next received byte, R13 path (0 = A, 1 = B), R14 pattern, R15 timeout,
 ; R1-R3 scratch (gen: R1 state in / out, R2 byte out)
 
+; D-mem still holds what the previously loaded program left there (another program, other
+; meanings). On the first start after loading, D[0..24] are cleared (all settings = default) and
+; D[255] gets this program's mark; later starts keep the settings. To preset settings before the
+; first start, write D[255] = 0x4C0B_0003 (offset 0x7FC) first.
+        LDD   R1, D[SIGN]
+        CMP   R1, SIGNATURE
+        BR    Z, init_ok
+        LDI   R1, 0
+        LDI   R2, 25
+init_lp: SUB  R2, 1
+        STD   D[R2], R1
+        CMP   R2, 0
+        BR    NZ, init_lp
+        LDI   R1, SIGNATURE
+        STD   D[SIGN], R1
+init_ok:
         LDI   R1, 0             ; statistics from zero
         STD   D[S_ROUNDS], R1
         STD   D[S_GOOD], R1

@@ -49,10 +49,28 @@
 .equ M_AGAIN    7
 .equ M_WDOG     8
 .equ M_STATE    9
+.equ SIGN       255             ; D[255]: mark of this program
+.equ SIGNATURE  0x4C0B_0001
 
 ; R6 GO number, R7 rounds left (R9 = 0: for ever), R9 MAX of this run, R10 rounds, R11 round start,
 ; R12 fails, R8 child base (start), R1-R5 scratch
 
+; D-mem still holds what the previously loaded program left there (another program, other
+; meanings). On the first start after loading, D[0..9] are cleared (all settings = default) and
+; D[255] gets this program's mark; later starts keep the settings. To preset settings before the
+; first start, write D[255] = 0x4C0B_0001 (offset 0x7FC) first.
+        LDD   R1, D[SIGN]
+        CMP   R1, SIGNATURE
+        BR    Z, init_ok
+        LDI   R1, 0
+        LDI   R2, 10
+init_lp: SUB  R2, 1
+        STD   D[R2], R1
+        CMP   R2, 0
+        BR    NZ, init_lp
+        LDI   R1, SIGNATURE
+        STD   D[SIGN], R1
+init_ok:
         LDI   R10, 0
         LDI   R12, 0
         STD   D[M_ROUNDS], R10
