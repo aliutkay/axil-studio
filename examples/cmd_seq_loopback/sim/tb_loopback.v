@@ -144,7 +144,7 @@ module tb_loopback;
             rd(32'h0000_0400, r0);
             r1 = r0;
             while (r1 < r0 + n) begin repeat (2000) @(posedge clk); rd(32'h0000_0400, r1); end
-            repeat (200) @(posedge clk);
+            repeat (3000) @(posedge clk);             // SEQ_GPIO took the result (BLINK 300 dark)
         end
     endtask
     task stats;
