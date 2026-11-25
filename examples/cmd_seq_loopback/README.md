@@ -16,13 +16,15 @@ Varsayılan, çapraz kablo:
 - **yol B:** UART2 TX → UART1 RX
 
 Her tur iki yönü de dener. RS-485 4 telli / RS-422 hatta bu, iki transceiver'ın TX çiftini
-karşıdakinin RX çiftine bağlamak demek. Her UART kendi TX'ini kendi RX'ine bağlıyorsa SEQ_UART'ın
+karşıdakinin RX çiftine bağlamak demek. **2 telli RS-485**'te iki transceiver'ın A'sını A'ya, B'sini
+B'ye bağlamak yeterli; ayar gerekmez. Her UART sürücüsünü yalnız gönderirken açar, gönderenin
+kendi sesini (echo) program atar. Her UART kendi TX'ini kendi RX'ine bağlıyorsa SEQ_UART'ın
 ayarlarını `TX_A = RX_A = 0x0005_0000` ve `TX_B = RX_B = 0x0005_1000` yap (aşağıda).
 
 ## Ne yapar
 | Sıralayıcı | Program | Görevi |
 |---|---|---|
-| SEQ_UART | `seq_uart.s` (188 komut) | Test motoru. Bir turda her yol için `LEN` bayt üretip gönderir; aynı diziyi kendisi de üretip alınanla karşılaştırır. Yanlış bayt, kayıp bayt (zaman aşımı), parite / çerçeve hatası, turdan önce gelen beklenmedik baytı sayar ve ilk hatanın yerini kaydeder. |
+| SEQ_UART | `seq_uart.s` (195 komut) | Test motoru. Bir turda her yol için `LEN` bayt üretip gönderir; aynı diziyi kendisi de üretip alınanla karşılaştırır. Yanlış bayt, kayıp bayt (zaman aşımı), parite / çerçeve hatası, turdan önce gelen beklenmedik baytı sayar ve ilk hatanın yerini kaydeder. |
 | SEQ_MAIN | `seq_main.s` (94 komut) | Diğer ikisini başlatır. Turları zamanlar (`GO` yazar, `DONE`'ı bekçi süresiyle bekler), sonucu SEQ_GPIO'ya taşır, toplamları tutar. |
 | SEQ_GPIO | `seq_gpio.s` (74 komut) | LED'ler. Başarılı turda **LED 0** yanar, başarısızda **LED 1** yanar. Yanan LED her turda bir an söner; test çalışıyor mu, takıldı mı buradan anlaşılır. Açılışta ikisi birlikte kısa bir süre yanar (lamba testi). |
 
@@ -114,7 +116,7 @@ UART2 RX teli. `0454 = 0x1F`, `0458 = 0x17` → bit 3 bozuk geliyor.
 | `0x0004_0410` | 1 = yalnız yol A | iki yol |
 | `0x0004_0414` | yol başına bayt | 32 |
 | `0x0004_0418` | hiçbir bayt gitmeden / gelmeden geçebilecek süre (çevrim) | 1 000 000 (50 MHz'de 20 ms) |
-| `0x0004_041C` | UART'lara yazılan PHY_CTRL | `0xC1` (TX + RX açık, DE hep açık) |
+| `0x0004_041C` | UART'lara yazılan PHY_CTRL | `0xC2` (TX + RX açık, DE yalnız gönderirken) |
 | `0x0004_0420` | 0 = sözde rastgele, 1 = sayaç | 0 |
 | `0x0004_0424` | dizinin durumu (tohum) | `0x2545_F491` |
 
@@ -146,6 +148,8 @@ bulursun. Ayrıntısı `0x0004_044C..045C`'te.
 Çapraz kabloyu testbench içinde modeller ve şunları dener:
 - SEQ_UART'ın D-mem'inde başka bir programdan kalma değerler var: başlangıçta sıfırlanır;
   SEQ_MAIN ve SEQ_GPIO'ya önceden ayar yazılmış (önce işaret): korunur;
+- 2 telli RS-485 (`--2wire`): iki UART aynı çiftte; turlar geçer, iki sürücü hiç aynı anda açık
+  değil, echo beklenmedik bayt sayılmaz;
 - kablo sağlam: turlar geçer, LED 0 yanar, LED 1 söner, her bayt doğru;
 - UART1 → UART2 teli kesik: RESULT = 0x02, LED 1 yanar, ilk hata "yol A, bayt 0, hiç gelmedi";
 - tel geri takılınca: LED 0;
@@ -156,4 +160,5 @@ bulursun. Ayrıntısı `0x0004_044C..045C`'te.
 ```
 python3 examples/cmd_seq_loopback/sim/run_loopback.py              # UART bit başına 16 çevrim, ~25 s
 python3 examples/cmd_seq_loopback/sim/run_loopback.py --real-baud  # 434 (115200 @ 50 MHz), ~7 dk
+python3 examples/cmd_seq_loopback/sim/run_loopback.py --2wire      # 2 telli RS-485
 ```

@@ -126,8 +126,13 @@ module tb_loopback;
 
     // ---- the loopback cable, with faults
     reg cut_a = 0, cut_b = 0, flip_a = 0, flip_b = 0;
-    assign rxd2 = cut_a ? 1'b1 : txd1 ^ flip_a;       // path A: UART1 -> UART2
-    assign rxd1 = cut_b ? 1'b1 : txd2 ^ flip_b;       // path B: UART2 -> UART1
+    parameter WIRE2 = 0;                               // 1: a 2-wire RS-485 bus instead
+    wire d1 = de1 ? txd1 : 1'b1, d2 = de2 ? txd2 : 1'b1;   // a driver off = idle (bias)
+    wire bus = (de1 && de2 && txd1 != txd2) ? 1'bx : d1 & d2;
+    integer clash = 0;
+    always @(posedge clk) if (rst_n && de1 && de2) clash = clash + 1;
+    assign rxd2 = WIRE2 ? bus : cut_a ? 1'b1 : txd1 ^ flip_a;   // path A: UART1 -> UART2
+    assign rxd1 = WIRE2 ? bus : cut_b ? 1'b1 : txd2 ^ flip_b;   // path B: UART2 -> UART1
     task flip_bit_b;                                   // one wrong bit in a byte UART2 sends
         begin
             @(negedge txd2);                           // a start bit
@@ -182,6 +187,12 @@ module tb_loopback;
         $display("LAMP %0d %0d", gpio[0], gpio[1]);   // lamp test: both on
         rounds_done(3);
         $display("PHASE 1"); leds; stats;             // cable fine: OK LED
+        if (WIRE2) begin
+            $display("CLASH %0d", clash);             // cycles both drivers were on
+            show(32'h0004_0448);                      // JUNK
+            $display("BUSERR %0d", bus_errors);
+            $finish;
+        end
         cut_a = 1;                                    // UART1 -> UART2 wire cut
         rounds_done(2);
         $display("PHASE 2"); leds; stats;             // lost bytes on path A: FAIL LED

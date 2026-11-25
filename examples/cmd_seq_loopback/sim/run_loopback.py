@@ -4,6 +4,7 @@ crossed cable modelled in the testbench).
 
     python3 examples/cmd_seq_loopback/sim/run_loopback.py              # UARTs at 16 clocks per bit
     python3 examples/cmd_seq_loopback/sim/run_loopback.py --real-baud  # 434 (115200 at 50 MHz)
+    python3 examples/cmd_seq_loopback/sim/run_loopback.py --2wire      # both UARTs on one RS-485 pair
 
 The hardware is that of examples/cmd_seq_rs485 (same project, same generated blocks); only the
 programs are this folder's. Checks:
@@ -38,7 +39,7 @@ PROJECT = os.path.join(ROOT, "examples", "cmd_seq_rs485", "rs485_terminal.axproj
 LEN = 32                                   # bytes per path (SEQ_UART default)
 
 
-def build(work, bit=16):
+def build(work, bit=16, wire2=False):
     p = Project.load(PROJECT)
     srcs = []
     for b in A.xbar_levels(p):
@@ -68,6 +69,7 @@ def build(work, bit=16):
         uart_pk = os.path.join(work, "axiluart_phy_pk.v")
         open(uart_pk, "w").write(text)
     opts.append(f"-Ptb_loopback.BIT={bit}")
+    opts.append(f"-Ptb_loopback.WIRE2={int(wire2)}")
     rtl = [os.path.join(ROOT, "hdl", "cmd_seq", "rtl", f) for f in ("cmd_seq.v", "cmd_seq_core.v")]
     rtl += [os.path.join(v, "interconnect", "axilxbar.v"), os.path.join(v, "interconnect", "addrdecode.v"),
             os.path.join(v, "common", "skidbuffer.v"), os.path.join(v, "gpio", "axilgpio_pk.v"),
@@ -78,16 +80,37 @@ def build(work, bit=16):
     return srcs + rtl, opts
 
 
-def run(bit=16):
+def run(bit=16, wire2=False):
     work = tempfile.mkdtemp(prefix="loopback_")
     try:
-        srcs, opts = build(work, bit)
+        srcs, opts = build(work, bit, wire2)
         exe = os.path.join(work, "tb")
         subprocess.run(["iverilog", "-g2012", "-o", exe] + opts + [os.path.join(HERE, "tb_loopback.v")] + srcs,
                        check=True)
         return subprocess.run(["vvp", "-n", exe], check=True, capture_output=True, text=True, timeout=1800).stdout
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+def check_wire2(out):
+    """2-wire bus: rounds pass, the OK LED, no junk (the echo is dropped), never two drivers."""
+    errors = []
+    parts = out.split("PHASE ")
+    if len(parts) != 2:
+        return ["the testbench did not reach phase 1"]
+    r = dict((int(a, 16), int(d, 16)) for a, d in re.findall(r"^R ([0-9a-f]+) ([0-9a-f]+)", parts[1], re.M))
+    if "LEDS 1 0" not in parts[1]:
+        errors.append("2-wire: OK LED not on")
+    if r.get(0x404) != 0 or r.get(0x408) != 0 or r.get(0x400, 0) < 3:
+        errors.append(f"2-wire: rounds {r.get(0x400)}, LAST 0x{r.get(0x404, 0):X}, FAILS {r.get(0x408)}")
+    if r.get(0x40438) != r.get(0x400, 0) * 2 * LEN or r.get(0x40448) != 0:
+        errors.append(f"2-wire: GOOD {r.get(0x40438)}, JUNK {r.get(0x40448)}")
+    m = re.search(r"^CLASH (\d+)", out, re.M)
+    if not m or int(m.group(1)):
+        errors.append(f"2-wire: both drivers on for {m and m.group(1)} cycles")
+    if "BUSERR 0" not in out:
+        errors.append("bus error on the upstream port")
+    return errors
 
 
 def check(out):
@@ -163,10 +186,11 @@ def main(argv=None):
     if not (shutil.which("iverilog") and shutil.which("vvp")):
         print("iverilog / vvp not found")
         return 2
-    out = run(434 if "--real-baud" in argv else 16)
+    wire2 = "--2wire" in argv
+    out = run(434 if "--real-baud" in argv else 16, wire2)
     if "-v" in argv:
         print(out)
-    errors = check(out)
+    errors = check_wire2(out) if wire2 else check(out)
     for e in errors:
         print("  FAIL", e)
     print("uart loopback:", "PASSED" if not errors else "FAILED")

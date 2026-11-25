@@ -38,3 +38,11 @@ def test_system_simulation():
     import run_loopback
     out = run_loopback.run(16)
     assert run_loopback.check(out) == []
+
+
+@pytest.mark.skipif(not (shutil.which("iverilog") and shutil.which("vvp")), reason="needs Icarus Verilog")
+def test_two_wire_bus():
+    """Both UARTs on one RS-485 pair: DE only while sending, the echo dropped."""
+    import run_loopback
+    out = run_loopback.run(16, wire2=True)
+    assert run_loopback.check_wire2(out) == []

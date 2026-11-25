@@ -5,6 +5,7 @@
 ; errors and before a timeout. Then the same for a second path (both directions of a crossed cable):
 ;   path A: UART1 -> UART2        path B: UART2 -> UART1          (defaults)
 ; For a UART looped to itself (its TX to its own RX) set TX_A = RX_A (and TX_B = RX_B).
+; A 2-wire RS-485 bus (both transceivers on the same A/B pair) works with the default PHYC.
 ;
 ; SEQ_MAIN starts a round by writing GO with a new value; when the round is over the program
 ; writes RESULT, then DONE = GO.
@@ -18,7 +19,8 @@
 ;   D[5] 0x0004_0414  LEN      bytes per path and round   (0 = 32)
 ;   D[6] 0x0004_0418  TMO      clock cycles with no byte sent or received before the rest counts
 ;                              as lost (0 = 1 000 000 = 20 ms at 50 MHz)
-;   D[7] 0x0004_041C  PHYC     PHY_CTRL written to the UARTs (0 = 0xC1: TX and RX on, DE always on)
+;   D[7] 0x0004_041C  PHYC     PHY_CTRL written to the UARTs (0 = 0xC2: TX and RX on, DE only while
+;                              sending, so a 2-wire RS-485 bus works too)
 ;   D[8] 0x0004_0420  PATTERN  0 = pseudo-random (xorshift32), 1 = counter 00 01 02 ..
 ;   D[9] 0x0004_0424  SEED     pattern state; the program writes it back after each round, so every
 ;                              round sends other data (0 = 0x2545_F491)
@@ -47,7 +49,7 @@
 .equ UART2      0x0005_1000
 .equ DEF_LEN    32
 .equ DEF_TMO    1_000_000
-.equ DEF_PHYC   0xC1
+.equ DEF_PHYC   0xC2
 .equ DEF_SEED   0x2545_F491
 
 .equ C_TXA      0               ; D-mem
@@ -245,7 +247,7 @@ wrong:  LDD   R1, D[S_BAD]
 rx2:    ADD   R12, 1
         SUB   R9, 1
         BR    NZ, tx
-        RET                     ; all bytes received
+        JMP   rp_end            ; all bytes received
 
 no_rx:  TMR   R1                ; nothing: deadline passed?
         SUB   R1, R10
@@ -262,7 +264,15 @@ no_rx:  TMR   R1                ; nothing: deadline passed?
         CMP   R8, 0
         BR    Z, np1
         OR    R11, R_TXSTUCK
-np1:    RET
+np1:
+rp_end: CMP   R4, R5            ; on a 2-wire bus the sender hears itself: drop that echo
+        BR    Z, rp_ret
+echo:   RD    R1, [R4+U_RXREG]
+        AND   R1, RX_EMPTY
+        BR    Z, echo
+        LDI   R1, RX_CLEAR
+        WR    [R4+U_RXREG], R1
+rp_ret: RET
 
 ; ---- first_fail: note R2 (expected) / R3 (received) at byte R12 of path R13, unless this
 ; round already failed
