@@ -309,9 +309,9 @@ class InterfaceService(QObject):
         if self.lock_owner is not None and self.lock_owner is not s:
             raise RequestError("busy", tr("Another IP interface holds the connection"))
 
-    def _run(self, s, sock, rid, job, reads=(), quiet=False):
-        """Run `job` on the Debug Bridge's request queue; reads: [(addr)] whose values `job` returns
-        (recorded in the Debug Bridge views unless quiet)."""
+    def _run(self, s, sock, rid, job, writes=(), quiet=False):
+        """Run `job` on the Debug Bridge's request queue. `quiet` silences the
+        hexbus traffic log while still updating the Debug Bridge register cache."""
         link = self.host.link
 
         def work():
@@ -322,9 +322,14 @@ class InterfaceService(QObject):
                 link.quiet = False
 
         def ok(result):
-            if not quiet:
-                for addr, value in reads_of(result):
-                    self.host.record(addr, value, s.iface.label(language()))
+            rlist = reads_of(result)
+            if rlist or writes:
+                src = s.iface.label(language())
+                if hasattr(self.host, "record_many"):
+                    self.host.record_many(rlist, writes, src)
+                elif not quiet:
+                    for addr, value in rlist:
+                        self.host.record(addr, value, src)
             self._reply(sock, rid, result if not isinstance(result, tuple) else result[0])
 
         def reads_of(result):
@@ -343,7 +348,8 @@ class InterfaceService(QObject):
     def _op_write(self, s, sock, rid, req):
         self._check_link(s)
         addr, value = self._addr(s, req), int(req["value"]) & 0xFFFFFFFF
-        self._run(s, sock, rid, lambda link: link.write(addr, value), quiet=bool(req.get("quiet")))
+        self._run(s, sock, rid, lambda link: link.write(addr, value),
+                  writes=[(addr, value)], quiet=bool(req.get("quiet")))
 
     def _op_batch(self, s, sock, rid, req):
         self._check_link(s)
@@ -359,7 +365,9 @@ class InterfaceService(QObject):
                 raise RequestError("bad_request", f"batch step '{kind}'")
             steps.append((kind, self._addr(s, st), int(st.get("value", 0)) & 0xFFFFFFFF))
 
-        self._run(s, sock, rid, lambda link: run_batch(link, steps), quiet=bool(req.get("quiet")))
+        writes = [(addr, value) for kind, addr, value in steps if kind == "write"]
+        self._run(s, sock, rid, lambda link: run_batch(link, steps),
+                  writes=writes, quiet=bool(req.get("quiet")))
 
     def _op_read_until(self, s, sock, rid, req):
         """Read one address up to `max` times; stop after the first word with (word & mask) == value."""
@@ -375,7 +383,7 @@ class InterfaceService(QObject):
                 out.append(v)
                 if mask and v & mask == want:
                     break
-            return out, []
+            return out, [(addr, out[-1])] if out else []
         self._run(s, sock, rid, job, quiet=bool(req.get("quiet", True)))
 
     def _op_lock(self, s, sock, rid, req):
@@ -411,10 +419,19 @@ class InterfaceService(QObject):
     def _group_names(self, group):
         return [ip.name for ip in self.host._extra()] if group == "extra" else []
 
+    def _sequencer_names(self, s):
+        """Names of cmd_seq (PCS) instances in the project (interfaces may load programs into them)."""
+        if s.group != "project":
+            return []
+        proj = getattr(getattr(self.host, "ctx", None), "project", None)
+        if proj is None or not hasattr(proj, "walk"):
+            return []
+        return [inst.name for inst, _parent in proj.walk() if getattr(inst, "sequencer", False)]
+
     def _target(self, s, req):
-        """The instance a settings request is for: this IP, or (with "ip") one of its peers."""
+        """The instance a settings request is for: this IP, one of its peers, or a project cmd_seq."""
         name = req.get("ip") or s.ip_name
-        if name != s.ip_name and name not in [p.name for p in self._peer_ips(s)]:
+        if name != s.ip_name and name not in [p.name for p in self._peer_ips(s)] and name not in self._sequencer_names(s):
             raise RequestError("bad_request", tr("{0} is not an IP with the same interface").format(name))
         return name
 
@@ -458,7 +475,8 @@ class InterfaceService(QObject):
             raise RequestError("bad_request", "values must be an object")
         name = self._target(s, req)
         cur = self._settings(s, name)
-        if any(cur.get(k) != v for k, v in values.items()):
+        changed = any(cur.get(k) != v for k, v in values.items())
+        if changed:
             cur.update(values)
             for k in [k for k, v in values.items() if v is None]:
                 cur.pop(k, None)              # None removes a value
@@ -468,6 +486,13 @@ class InterfaceService(QObject):
             dbg["interfaces"] = ifs
             self.host.ctx.project.debug = dbg
             self.host.ctx.mark_modified("interface")
+        # Notify open sessions for `name` (e.g., an open cmd_seq window reloads a newly uploaded .s)
+        for other in list(self.sessions.values()):
+            if other is not s and other.ip_name == name and other.socket is not None:
+                try:
+                    self._send(other, {"event": "settings", "settings": dict(cur)})
+                except RequestError:
+                    pass
         self._reply(sock, rid, None)
 
     def _op_show_register(self, s, sock, rid, req):

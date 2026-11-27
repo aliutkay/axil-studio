@@ -181,6 +181,16 @@ class SeqWindow(QWidget):
         elif kind == "theme":
             look.apply(QApplication.instance(), ev.get("theme"))
             self._highlight()
+        elif kind == "settings":
+            st = dict(ev.get("settings") or {})
+            self.client.settings = st
+            new_path = st.get("program") or ""
+            if new_path and os.path.isfile(new_path) and not self.editor.document().isModified():
+                self.path = new_path
+                self._load_text()
+                self.assemble()
+                if self.connected:
+                    self.refresh()
         elif kind == "raise":
             self.showNormal()
             self.raise_()
@@ -212,6 +222,8 @@ class SeqWindow(QWidget):
         def ok(entries):
             self.syms = S.symbols(entries)
             self.sym_lbl.setText(tr("{0} address names from the project").format(len(self.syms)))
+            if self.path and self.prog is None and not self.editor.document().isModified():
+                self.assemble()
 
         def fail(exc):
             self.syms = {}

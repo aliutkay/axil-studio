@@ -994,6 +994,74 @@ class DebugBridgePage(ToolPage):
     def record(self, addr, value, source):
         self._record(addr, value, source)
 
+    def record_many(self, reads, writes=(), source=""):
+        """Batch-record reads and writes from an IP interface into the Debug Bridge
+        cache (reads, last_written, active Register panel, Live Watch) with a single
+        UI refresh."""
+        if not reads and not writes:
+            return
+        now = time.time()
+        ts = time.strftime("%H:%M:%S", time.localtime(now))
+        for addr, value in writes:
+            self.last_written[addr] = value
+        for addr, value in reads:
+            self.reads[addr] = (value, ts, source)
+
+        # Update active register panel if its address was touched
+        if self.reg is not None and self.ip is not None:
+            reg_addr = self.ip.address(self.reg)
+            read_val = None
+            for addr, value in reads:
+                if addr == reg_addr:
+                    read_val = value
+            write_val = None
+            for addr, value in writes:
+                if addr == reg_addr:
+                    write_val = value
+            if read_val is not None and self.reg.readable:
+                old_base = self._base_value()
+                changed = read_val != self.read_value
+                self.read_value = read_val
+                self.read_lbl.setText(hex32(read_val))
+                self.stamp.setText(tr("Read {0} · {1}").format(ts, source))
+                editing = self.value_ed.hasFocus() or self.fields.isAncestorOf(QApplication.focusWidget() or self)
+                if self.staged == old_base and not editing:
+                    self.staged = self._base_value()
+                    self.value_ed.setText(hex32(self.staged))
+                    if changed:
+                        self._fill_fields()
+                elif changed:
+                    self._update_read_cells()
+            elif write_val is not None and not self.reg.readable:
+                editing = self.value_ed.hasFocus() or self.fields.isAncestorOf(QApplication.focusWidget() or self)
+                self.stamp.setText(tr("Write {0} · {1}").format(ts, source))
+                if not editing:
+                    self.staged = self._base_value()
+                    self.value_ed.setText(hex32(self.staged))
+                    self._fill_fields()
+
+        # Update live watch rows once for the batch
+        if reads:
+            read_map = dict(reads)
+            watch_hit = False
+            for w in self.watch:
+                ip, reg = self._resolve(w["key"])
+                if reg is not None:
+                    a = ip.address(reg)
+                    if a in read_map:
+                        value = read_map[a]
+                        w["flash"] = w["value"] is not None and value != w["value"]
+                        if value != w["value"]:
+                            w["changed"] = ts if w["value"] is not None else "—"
+                        w["value"] = value
+                        w["read"] = ts
+                        w["history"].append((now, value))
+                        watch_hit = True
+            if watch_hit:
+                self._fill_watch()
+                self._schedule_history()
+            self._fill_config()
+
     def port_name(self):
         return self.port_cb.currentText() if self.link.connected else ""
 
