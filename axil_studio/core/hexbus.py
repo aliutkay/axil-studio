@@ -172,7 +172,8 @@ class HexbusLink:
         self._rx.put((tok, value))
 
     # ------------------------------------------------------------ transactions
-    def _transact(self, text, count, what=None):
+    def _transact(self, text, count, what=None, log_text=None, drain_on_error=False):
+        label = text.strip() if log_text is None else log_text
         with self._lock:
             if self.ser is None:
                 raise HexbusError(tr("Not connected"))
@@ -181,7 +182,7 @@ class HexbusLink:
             while not self._rx.empty():
                 self._rx.get_nowait()
             if not self.quiet:
-                self.log_cb("TX", text.strip())
+                self.log_cb("TX", label)
             try:
                 self.ser.write(text.encode("ascii"))
             except Exception as exc:
@@ -192,16 +193,25 @@ class HexbusLink:
             while len(tokens) < count:
                 remaining = deadline - time.monotonic()
                 if remaining <= 0:
-                    raise HexbusError(tr("Timeout waiting for the response to '{0}'").format(text.strip()))
+                    raise HexbusError(tr("Timeout waiting for the response to '{0}'").format(label))
                 try:
                     tok = self._rx.get(timeout=remaining)
                 except queue.Empty:
                     continue
                 tokens.append(tok)
                 if tok[0] == "E":
+                    if drain_on_error:
+                        while len(tokens) < count:
+                            rem = min(0.05, deadline - time.monotonic())
+                            if rem <= 0:
+                                break
+                            try:
+                                tokens.append(self._rx.get(timeout=rem))
+                            except queue.Empty:
+                                break
                     if what:
                         raise HexbusError(tr("AXI bus error (SLVERR / DECERR) on {0}").format(what))
-                    raise HexbusError(tr("AXI bus error on '{0}'").format(text.strip()))
+                    raise HexbusError(tr("AXI bus error on '{0}'").format(label))
             return tokens
 
     def reset(self):
@@ -232,8 +242,82 @@ class HexbusLink:
     def write(self, addr, value):
         self._access(addr, f"W{value & 0xFFFFFFFF:x}", "K")
 
+    def write_many(self, addr, values, window=32):
+        """Write multiple 32-bit words to the same address using pipelined
+        fixed-width hexbus writes (`W%08x\\n`, 10 bytes each) and verifying every
+        `K` write acknowledgement.
+
+        Fixed 8-digit zero-padded hex guarantees each incoming write (10 bytes)
+        is much longer than the bridge's `K\\r\\n` reply (3 bytes), so the bridge
+        TX UART drains well before the next command arrives even without a TX
+        FIFO. When the bridge address changes, the first word is written with
+        `write()` to drain the 11-byte `Axxxxxxxx\\r\\n` echo before pipelining.
+        """
+        vals = [int(v) & 0xFFFFFFFF for v in values]
+        if not vals:
+            return
+        if len(vals) == 1:
+            self.write(addr, vals[0])
+            return
+        aligned = addr & 0xFFFFFFFC
+        target = aligned | 1
+        what = tr("write of 0x{0:08X}").format(aligned)
+        step = max(1, int(window))
+        with self._lock:
+            if self._cur_addr != target:
+                self.write(addr, vals[0])
+                start = 1
+            else:
+                start = 0
+            for i in range(start, len(vals), step):
+                chunk = vals[i:i + step]
+                payload = "".join(f"W{v:08x}\n" for v in chunk)
+                label = f"W x{len(chunk)} @ 0x{aligned:08X}"
+                try:
+                    tokens = self._transact(
+                        payload, len(chunk), what,
+                        log_text=label, drain_on_error=True,
+                    )
+                except HexbusError:
+                    self._cur_addr = None
+                    raise
+                if any(tok[0] != "K" for tok in tokens):
+                    self._cur_addr = None
+                    raise HexbusError(tr("Unexpected response {0}").format(tokens))
+
     def read(self, addr):
         return self._access(addr, "R", "R")
+
+
+def run_batch(link, steps):
+    """Run [('read', addr, _), ('write', addr, value), ...] on `link`.
+
+    Consecutive writes to the same address are coalesced into `link.write_many`
+    when available, preserving exact execution order and returning `(out, reads)`.
+    """
+    out, reads = [], []
+    i, n = 0, len(steps)
+    has_many = hasattr(link, "write_many")
+    while i < n:
+        kind, addr, value = steps[i]
+        if kind == "read":
+            v = link.read(addr)
+            out.append(v)
+            reads.append((addr, v))
+            i += 1
+        else:
+            j = i + 1
+            if has_many:
+                while j < n and steps[j][0] == "write" and steps[j][1] == addr:
+                    j += 1
+            if j - i >= 2:
+                link.write_many(addr, [steps[k][2] for k in range(i, j)])
+                out.extend([None] * (j - i))
+            else:
+                link.write(addr, value)
+                out.append(None)
+            i = j
+    return out, reads
 
 
 class SimulatedHexbus:

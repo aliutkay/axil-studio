@@ -17,6 +17,7 @@ from PySide6.QtCore import QCoreApplication, QEventLoop, QObject, QProcess, QPro
 from PySide6.QtNetwork import QAbstractSocket, QHostAddress, QTcpServer
 
 from axil_studio import APP_VERSION, interfaces, theme
+from axil_studio.core.hexbus import run_batch
 from axil_studio.core.model import hex32
 from axil_studio.i18n import language, tr
 
@@ -358,18 +359,7 @@ class InterfaceService(QObject):
                 raise RequestError("bad_request", f"batch step '{kind}'")
             steps.append((kind, self._addr(s, st), int(st.get("value", 0)) & 0xFFFFFFFF))
 
-        def job(link):
-            out, reads = [], []
-            for kind, addr, value in steps:
-                if kind == "read":
-                    v = link.read(addr)
-                    out.append(v)
-                    reads.append((addr, v))
-                else:
-                    link.write(addr, value)
-                    out.append(None)
-            return out, reads
-        self._run(s, sock, rid, job, quiet=bool(req.get("quiet")))
+        self._run(s, sock, rid, lambda link: run_batch(link, steps), quiet=bool(req.get("quiet")))
 
     def _op_read_until(self, s, sock, rid, req):
         """Read one address up to `max` times; stop after the first word with (word & mask) == value."""
